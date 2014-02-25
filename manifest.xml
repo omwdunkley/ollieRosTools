@@ -1,0 +1,34 @@
+<package>
+  <description brief="ollieRosTools">
+
+     ollieRosTools
+
+  </description>
+  <author>ollie</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/ollieRosTools</url>
+  <depend package="cv_bridge"/>
+  <depend package="dynamic_reconfigure"/>
+  <depend package="geometry_msgs"/>
+  <depend package="image_geometry"/>
+  <depend package="image_transport"/>
+  <depend package="roscpp"/>
+  <depend package="sensor_msgs"/>
+  <depend package="std_msgs"/>
+  <depend package="std_srvs"/>
+  <depend package="tf"/>
+  <depend package="visualization_msgs"/>
+  <depend package="opengv"/>
+  <depend package="tf_conversions"/>
+  <depend package="rbrief"/>
+  <depend package="joy"/>
+  <depend package="rospy"/>
+
+  <rosdep name="opencv2"/>
+  <rosdep name="eigen"/>
+  <rosdep name="python-numpy" />
+
+</package>
+
+
