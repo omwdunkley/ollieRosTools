@@ -5,6 +5,7 @@
 
 #include "ollieRosTools/PreProcNode.hpp"
 #include <boost/bind.hpp>
+#include <cmath>
 
 
 
@@ -14,25 +15,26 @@ namespace enc = sensor_msgs::image_encodings;
 /// Initialise ROS Node
 PreProcNode::PreProcNode(ros::NodeHandle& _n):
     n(_n),
-    im_transport(_n){
+    imTransport(_n),
+    camInfo(new sensor_msgs::CameraInfo),
+    timeAlpha(0.95),
+    timeAvg(0){
 
 
     /// Subscribe to Topics
-    input_topic = n.resolveName("image");
-    //input_topic = "/image_raw";
-    sub_camera = im_transport.subscribeCamera(input_topic, 1, &PreProcNode::incoming_camera, this);
-    //sub_image = im_transport.subscribe(input_topic, 1, &PreProcNode::incoming_image, this);
+    inputTopic = n.resolveName("image");
+    subImage = imTransport.subscribe(inputTopic, 1, &PreProcNode::incomingImage, this);
 
     /// Publish to Topics
-    pub_imageFlow  = im_transport.advertise("/preproc"+input_topic, 1);
+    pubCamera  = imTransport.advertiseCamera("/preproc"+inputTopic, 1);
     
-/// Dynamic Reconfigure
-    node_on = true;
+    /// Dynamic Reconfigure
+    nodeOn = true;
     dynamic_reconfigure::Server<ollieRosTools::PreProcNode_paramsConfig>::CallbackType f;
     f = boost::bind(&PreProcNode::setParameter, this,  _1, _2);
     srv.setCallback(f);
 
-    ROS_INFO("Starting <%s> node with <%s> as image source", /*ros::this_node::getNamespace().c_str(),*/ ros::this_node::getName().c_str(), input_topic.c_str());
+    ROS_INFO("Starting <%s> node with <%s> as image source", /*ros::this_node::getNamespace().c_str(),*/ ros::this_node::getName().c_str(), inputTopic.c_str());
 }
 
 
@@ -41,97 +43,57 @@ PreProcNode::~PreProcNode() {
 }
 
 
-
-
 /// PINHOLE
-void PreProcNode::incoming_camera(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr& caminfo){
+void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
-    /// Extract frame and time stamps
-    time_s0 = ros::WallTime::now();
-    img_time = msg->header.stamp;
-    img_frame = caminfo->header.frame_id;
+    /// Measure HZ, Processing time, Image acquisation time
+    ros::WallTime time_s0 = ros::WallTime::now();
 
-    if (last_time>img_time){
-        sub_tf.clear();
-        ROS_WARN("Detected negative time jump, resetting TF buffer");
-    }
-    last_time = img_time;
-
-    // Update camera model
-    if (caminfo->distortion_model == ""){
-        sensor_msgs::CameraInfo caminfo2 = *caminfo;
-        caminfo2.distortion_model = "plumb_bob"; //some times thsi data is missing...
-        camModel.fromCameraInfo(caminfo2);
-        frameFactory->updateCameraMatrix(camModel);
-    } else {
-        camModel.fromCameraInfo(caminfo);
-        frameFactory->updateCameraMatrix(camModel);
-    }
-
-
-    /// Extract image and get IMU transform
-    cv::Mat img;
-    if (!getImage(msg, img)){
-        return;
-    }
-
-    /// Create and process frame
-    Frame frame = frameFactory->getFrame(img);
-
-
-    processFrame(frame);
-}
+    if (pubCamera.getNumSubscribers()>0){
 
 
 
+        /// Get CV Image
+        cv_bridge::CvImageConstPtr cvPtr;
+        //cv_bridge::CvImagePtr cvPtr;
+        try {
+            cvPtr = cv_bridge::toCvShare(msg, enc::MONO8);
+            //cvPtr = cv_bridge::toCvCopy(msg, enc::MONO8);
+            //cvPtr = cv_bridge::toCvCopy(msg, enc::BGR8);
+        } catch (cv_bridge::Exception& e) {
+            ROS_ERROR_STREAM_THROTTLE(1,"Failed to understand incoming image:" << e.what());
+            return;
+        }
 
-void PreProcNode::processFrame(Frame& frame){
+        /// PreProcess Frame
+        cv::Mat image = preproc.process(cvPtr->image);
 
-    vo.processFrame(frame);
-    publishAllPoses();
-    publishAllMarkers();
+        /// PTAM Rectification
+        cv::Mat imageRect;
+        camModel.rectify(image, imageRect, camInfo);
 
-    double time_sum = (ros::WallTime::now()-time_s0).toSec();
-    if (pub_imageFlow.getNumSubscribers()>0){
+
+        /// Send out
         cv_bridge::CvImage cvi;
-        cvi.header.stamp = img_time;
-        cvi.header.frame_id = img_frame;
-        cvi.encoding = "bgr8";
-        cvi.image = vo.getFlowImg();
-        time_sum = (ros::WallTime::now()-time_s0).toSec();
-        putInt(cvi.image, time_sum*1000. , cv::Point(10,cvi.image.rows-1*25), CV_RGB(255,20,255), false, "S:");
-        putInt(cvi.image, 1./time_sum , cv::Point(70,cvi.image.rows-1*25), CV_RGB(255,20,255), false, "@","hz");
-        pub_imageFlow.publish(cvi.toImageMsg());
+        cvi.header.stamp = msg->header.stamp;
+        cvi.header.seq = msg->header.seq;
+        cvi.header.frame_id = msg->header.frame_id;
+        cvi.encoding = enc::MONO8;
+        //cvi.encoding = enc::BGR8;
+        cvi.image = imageRect;
+        camInfo->header = cvi.header;
+        pubCamera.publish(cvi.toImageMsg(), camInfo);
+
+        // Compute running average of processing time
+        timeAvg = timeAvg*timeAlpha + (1.0 - timeAlpha)*(ros::WallTime::now()-time_s0).toSec();
+        ROS_INFO_THROTTLE(1, "Processing Time: %.1fms", timeAvg*1000.);
+    } else {
+        //ROS_INFO_THROTTLE(5, "Not processing images as not being listened to");
     }
 
 
 }
 
-
-
-bool PreProcNode::getImage(const sensor_msgs::ImageConstPtr& msg, cv::Mat& img){
-    cv_bridge::CvImagePtr cv_ptr;
-    try {
-        cv_ptr = cv_bridge::toCvCopy(msg, enc::MONO8);
-    } catch (cv_bridge::Exception& e) {
-        ROS_ERROR_STREAM_THROTTLE(1,"Failed to understand incoming image:" << e.what());
-        return false;
-    }
-    img = cv_ptr->image;
-    return true;
-}
-
-bool PreProcNode::getImage(const sensor_msgs::Image& msg, cv::Mat& img){
-    cv_bridge::CvImagePtr cv_ptr;
-    try {
-        cv_ptr = cv_bridge::toCvCopy(msg, enc::MONO8);
-    } catch (cv_bridge::Exception& e) {
-        ROS_ERROR_STREAM_THROTTLE(1,"Failed to understand incoming image:" << e.what());
-        return false;
-    }
-    img = cv_ptr->image;
-    return true;
-}
 
 
 
@@ -140,14 +102,23 @@ bool PreProcNode::getImage(const sensor_msgs::Image& msg, cv::Mat& img){
 ollieRosTools::PreProcNode_paramsConfig&  PreProcNode::setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){
     ROS_INFO("Setting PreProcNode param");
 
-        node_on = config.node_on;
+    /// Turn node on and off when settings change
+    if (nodeOn!=config.nodeOn){
+        nodeOn = config.nodeOn;
+        if (nodeOn){
+            // Node was just turned on
+            subImage = imTransport.subscribe(inputTopic, 1, &PreProcNode::incomingImage, this);
+            ROS_INFO("Node On");
+        } else {
+            // Node was just turned off
+            subImage.shutdown();
+            ROS_INFO("Node Off");
+        }
 
-        config = frameFactory->setParameter(config, level);
-        config = vo.setParameter(config, level);
+    }
 
-        publishAllPoses();
-        publishAllMarkers();
-
-        return config;
+    config = preproc.setParameter(config, level);
+    config = camModel.setParameter(config, level);
+    return config;
 
 }

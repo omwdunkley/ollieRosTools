@@ -21,7 +21,7 @@
 #include <ros/ros.h>
 #include <sensor_msgs/image_encodings.h>
 #include <string>
-#include <ollieRosTools/Aux.hpp>
+#include <ollieRosTools/CameraATAN.hpp>
 /*****************************************************************************
  ** Class
  *****************************************************************************/
@@ -37,35 +37,29 @@ class PreProcNode{
 
 	private:
 
+        /// ROS specific stuff
         ros::NodeHandle& n;
-        image_transport::ImageTransport im_transport;
-        image_transport::Publisher pub_imageFlow;
+        image_transport::ImageTransport imTransport;
+        image_transport::CameraPublisher pubCamera;
+        image_transport::Subscriber subImage;
 
-        ollieRosTools::PreProcNode_paramsConfig config_last;
+        /// Dynamic Reconfigure
+        ollieRosTools::PreProcNode_paramsConfig configLast;
         dynamic_reconfigure::Server<ollieRosTools::PreProcNode_paramsConfig> srv;        
         ollieRosTools::PreProcNode_paramsConfig&  setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level);
 
-
-        std::string input_topic;
-
-        image_transport::CameraSubscriber sub_camera;
-        void incoming_camera(const sensor_msgs::ImageConstPtr& msg, const sensor_msgs::CameraInfoConstPtr& caminfo);
-
-
-        void processFrame(Frame& frame);
-
-        // Helper functions
-        bool getImage(const sensor_msgs::ImageConstPtr& msg, cv::Mat& img);
-        //bool getImage(const sensor_msgs::Image& msg, cv::Mat& img);
-
-        image_geometry::PinholeCameraModel camModel;
-
+        /// Members
+        CameraATAN camModel;
+        sensor_msgs::CameraInfoPtr camInfo;
         PreProc preproc;
-        bool node_on;
+        bool nodeOn;
+        std::string inputTopic;        
+        double timeAlpha;
+        double timeAvg;
 
 
-
-
+        void incomingImage(const sensor_msgs::ImageConstPtr& msg);
+        bool getImage(const sensor_msgs::ImageConstPtr& msg, cv::Mat& img);
 
 
 };

@@ -2,13 +2,13 @@ cmake_minimum_required(VERSION 2.4.6)
 include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 
 FIND_PACKAGE(OpenCV REQUIRED)
-FIND_PACKAGE(Eigen REQUIRED)
+#FIND_PACKAGE(Eigen REQUIRED)
 include_directories(${Eigen_INCLUDE_DIRS})
 
 
-find_package(OpenMP REQUIRED)
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3  -Wall -Wextra -Wunused-variable  -g -msse2 -msse3 -msse4 -ffast-math")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -Wall -Wextra -Wunused-variable -g -msse2 -msse3 -msse4 -ffast-math")
+#find_package(OpenMP REQUIRED)
+#set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3  -Wall -Wextra -Wunused-variable  -g -msse2 -msse3 -msse4 -ffast-math")
+#set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -Wall -Wextra -Wunused-variable -g -msse2 -msse3 -msse4 -ffast-math")
 
 #Boost
 rosbuild_add_boost_directories()
@@ -20,7 +20,7 @@ rosbuild_add_boost_directories()
 #  Release        : w/o debug symbols, w/ optimization
 #  RelWithDebInfo : w/ debug symbols, w/ optimization
 #  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-#set(ROS_BUILD_TYPE RelWithDebInfo)
+set(ROS_BUILD_TYPE RelWithDebInfo)
 
 rosbuild_init()
 set(CMAKE_VERBOSE_MAKEFILE TRUE)
@@ -60,10 +60,9 @@ set(PREPROC_LIBRARIES
 SET(PREPROC_FILES     
     src/mainPreProc.cpp     
     src/PreProc.cpp 
-    src/OCam.cpp
     src/PreProcNode.cpp
-    src/Aux.cpp
-    src/CameraModel.cpp
+    #src/Aux.cpp
+    src/CameraATAN.cpp
 
 )	
 

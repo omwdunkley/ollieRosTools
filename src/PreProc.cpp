@@ -1,4 +1,4 @@
-#include "ollie_vo/PreProc.hpp"
+#include "ollieRosTools/PreProc.hpp"
 
 
 
@@ -8,18 +8,18 @@ PreProc::PreProc(){
     doEqualise = false;
     doDeinterlace = false;
     doPreprocess = false;
-    smoother_nr = -1;
+    smootherNr = -1;
     k=1;
     kSize = cv::Size(k,k);
     sigmaX = 1;
     sigmaY = 1;
-    frameNr = 0;
+    recomputeLUT(0.0, 0.0);
 
 }
 
 
 cv::Mat PreProc::deinterlaceCut(const cv::Mat& in, const bool even) const {
-    //O(1)
+    /// Return an image with either the even or the odd rows missing
     cv::Mat out = in.reshape(0,in.rows/2);
     if (even){
         out = out.colRange(0,out.cols/2);
@@ -39,30 +39,10 @@ cv::Mat PreProc::deinterlace(const cv::Mat& in, const int interpolation) const {
     return out;
 }
 
-
-cv::Mat PreProc::deinterlaceJakob(const cv::Mat& in) const {
-    cv::Mat uneven = in;
-
-    /// JAKOB CODE
-    const int step = uneven.step;
-    const int w = in.cols;
-    const int h = in.rows;
-    // border condition
-    memcpy(uneven.data, uneven.data+step, step);	// in uneven: 0'th row is clone of 1'th row.
-
-    for(int i=0;i<h/2-1;i++){
-        for(int j=0;j<w;j++){
-            // even: (2i+1)'th row = mean(2i, 2i+2)
-            uneven.data[j + step*(2*i+2)] = ((int)uneven.data[j + step*(2*i+1)] + (int)uneven.data[j + step*(2*i+3)]) >> 1;
-        }
-    }
-    return uneven;
-}
-
 cv::Mat PreProc::preprocess(const cv::Mat& in) const {
     cv::Mat out;
 
-    switch(smoother_nr){
+    switch(smootherNr){
     case -1: /* OFF */
         out = in;
         break; // No smoothing
@@ -85,7 +65,8 @@ cv::Mat PreProc::preprocess(const cv::Mat& in) const {
 
 
 
-void PreProc::process(const cv::Mat& in, cv::Mat& out) const {
+cv::Mat PreProc::process(const cv::Mat& in) const {
+    cv::Mat out;
     /// Interlacing
     switch(doDeinterlace){
     case -2:
@@ -98,9 +79,6 @@ void PreProc::process(const cv::Mat& in, cv::Mat& out) const {
     case 4:
         out = deinterlace(in, doDeinterlace);
         break;
-    case 5: // Replace odd rows with even ones
-        out = deinterlaceJakob(in);
-        break;
     default:// Leave as is
         out = in;
         break;
@@ -108,8 +86,19 @@ void PreProc::process(const cv::Mat& in, cv::Mat& out) const {
 
 
     /// Equalisation
-    if (doEqualise){
-        cv::equalizeHist( out, out );
+    switch(doEqualise){
+    case -2:
+        cv::equalizeHist(out, out);
+        break;
+    case 0:
+    case 1:
+    case 2:
+    case 3:
+    case 4:
+        cv::LUT(out, lut, out, doEqualise);
+        break;
+    default:// Leave as is
+        break;
     }
 
     /// Smoothing/Filtering
@@ -117,22 +106,49 @@ void PreProc::process(const cv::Mat& in, cv::Mat& out) const {
          out = preprocess(out);
     }
 
-
+    return out;
 }
 
-ollie_vo::VoNode_paramsConfig& PreProc::setParameter(ollie_vo::VoNode_paramsConfig &config, uint32_t level){
+void PreProc::recomputeLUT(const float brightness, const float contrast){
+    lut = cv::Mat (1, 256, CV_8U);
+
+    if( contrast > 0 ) {
+        const double delta = 127.*contrast;
+        const double a = 255./(255. - delta*2);
+        const double b = a*(brightness*100 - delta);
+        for (int i = 0; i < 256; ++i ) {
+            int v = round(a*i + b);
+            if(v < 0)   v = 0;
+            if(v > 255) v = 255;
+            lut.at<uchar>(i) = static_cast<uchar>(v);
+        }
+    }else{
+        const double delta = -128.*contrast;
+        const double a = (256.-delta*2)/255.;
+        const double b = a*brightness*100. + delta;
+        for (int i = 0; i < 256; ++i ) {
+            int v = round(a*i + b);
+            if (v < 0)   v = 0;
+            if (v > 255) v = 255;
+            lut.at<uchar>(i) = static_cast<uchar>(v);
+        }
+    }
+}
 
 
-    smoother_nr = config.doPreprocess;
-    doPreprocess = smoother_nr >=0;
+ollieRosTools::PreProcNode_paramsConfig& PreProc::setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){
+    smootherNr = config.doPreprocess;
+    doPreprocess = smootherNr >=0;
     doDeinterlace = config.doDeinterlace;
     doEqualise = config.doEqualise;
+    recomputeLUT(config.brightness, config.contrast);
+
 
     // Smoothing stuff
-    k = config.PreProc_kernel*2+1;
+    k = config.kernelSize*2+1;
     kSize = cv::Size(k,k);
-    sigmaX = config.PreProc_SigX;
-    sigmaY = config.PreProc_SigY;
+    sigmaX = config.sigmaX;
+    sigmaY = config.sigmaY;
 
     return config;
 }
