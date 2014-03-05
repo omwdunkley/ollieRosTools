@@ -86,6 +86,8 @@ cv::Mat PreProc::process(const cv::Mat& in) const {
 
 
     /// Equalisation
+    // BUG: opencv does not support case 1-4, ie the interpolation method specified by doEqualise must be 0.
+    //      For now the user case 1-4 defaults to case 0, thanks to the dynamic_reconfigure settings
     switch(doEqualise){
     case -2:
         cv::equalizeHist(out, out);
@@ -110,6 +112,7 @@ cv::Mat PreProc::process(const cv::Mat& in) const {
 }
 
 void PreProc::recomputeLUT(const float brightness, const float contrast){
+    /// Recomputes the brightness/contrast look up table. Maps intensity values 0-255 to 0-255
     lut = cv::Mat (1, 256, CV_8U);
 
     if( contrast > 0 ) {
@@ -118,8 +121,12 @@ void PreProc::recomputeLUT(const float brightness, const float contrast){
         const double b = a*(brightness*100 - delta);
         for (int i = 0; i < 256; ++i ) {
             int v = round(a*i + b);
-            if(v < 0)   v = 0;
-            if(v > 255) v = 255;
+            if(v < 0){
+                v = 0;
+            }
+            if(v > 255){
+                v = 255;
+            }
             lut.at<uchar>(i) = static_cast<uchar>(v);
         }
     }else{
@@ -128,8 +135,12 @@ void PreProc::recomputeLUT(const float brightness, const float contrast){
         const double b = a*brightness*100. + delta;
         for (int i = 0; i < 256; ++i ) {
             int v = round(a*i + b);
-            if (v < 0)   v = 0;
-            if (v > 255) v = 255;
+            if (v < 0){
+                v = 0;
+            }
+            if (v > 255){
+                v = 255;
+            }
             lut.at<uchar>(i) = static_cast<uchar>(v);
         }
     }

@@ -7,8 +7,6 @@
 #include <boost/bind.hpp>
 #include <cmath>
 
-
-
 namespace enc = sensor_msgs::image_encodings;
 
 
@@ -26,6 +24,12 @@ PreProcNode::PreProcNode(ros::NodeHandle& _n):
 
     /// Publish to Topics
     pubCamera  = imTransport.advertiseCamera("/preproc"+inputTopic, 1);
+
+    colors[-1] = ""; //passthrough
+    colors[ 0] = enc::BGR8;
+    colors[ 1] = enc::RGB8;
+    colors[ 2] = enc::MONO8;
+    colors[ 3] = enc::YUV422;
     
     /// Dynamic Reconfigure
     nodeOn = true;
@@ -45,18 +49,17 @@ PreProcNode::~PreProcNode() {
 /// PINHOLE
 void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
-    /// Measure HZ, Processing time, Image acquisation time
-    ros::WallTime time_s0 = ros::WallTime::now();
-
     if (pubCamera.getNumSubscribers()>0){
 
-
+        /// Measure HZ, Processing time, Image acquisation time
+        ros::WallTime time_s0 = ros::WallTime::now();
 
         /// Get CV Image
         cv_bridge::CvImageConstPtr cvPtr;
         //cv_bridge::CvImagePtr cvPtr;
         try {
-            cvPtr = cv_bridge::toCvShare(msg, enc::MONO8);
+            //cvPtr = cv_bridge::toCvShare(msg, enc::MONO8);
+            cvPtr = cv_bridge::toCvShare(msg, colors[colorId]);
             //cvPtr = cv_bridge::toCvCopy(msg, enc::MONO8);
             //cvPtr = cv_bridge::toCvCopy(msg, enc::BGR8);
         } catch (cv_bridge::Exception& e) {
@@ -78,8 +81,8 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         cvi.header.stamp = msg->header.stamp;
         cvi.header.seq = msg->header.seq;
         cvi.header.frame_id = msg->header.frame_id;
-        cvi.encoding = enc::MONO8;
-        //cvi.encoding = enc::BGR8;
+        //cvi.encoding = enc::MONO8;
+        cvi.encoding = colors[colorId];
         cvi.image = imageRect;
         camInfoPtr->header = cvi.header;
         pubCamera.publish(cvi.toImageMsg(), camInfoPtr);
@@ -90,7 +93,6 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     } else {
         //ROS_INFO_THROTTLE(5, "Not processing images as not being listened to");
     }
-
 
 }
 
@@ -117,6 +119,7 @@ ollieRosTools::PreProcNode_paramsConfig&  PreProcNode::setParameter(ollieRosTool
 
     }
 
+    colorId = config.color;
     config = preproc.setParameter(config, level);
     config = camModel.setParameter(config, level);
     return config;

@@ -22,6 +22,7 @@
 #include <sensor_msgs/image_encodings.h>
 #include <string>
 #include <ollieRosTools/CameraATAN.hpp>
+#include <map>
 /*****************************************************************************
  ** Class
  *****************************************************************************/
@@ -55,7 +56,8 @@ class PreProcNode{
         std::string inputTopic;        
         double timeAlpha;
         double timeAvg;
-
+        std::map<int, std::string> colors;
+        int colorId;
 
         void incomingImage(const sensor_msgs::ImageConstPtr& msg);
         bool getImage(const sensor_msgs::ImageConstPtr& msg, cv::Mat& img);

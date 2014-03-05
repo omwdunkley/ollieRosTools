@@ -1,14 +1,12 @@
 #ifndef CAMERAATAN_HPP
 #define CAMERAATAN_HPP
-
 #include <sensor_msgs/CameraInfo.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <ollieRosTools/PreProcNode_paramsConfig.h>
 
-
 /**
   * Implements the ATAN camera model. For similar notation and more information see:
-  * Straight Lines Have to Be Straight (2001) by Frédéric Devernay and Olivier Faugeras
+  * 'Straight Lines Have to Be Straight' (2001) by Frédéric Devernay and Olivier Faugeras
   */
 
 class CameraATAN {
@@ -29,7 +27,7 @@ class CameraATAN {
             interpolation(1),
             outSizeIsInSize(true)
         {
-            //initialise(); // Now initialised on first input image
+            //initialise(); // Now we initialise on first input image instead of here
         }
 
 
@@ -38,7 +36,6 @@ class CameraATAN {
 
             // Check input image size vs previous size. Initial previous size is -1,
             // so this forces an update the first time this function is called
-
             if (imgIn.cols != inWidth || imgIn.rows != inHeight){
                 inWidth  = imgIn.cols;
                 inHeight = imgIn.rows;
@@ -47,13 +44,18 @@ class CameraATAN {
                     outWidth = inWidth;
                     outHeight = inHeight;
                 }
+                // First imaged receiver -> we have a size -> we can init
                 initialise();
             }
 
+
             if (interpolation>=0){
+                // Interpolate
                 cv::remap(imgIn, imgOut, rect_mapx, rect_mapy, interpolation);
             } else {
-                imgIn.copyTo(imgOut);
+                // Skip, just copy header
+                imgOut = imgIn;
+                //imgIn.copyTo(imgOut);
             }
             camInfo = infoMsgPtr;
 
@@ -61,10 +63,13 @@ class CameraATAN {
 
 
         ollieRosTools::PreProcNode_paramsConfig& setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){
+            /// Update the settings use roy dynamic reconfigure
+
             outZoom = config.zoomFactor;
             interpolation = config.PTAMRectify;           
             outSizeIsInSize = config.sameOutInSize;
 
+            // Use image size as outsize if we do not allow manual size setting
             if (outSizeIsInSize){
                 outWidth = inWidth;
                 outHeight = inHeight;
@@ -75,7 +80,7 @@ class CameraATAN {
 
             zoomType = static_cast<ZoomType>(config.zoom);
 
-
+            // PTAM params
             fx = config.fx;
             fy = config.fy;
             cx = config.cx;
@@ -93,9 +98,10 @@ class CameraATAN {
 
 
     private:
+        // Keep track of zoom types. This has to match the order of zoom_enum defined in PreProcNode_params.cfg
         enum ZoomType { NOZOOM, FULL_MAX, FULL_MIN, CROP, MANUAL };
 
-        // Warping matricies, precomputed using PTAM paramters
+        // Warping matricies, precomputed using PTAM paramters after every settings change
         cv::Mat rect_mapx, rect_mapy;
 
         // Camera_info that gets sent with the rectified image.
@@ -107,22 +113,21 @@ class CameraATAN {
         // Set according to imcoming images
         int inWidth, inHeight;
 
-        // User changeable variables
+        /// User changeable variables
         // Rectified image size
         int outWidth, outHeight;
-        // Rectified image scale
+
+        // Rectified image scale and scale method
         double outZoom;
         ZoomType zoomType;
         // interpolation method
         int interpolation;
+        // Allow resize or not
         bool outSizeIsInSize;
 
 
         void initialise(){
             /// Depending on the incoming image size, outgoing image size/zoom, update the camera_info message and then precompute the warping matrices
-
-
-
 
             // Input parameters
             const double d2t = 2.0 * tan(fov / 2.0); // equation (13) inner part [see reference at top]
@@ -135,7 +140,7 @@ class CameraATAN {
             double ofx, ofy, ocx, ocy;
 
             if (zoomType == NOZOOM){
-                /// Dont apply any zoom, just use the input and output image sizes
+                /// Dont apply any zoom, just use the output image size. This does not pan or change the aspect ratio either.
                 ROS_INFO("Initialising calibration: No Zoom");
                 ofx = fx * outWidth;
                 ofy = fy * outHeight;
@@ -200,7 +205,7 @@ class CameraATAN {
 
             } else if (zoomType == CROP){
                 ROS_INFO("Initialising calibration: Zoom Crop");
-                /// Zoom and pan so the whole output image is valid. Might crop sides of image depending on distortion
+                /// Zoom, pan and stretch so the whole output image is valid. Might crop sides of image depending on distortion
                 // find left-most and right-most radius
                 double radL = (icx)/ifx;
                 double radR = (inWidth-1 - icx)/ifx;
@@ -221,6 +226,7 @@ class CameraATAN {
 
 
             } else { //if (zoomType == MANUAL){
+                /// Just manual scale, no panning
                 ROS_INFO("Initialising calibration: Manual Zoom: %.2f", outZoom);
                 ofx = fx * outWidth  * outZoom;
                 ofy = fy * outHeight * outZoom;
@@ -257,18 +263,18 @@ class CameraATAN {
             infoMsg.R.at(8) = 1;
 
             // Intrinsic camera matrix for the raw (distorted) image
-            infoMsg.K.at(0) = ifx;
-            infoMsg.K.at(4) = ify;
+            infoMsg.K.at(0) = ofx;
+            infoMsg.K.at(4) = ofy;
             infoMsg.K.at(8) = 1;
-            infoMsg.K.at(2) = icx;
-            infoMsg.K.at(5) = icy;
+            infoMsg.K.at(2) = ocx;
+            infoMsg.K.at(5) = ocy;
 
             // Projection/camera matrix that specifies the intrinsic (camera) matrix of the processed (rectified) image
-            infoMsg.P.at(0) = ifx;
-            infoMsg.P.at(5) = ify;
+            infoMsg.P.at(0) = ofx;
+            infoMsg.P.at(5) = ofy;
             infoMsg.P.at(10) = 1;
-            infoMsg.P.at(2) = icx;
-            infoMsg.P.at(6) = icy;
+            infoMsg.P.at(2) = ocx;
+            infoMsg.P.at(6) = ocy;
 
             // The distortion parameters
             infoMsg.D.clear();
@@ -278,19 +284,15 @@ class CameraATAN {
             infoMsg.D.push_back(0);
             infoMsg.D.push_back(0);
 
+            // Update infoMsgPtr, passed by reference
             infoMsgPtr = sensor_msgs::CameraInfoPtr(new sensor_msgs::CameraInfo(infoMsg));
 
             ROS_INFO("   Input [%dpx*%dpx (%.3f)] Output: [%dpx*%dpx (%.3f)]",
                      inWidth, inHeight, static_cast<float>(inWidth)/inHeight,
                      outWidth, outHeight, static_cast<float>(outWidth)/outHeight);
-
-            ROS_INFO("   ATAN MODEL:  F: [%.1f, %.1f, (%.3f)] C: [%.1f, %.1f]", ofx, ofy, ofx/ofy, ocx, ocy);
+            ROS_INFO("   NEW MODEL:  Focal: [%.1f, %.1f] Center: [%.1f, %.1f]", ofx, ofy, ocx, ocy);
 
         }
-
-
-
-
 
 };
 
