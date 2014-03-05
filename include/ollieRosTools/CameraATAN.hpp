@@ -93,7 +93,7 @@ class CameraATAN {
 
 
     private:
-        enum ZoomType { NOZOOM, FULL, CROP, MANUAL };
+        enum ZoomType { NOZOOM, FULL_MAX, FULL_MIN, CROP, MANUAL };
 
         // Warping matricies, precomputed using PTAM paramters
         cv::Mat rect_mapx, rect_mapy;
@@ -142,10 +142,10 @@ class CameraATAN {
                 ocx = cx * outWidth  - 0.5;
                 ocy = cy * outHeight - 0.5;
 
-            } else if (zoomType == FULL){
-                /// Zoom so the furthest vertical/horizontal valid part of the image is also present.
-                /// This might still crop the extremly distroted corners
-                ROS_INFO("Initialising calibration: Zoom Full");
+            } else if (zoomType == FULL_MAX || zoomType == FULL_MIN){
+                /// Zoom and pan so the furthest vertical/horizontal valid part of the image is also present.
+                /// If zoomType == FULL_MIN, This might still crop the extremly distorted corners
+
 
                 // Find radii to each side
                 const double radL = icx/ifx;
@@ -160,27 +160,47 @@ class CameraATAN {
                 const double radBR = sqrt(pow(radB, 2) + pow(radR, 2));
 
                 // Radii to each undistored corner: equation (14) inverse distortion function [see reference at top]
-                const double invTL = tan(radTL * fov)/d2t;
-                const double invTR = tan(radTR * fov)/d2t;
-                const double invBL = tan(radBL * fov)/d2t;
-                const double invBR = tan(radBR * fov)/d2t;
+                double invTL = tan(radTL * fov)/d2t * outZoom;
+                double invTR = tan(radTR * fov)/d2t * outZoom;
+                double invBL = tan(radBL * fov)/d2t * outZoom;
+                double invBR = tan(radBR * fov)/d2t * outZoom;
 
-                // std::maximum distorted
-                double hor  = std::max(radBR, radTR) + std::max(radBL, radTL);
-                double vert = std::max(radTR, radTL) + std::max(radBL, radBR);
-                // std::maximum undistroted
-                double invHor  = std::max(invBR, invTR) + std::max(invBL, invTL);
-                double invVert = std::max(invTR, invTL) + std::max(invBL, invBR);
+                double hor, vert, invHor, invVert;
+                if (zoomType == FULL_MIN){
+                    ROS_INFO("Initialising calibration: Zoom Full Min");
+                    // std::maximum distorted
+                    hor  =  std::min(std::min(radBR, radTR), std::min(radBL, radTL));
+                    vert =  std::min(std::min(radTR, radTL), std::min(radBL, radBR));
+                    // std::maximum undistroted
+                    invHor  = std::min(std::min(invBR, invTR), std::min(invBL, invTL));
+                    invVert = std::min(std::min(invTR, invTL), std::min(invBL, invBR));
 
-                // Ratios define output
-                ofx = ifx * ((hor ) / (invHor )) * ((double)outWidth /(double)inWidth );
-                ofy = ify * ((vert) / (invVert)) * ((double)outHeight/(double)inHeight);
-                ocx = std::max(invBL/radBL, invTL/radTL)*ofx*icx/ifx;
-                ocy = std::max(invTL/radTL, invTR/radTR)*ofy*icy/ify;
+                    // Ratios define output
+                    ofx = ifx * ((hor ) / (invHor )) * ((double)outWidth /(double)inWidth );
+                    ofy = ify * ((vert) / (invVert)) * ((double)outHeight/(double)inHeight);
+                    ocx = invHor/hor*ofx/ifx*icx;
+                    ocy = invVert/vert*ofy/ify*icy;
+                } else {
+                    ROS_INFO("Initialising calibration: Zoom Full Max");
+                    // std::maximum distorted
+                    hor  = std::max(radBR, radTR) + std::max(radBL, radTL);
+                    vert = std::max(radTR, radTL) + std::max(radBL, radBR);
+                    // std::maximum undistroted
+                    invHor  = std::max(invBR, invTR) + std::max(invBL, invTL);
+                    invVert = std::max(invTR, invTL) + std::max(invBL, invBR);
+
+                    // Ratios define output
+                    ofx = ifx * ((hor ) / (invHor )) * ((double)outWidth /(double)inWidth );
+                    ofy = ify * ((vert) / (invVert)) * ((double)outHeight/(double)inHeight);
+                    ocx = std::max(invBL/radBL, invTL/radTL)*ofx/ifx*icx;
+                    ocy = std::max(invTL/radTL, invTR/radTR)*ofy/ify*icy;
+                }
+
+
 
             } else if (zoomType == CROP){
                 ROS_INFO("Initialising calibration: Zoom Crop");
-                /// Zoom so the whole output image is valid. Might crop sides of image depending on distortion
+                /// Zoom and pan so the whole output image is valid. Might crop sides of image depending on distortion
                 // find left-most and right-most radius
                 double radL = (icx)/ifx;
                 double radR = (inWidth-1 - icx)/ifx;
@@ -188,16 +208,16 @@ class CameraATAN {
                 double radB = (inHeight-1 - icy)/ify;
 
                 // Undisorted radii to each side
-                double invL = tan(radL * fov)/d2t;
-                double invR = tan(radR * fov)/d2t;
-                double invT = tan(radT * fov)/d2t;
-                double invB = tan(radB * fov)/d2t;
+                double invL = tan(radL * fov)/d2t* outZoom;
+                double invR = tan(radR * fov)/d2t* outZoom;
+                double invT = tan(radT * fov)/d2t* outZoom;
+                double invB = tan(radB * fov)/d2t* outZoom;
 
                 // Ratios define output
                 ofx = ifx * ((radL + radR) / (invL + invR)) * ((double)outWidth /(double)inWidth);
                 ofy = ify * ((radT + radB) / (invT + invB)) * ((double)outHeight/(double)inHeight);
-                ocx = (invL/radL)*ofx*icx/ifx;
-                ocy = (invT/radT)*ofy*icy/ify;
+                ocx = (invL/radL)*ofx/ifx*icx;
+                ocy = (invT/radT)*ofy/ify*icy;
 
 
             } else { //if (zoomType == MANUAL){
