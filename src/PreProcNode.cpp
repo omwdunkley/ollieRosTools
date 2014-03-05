@@ -16,7 +16,6 @@ namespace enc = sensor_msgs::image_encodings;
 PreProcNode::PreProcNode(ros::NodeHandle& _n):
     n(_n),
     imTransport(_n),
-    camInfo(new sensor_msgs::CameraInfo),
     timeAlpha(0.95),
     timeAvg(0){
 
@@ -70,7 +69,8 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
         /// PTAM Rectification
         cv::Mat imageRect;
-        camModel.rectify(image, imageRect, camInfo);
+        sensor_msgs::CameraInfoPtr camInfoPtr;
+        camModel.rectify(image, imageRect, camInfoPtr);
 
 
         /// Send out
@@ -81,8 +81,8 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         cvi.encoding = enc::MONO8;
         //cvi.encoding = enc::BGR8;
         cvi.image = imageRect;
-        camInfo->header = cvi.header;
-        pubCamera.publish(cvi.toImageMsg(), camInfo);
+        camInfoPtr->header = cvi.header;
+        pubCamera.publish(cvi.toImageMsg(), camInfoPtr);
 
         // Compute running average of processing time
         timeAvg = timeAvg*timeAlpha + (1.0 - timeAlpha)*(ros::WallTime::now()-time_s0).toSec();

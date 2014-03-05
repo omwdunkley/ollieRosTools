@@ -50,7 +50,6 @@ class PreProcNode{
 
         /// Members
         CameraATAN camModel;
-        sensor_msgs::CameraInfoPtr camInfo;
         PreProc preproc;
         bool nodeOn;
         std::string inputTopic;        
