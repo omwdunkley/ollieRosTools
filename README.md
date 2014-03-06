@@ -26,9 +26,15 @@ This plays the bag file in a loop, allowing you to play with different options a
 
 ###### Using a camera
 To run the example with a live camera, you will need to do the following:
+<<<<<<< Updated upstream
 
 ```roslauch ollieRosTools testCam.launch cam:=0```
 
+=======
+
+```roslauch ollieRosTools testCam.launch cam:=0```
+
+>>>>>>> Stashed changes
 Make sure you change the video device number ```cam:=0``` to your corresponding one.
 
 #### Deinterlacing
@@ -50,3 +56,7 @@ Make sure you change the video device number ```cam:=0``` to your corresponding 
 ###### Intensity Normalisation
 
 
+<<<<<<< Updated upstream
+=======
+
+>>>>>>> Stashed changes

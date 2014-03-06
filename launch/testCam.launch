@@ -13,6 +13,8 @@
     <arg name="NAME"   default="cf/cam" />
     <arg name="FRAME"  default="cam"/>
 
+    <arg name="use_sim_time" value="false"/>
+
 
     <!-- GS CAM -->
     <env name="GSCAM_CONFIG" value="v4l2src device=$(arg DEVICE) ! video/x-raw-yuv,format=\(fourcc\)YUY2,width=720,height=576,framerate=$(arg FPS) ! ffmpegcolorspace " />
