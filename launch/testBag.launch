@@ -1,0 +1,30 @@
+<launch>
+    <!-- INTRO -->
+    <!-- This launch file streams images from a file, -->
+    <!-- starts a PreProcessing node that does preprocessing/filtering/etc and optionally does PTAM -->
+    <!-- rectification, starts a dynamic reconfigure gui and rviz to view the rectified image as  -->
+    <!-- a camera. Some static transform publishers are needed to link various TF frames  -->
+    
+    <arg name="use_sim_time" value="true"/>
+    <param name="use_sim_time" value="$(arg use_sim_time)" />
+    
+
+    <!-- ROS BAG -->    
+    <node pkg="rosbag" type="play" name="rosbag_play" args="$(find ollieRosTools)/launch/data/example.bag --clock --loop" required="true" />   
+
+
+    <!-- OPTIONS -->
+    <arg name="NAME"   value="cf/cam" />
+    <arg name="FRAME"  default="cam"/>
+    
+
+    <!-- EVERYTHING ELSE -->
+    <include file="$(find ollieRosTools)/launch/testNoVid.launch">
+        <arg name="NAME" value="$(arg NAME)" />
+        <arg name="FRAME" value="$(arg FRAME)" />
+        <arg name="use_sim_time" value="$(arg use_sim_time)"/>
+    </include>
+ 
+
+
+</launch>

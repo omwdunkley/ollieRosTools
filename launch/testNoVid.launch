@@ -1,0 +1,34 @@
+<launch>
+    <!-- INTRO -->
+    <!-- Starts a PreProcessing node that does preprocessing/filtering/etc and optionally does PTAM -->
+    <!-- rectification, starts a dynamic reconfigure gui and rviz to view the rectified image as  -->
+    <!-- a camera. Some static transform publishers are needed to link various TF frames  -->
+    
+    <arg name="NAME" />
+    <arg name="FRAME" />
+    <arg name="use_sim_time" default="false"/>
+    <param name="use_sim_time" value="$(arg use_sim_time)" />
+
+    <!-- PREPROCESS and RECTIFY NODE -->
+    <node pkg="ollieRosTools" type="preproc" name="preproc" output="screen" >
+        <remap from="image" to="$(arg NAME)/image_raw" />
+    </node>
+
+
+    <!-- STATIC TRANSFORM PUBLISHERS -->
+    <!-- Quadrotor frame to camera frame. Object: x forward, y left, z up; Camera: Z forward (optical axis), x right, y down -->
+    <node name="cam_transform" pkg="tf" type="static_transform_publisher" args="0 0 0 1.57 3.14 1.57 /cf_q $(arg FRAME) 10"/>
+    <!-- World frame to camera frame, just for visualisation purposes within rviz -->
+    <node name="world_transform" pkg="tf" type="static_transform_publisher" args="0 0 1 0 0 0 /world /cf_q 10"/>
+
+    
+    <!-- OPEN RVIZ -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find ollieRosTools)/launch/data/testRviz.rviz" respawn="false" />    
+    
+    
+    <!-- DYNAMIC RECONFIGURE -->    
+    <node name="reconfigure_gui" pkg="crazyflieROS" type="reconfigure_gui" respawn="false"/>
+ 
+
+
+</launch>
