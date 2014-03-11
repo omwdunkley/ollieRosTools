@@ -6,6 +6,7 @@ PreProc::PreProc(){
 
     // DEFAULT VALUES
     doEqualise = false;
+    doEqualiseColor = true;
     doDeinterlace = false;
     doPreprocess = false;
     smootherNr = -1;
@@ -90,7 +91,28 @@ cv::Mat PreProc::process(const cv::Mat& in) const {
     //      For now the user case 1-4 defaults to case 0, thanks to the dynamic_reconfigure settings
     switch(doEqualise){
     case -2:
-        cv::equalizeHist(out, out);
+        if(out.channels() >= 3){
+            if (doEqualiseColor){
+                // Equalise each colour channel
+                std::vector<cv::Mat> channels;
+                split(out,channels);
+                cv::equalizeHist(channels[0], channels[0]);
+                cv::equalizeHist(channels[1], channels[1]);
+                cv::equalizeHist(channels[2], channels[2]);
+                cv::merge(channels,out);
+            } else {
+                // Convert to different color space and equalise the intensities only
+                cv::Mat ycrcb;
+                cv::cvtColor(out,ycrcb,CV_BGR2YCrCb);
+                std::vector<cv::Mat> channels;
+                split(ycrcb,channels);
+                cv::equalizeHist(channels[0], channels[0]);
+                cv::merge(channels,ycrcb);
+                cv::cvtColor(ycrcb,out,CV_YCrCb2BGR);
+            }
+        }  else {
+            cv::equalizeHist(out, out);
+        }
         break;
     case 0:
     case 1:
@@ -152,6 +174,7 @@ ollieRosTools::PreProcNode_paramsConfig& PreProc::setParameter(ollieRosTools::Pr
     doPreprocess = smootherNr >=0;
     doDeinterlace = config.doDeinterlace;
     doEqualise = config.doEqualise;
+    doEqualiseColor = config.doEqualiseColor;
     recomputeLUT(config.brightness, config.contrast);
 
 

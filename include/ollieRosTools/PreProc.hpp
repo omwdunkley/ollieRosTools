@@ -32,6 +32,7 @@ private:
     int doDeinterlace;
     bool doPreprocess;
     int doEqualise;
+    bool doEqualiseColor;
     bool nodeOn;
 
     // Smoothing variables

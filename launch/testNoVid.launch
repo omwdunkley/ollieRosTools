@@ -10,7 +10,7 @@
     <param name="use_sim_time" value="$(arg use_sim_time)" />
 
     <!-- PREPROCESS and RECTIFY NODE -->
-    <node pkg="ollieRosTools" type="preproc" name="preproc" output="screen" >
+    <node pkg="ollieRosTools" type="preproc" name="PreProcessingNode" output="screen" >
         <remap from="image" to="$(arg NAME)/image_raw" />
     </node>
 

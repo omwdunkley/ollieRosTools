@@ -1,0 +1,51 @@
+<launch>
+    <!-- INTRO -->
+    <!-- This launch file streams camera images from /dev/videoX where X is given as cam:=X, -->
+    <!-- starts a PreProcessing node that does preprocessing/filtering/etc and optionally does PTAM -->
+    <!-- rectification, starts a dynamic reconfigure gui and rviz to view the rectified image as  -->
+    <!-- a camera. Some static transform publishers are needed to link various TF frames  -->
+    
+
+    <!-- OPTIONS -->
+    <arg name="cam"/>
+    <arg name="DEVICE" default="/dev/video$(arg cam)"/>
+    <arg name="FPS"    default="25/1"/>
+    <arg name="NAME"   default="cf/cam" />
+    <arg name="FRAME"  default="cam"/>
+
+    <arg name="use_sim_time" value="false"/>
+
+
+    <!-- GS CAM -->
+    <env name="GSCAM_CONFIG" value="v4l2src device=$(arg DEVICE) ! video/x-raw-yuv,format=\(fourcc\)YUY2,width=720,height=576,framerate=$(arg FPS) ! ffmpegcolorspace " />
+    <node pkg="gscam" type="gscam" name="gscam" required="true" output="screen">
+        <param name="camera_name" value="$(arg NAME)" />
+        <!-- param name="camera_info_url" value="package://gscam/examples/uncalibrated_parameters.ini" / -->
+        <param name="frame_id" value="$(arg FRAME)"/>
+        <param name="sync_sink" value="true"/>
+        <remap from="camera/image_raw" to="$(arg NAME)/image_raw" />
+    </node>
+
+
+    <!-- PREPROCESS and RECTIFY NODE -->
+    <node pkg="ollieRosTools" type="preproc" name="preproc" output="screen" >
+        <remap from="image" to="$(arg NAME)/image_raw" />
+    </node>
+
+
+    <!-- STATIC TRANSFORM PUBLISHERS -->
+    <!-- Quadrotor frame to camera frame. Object: x forward, y left, z up; Camera: Z forward (optical axis), x right, y down -->
+    <node name="cam_transform" pkg="tf" type="static_transform_publisher" args="0 0 0 1.57 3.14 1.57 /cf $(arg FRAME) 10"/>
+    <!-- World frame to camera frame, just for visualisation purposes within rviz -->
+    <node name="world_transform" pkg="tf" type="static_transform_publisher" args="0 0 1 0 0 0 /world /cf_xyz 10"/>
+
+    
+    <!-- OPEN RVIZ -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find ollieRosTools)/launch/data/testRviz.rviz" respawn="false" />    
+    
+    
+    <!-- DYNAMIC RECONFIGURE -->    
+    <node name="reconfigure_gui" pkg="crazyflieROS" type="reconfigure_gui" respawn="false"/>
+ 
+
+</launch>
