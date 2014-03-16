@@ -37,7 +37,7 @@ private:
 
     // Smoothing variables
     int smootherNr;
-    double sigmaX, sigmaY;
+    float sigmaX, sigmaY;
     cv::Size kSize;
     int k;
 

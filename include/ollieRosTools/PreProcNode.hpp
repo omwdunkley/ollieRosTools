@@ -19,6 +19,11 @@
 #include <opencv2/opencv.hpp>
 #include <ros/package.h>
 #include <ros/ros.h>
+#include <tf/transform_broadcaster.h>
+
+#include <tf/transform_listener.h>
+
+
 #include <sensor_msgs/image_encodings.h>
 #include <string>
 #include <ollieRosTools/CameraATAN.hpp>
@@ -43,6 +48,8 @@ class PreProcNode{
         image_transport::ImageTransport imTransport;
         image_transport::CameraPublisher pubCamera;
         image_transport::Subscriber subImage;
+        tf::TransformBroadcaster pubTF;
+        tf::TransformListener subTF;
 
         /// Dynamic Reconfigure
         ollieRosTools::PreProcNode_paramsConfig configLast;
@@ -54,8 +61,8 @@ class PreProcNode{
         PreProc preproc;
         bool nodeOn;
         std::string inputTopic;        
-        double timeAlpha;
-        double timeAvg;
+        float timeAlpha;
+        float timeAvg;
         std::map<int, std::string> colors;
         int colorId;
 

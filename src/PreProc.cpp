@@ -119,7 +119,24 @@ cv::Mat PreProc::process(const cv::Mat& in) const {
     case 2:
     case 3:
     case 4:
-        cv::LUT(out, lut, out, doEqualise);
+
+        if(out.channels() >= 3){
+            if (doEqualiseColor){
+                // Equalise each colour channel
+                cv::LUT(out, lut, out, doEqualise);
+            } else {
+                // Convert to different color space and equalise the intensities only
+                cv::Mat ycrcb;
+                cv::cvtColor(out,ycrcb,CV_BGR2YCrCb);
+                std::vector<cv::Mat> channels;
+                split(ycrcb,channels);
+                cv::LUT(channels[0], lut, channels[0], doEqualise);
+                cv::merge(channels,ycrcb);
+                cv::cvtColor(ycrcb,out,CV_YCrCb2BGR);
+            }
+        }  else {
+            cv::LUT(out, lut, out, doEqualise);
+        }
         break;
     default:// Leave as is
         break;
@@ -138,9 +155,9 @@ void PreProc::recomputeLUT(const float brightness, const float contrast){
     lut = cv::Mat (1, 256, CV_8U);
 
     if( contrast > 0 ) {
-        const double delta = 127.*contrast;
-        const double a = 255./(255. - delta*2);
-        const double b = a*(brightness*100 - delta);
+        const float delta = 127.*contrast;
+        const float a = 255./(255. - delta*2);
+        const float b = a*(brightness*100 - delta);
         for (int i = 0; i < 256; ++i ) {
             int v = round(a*i + b);
             if(v < 0){
@@ -151,10 +168,10 @@ void PreProc::recomputeLUT(const float brightness, const float contrast){
             }
             lut.at<uchar>(i) = static_cast<uchar>(v);
         }
-    }else{
-        const double delta = -128.*contrast;
-        const double a = (256.-delta*2)/255.;
-        const double b = a*brightness*100. + delta;
+    } else {
+        const float delta = -128.*contrast;
+        const float a = (256.-delta*2)/255.;
+        const float b = a*brightness*100. + delta;
         for (int i = 0; i < 256; ++i ) {
             int v = round(a*i + b);
             if (v < 0){

@@ -7,6 +7,14 @@
 #include <boost/bind.hpp>
 #include <cmath>
 
+
+/// ///// DELETE LATER
+
+#include <opencv2/core/core.hpp>
+#include <tf/tf.h>
+
+#include <boost/lexical_cast.hpp> //boost::lexical_cast<std::string>(i);
+
 namespace enc = sensor_msgs::image_encodings;
 
 
@@ -75,6 +83,23 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         sensor_msgs::CameraInfoPtr camInfoPtr;
         camModel.rectify(image, imageRect, camInfoPtr);
 
+
+        /*
+        /// ////// Test Bearing Vectors
+        std::vector<cv::Point2f> kps;
+        bool found = cv::findChessboardCorners(imageRect, cv::Size(8,6), kps);
+        cv::drawChessboardCorners(imageRect, cv::Size(8,6), kps, found);
+        Eigen::MatrixXf bv;
+        camModel.bearingVectors(kps, bv);
+        const tf::Quaternion q(1,0,0,0);
+        for (uint i=0; i<kps.size(); ++i){
+            pubTF.sendTransform(tf::StampedTransform(tf::Transform(q,tf::Vector3(bv(i,0),bv(i,1),bv(i,2))), ros::Time::now(), "/cam", "/F"+boost::lexical_cast<std::string>(i)));
+        }
+        if (imageRect.channels() != image.channels()){
+            cv::cvtColor(imageRect, imageRect,CV_BGR2GRAY);
+        }
+        /// //////
+        */
 
         /// Send out
         cv_bridge::CvImage cvi;

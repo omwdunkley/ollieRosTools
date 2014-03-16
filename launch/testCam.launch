@@ -4,6 +4,7 @@
     <!-- starts a PreProcessing node that does preprocessing/filtering/etc and optionally does PTAM -->
     <!-- rectification, starts a dynamic reconfigure gui and rviz to view the rectified image as  -->
     <!-- a camera. Some static transform publishers are needed to link various TF frames  -->
+    <!-- vlc v4l2:///dev/video0:v4l2-standard=PAL -->
     
 
     <!-- OPTIONS -->

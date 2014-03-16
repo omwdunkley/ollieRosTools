@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.4.6)
 include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 
 FIND_PACKAGE(OpenCV REQUIRED)
-#FIND_PACKAGE(Eigen REQUIRED)
+FIND_PACKAGE(Eigen REQUIRED 3.1.2) #https://launchpad.net/~kalakris/+archive/eigen
 include_directories(${Eigen_INCLUDE_DIRS})
 
 
