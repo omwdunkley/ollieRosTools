@@ -1,9 +1,24 @@
 # A collection of Tools / Nodes I commonly use with ROS
 
+
+
 ## PTAM Rectification, Image Preprocessing
-This nodes listens to an image topic and publishes an image and camera_info, optionally rectifying the image using the ATAN camera model. Preprocessing such as image filtering, deinterlacing, resizing, cropping, colour encodings, etc as well as PTAM parameters can be configured using dynamic reconfigure in realtime.
+This nodes listens to an image topic and publishes an image and camera_info, optionally rectifying the image using the ATAN camera model. Pre-processing such as image filtering, deinterlacing, resizing, cropping, colour encodings, etc as well as PTAM parameters can be configured using dynamic reconfigure in realtime.
+
+An image with the dynamic_reconfigure options:
+
+
+
+## Overview
+An example video of it in action can be found here:
+[Example Operation Video](http://youtu.be/a-ItR_ujeto)
+
+
+
 
 #### Dependencies
+For now only tested with ros hydro.
+
 Todo
 
 #### Example
@@ -44,9 +59,19 @@ To run the example with a live camera, you will need to do the following:
 Make sure you change the video device number ```cam:=0``` to your corresponding one.
 
 #### Deinterlacing
-###### Skip odd rows
+The camera takes two successive images and packs them together into a single image before sending it. One image is contained in the even rows, the other in the odd rows. When the camera moves fast, artifacts begin to appear.
+
 ###### Skip even rows
-###### None
+The even rows are the older ones, so we just use the newer odd ones. We can just leave them out or interpolate the even rows from the odd ones.
+
+Both the following images were taken under the same conditions: good lighting, medium camera shake
+![Interpolating even rows from odd](https://lh6.googleusercontent.com/-6DRt3ZZZemQ/UxiSO4PyaFI/AAAAAAAAfDA/ZsplDrl50Uw/s800/Screenshot-ptamRectify.mkv-half.png)
+
+Notice the following artifacts if one keeps both rows:
+
+![Keeping even and odd rows](https://lh3.googleusercontent.com/-nD4RDKHHrxE/UxiSPX-tULI/AAAAAAAAfDE/EQ8jPWPnhJo/s800/Screenshot-ptamRectify.mkv-full.png)
+
+
 ###### Interpolation Schemes
 
 #### PTAM Rectification
