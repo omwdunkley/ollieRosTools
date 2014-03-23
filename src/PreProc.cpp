@@ -185,21 +185,30 @@ void PreProc::recomputeLUT(const float brightness, const float contrast){
     }
 }
 
+//ollieRosTools::PreProcNode_paramsConfig& PreProc::setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){
+void PreProc::setParam(const int doPreprocess,
+              const int doDeinterlace,
+              const int doEqualise,
+              const bool doEqualiseColor,
+              const int kernelSize,
+              const double sigmaX,
+              const double sigmaY,
+              const double brightness,
+              const double contrast){
 
-ollieRosTools::PreProcNode_paramsConfig& PreProc::setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){
-    smootherNr = config.doPreprocess;
-    doPreprocess = smootherNr >=0;
-    doDeinterlace = config.doDeinterlace;
-    doEqualise = config.doEqualise;
-    doEqualiseColor = config.doEqualiseColor;
-    recomputeLUT(config.brightness, config.contrast);
+    smootherNr = doPreprocess;
+    this->doPreprocess = smootherNr >=0;
+    this->doDeinterlace = doDeinterlace;
+    this->doEqualise = doEqualise;
+    this->doEqualiseColor = doEqualiseColor;
+    recomputeLUT(brightness, contrast);
 
 
     // Smoothing stuff
-    k = config.kernelSize*2+1;
+    k = kernelSize*2+1;
     kSize = cv::Size(k,k);
-    sigmaX = config.sigmaX;
-    sigmaY = config.sigmaY;
+    this->sigmaX = sigmaX;
+    this->sigmaY = sigmaY;
 
-    return config;
+    //return config;
 }

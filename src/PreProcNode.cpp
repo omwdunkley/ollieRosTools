@@ -3,7 +3,8 @@
   ****************************************************/
 
 
-#include "ollieRosTools/PreProcNode.hpp"
+#include <ollieRosTools/PreProcNode.hpp>
+#include <ollieRosTools/aux.hpp>
 #include <boost/bind.hpp>
 #include <cmath>
 
@@ -16,6 +17,7 @@
 #include <boost/lexical_cast.hpp> //boost::lexical_cast<std::string>(i);
 
 namespace enc = sensor_msgs::image_encodings;
+
 
 
 /// Initialise ROS Node
@@ -84,11 +86,18 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         camModel.rectify(image, imageRect, camInfoPtr);
 
 
-        /*
+
         /// ////// Test Bearing Vectors
         std::vector<cv::Point2f> kps;
         bool found = cv::findChessboardCorners(imageRect, cv::Size(8,6), kps);
         cv::drawChessboardCorners(imageRect, cv::Size(8,6), kps, found);
+
+        //std::vector<cv::KeyPoint> kps;
+        //cv::FAST(imageRect, kps, 100.5, true);
+        //cv::drawKeypoints(imageRect, kps, imageRect);
+        //cv::drawChessboardCorners(imageRect, cv::Size(8,6), kps, found);
+
+
         Eigen::MatrixXf bv;
         camModel.bearingVectors(kps, bv);
         const tf::Quaternion q(1,0,0,0);
@@ -98,8 +107,27 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         if (imageRect.channels() != image.channels()){
             cv::cvtColor(imageRect, imageRect,CV_BGR2GRAY);
         }
+
+
         /// //////
-        */
+
+        try{
+            // sent out by the crazyflie driver driver.py
+            tf::StampedTransform imu;
+            subTF.waitForTransform("/world", "/cf", msg->header.stamp-ros::Duration(0), ros::Duration(0.05) );
+            subTF.lookupTransform("/world", "/cf", msg->header.stamp-ros::Duration(0), imu);
+
+            double r,p,y;
+            OVO::tf2RPY(imu, r,p,y);
+            camModel.rotatePoints(kps, r);
+
+
+
+        } catch(tf::TransformException& ex){
+            ROS_ERROR_THROTTLE(1,"TF exception. Could not get flie IMU transform: %s", ex.what());
+        }
+
+
 
         /// Send out
         cv_bridge::CvImage cvi;
@@ -145,8 +173,26 @@ ollieRosTools::PreProcNode_paramsConfig&  PreProcNode::setParameter(ollieRosTool
     }
 
     colorId = config.color;
-    config = preproc.setParameter(config, level);
-    config = camModel.setParameter(config, level);
+    //config = preproc.setParameter(config, level);
+    preproc.setParam(config.doPreprocess,
+                     config.doDeinterlace,
+                     config.doEqualise,
+                     config.doEqualiseColor,
+                     config.kernelSize,
+                     config.sigmaX,
+                     config.sigmaY,
+                     config. brightness,
+                     config.contrast);
+
+    //config = camModel.setParameter(config, level);
+    camModel.setParams(config.zoomFactor, config.zoom,
+                   config.PTAMRectify,
+                   config.sameOutInSize,
+                   config.width, config.height,
+                   config.fx, config.fy,
+                   config.cx, config.cy,
+                   config.s);
+
     return config;
 
 }

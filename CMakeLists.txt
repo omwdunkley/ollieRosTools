@@ -7,8 +7,6 @@ include_directories(${Eigen_INCLUDE_DIRS})
 
 
 #find_package(OpenMP REQUIRED)
-#set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3  -Wall -Wextra -Wunused-variable  -g -msse2 -msse3 -msse4 -ffast-math")
-#set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -Wall -Wextra -Wunused-variable -g -msse2 -msse3 -msse4 -ffast-math")
 
 #Boost
 rosbuild_add_boost_directories()
@@ -20,7 +18,19 @@ rosbuild_add_boost_directories()
 #  Release        : w/o debug symbols, w/ optimization
 #  RelWithDebInfo : w/ debug symbols, w/ optimization
 #  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-set(ROS_BUILD_TYPE RelWithDebInfo)
+#set(ROS_BUILD_TYPE Debug)
+
+#set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3  -Wall -Wextra -Wunused-variable  -g -msse2 -msse3 -msse4 -ffast-math -march=native -fopenmp")
+#set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -Wall -Wextra -Wunused-variable -g -msse2 -msse3 -msse4 -ffast-math -march=native -fopenmp")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -Wdouble-promotion -g -march=native")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}  -Wall -Wextra -Wdouble-promotion -g -m-march=native")
+
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+endif()
+
 
 rosbuild_init()
 set(CMAKE_VERBOSE_MAKEFILE TRUE)
@@ -43,11 +53,28 @@ gencfg()
 #rosbuild_gensrv()
 
 
-set(PREPROC_LIBRARIES 
-    #agast
-    #akaze
+include_directories(
+  ${PROJECT_SOURCE_DIR}/thirdparty/agast/include
+)
+link_directories(
+  ${PROJECT_SOURCE_DIR}/thirdparty/agast/lib
+)
+
+include_directories(
+  ${PROJECT_SOURCE_DIR}/thirdparty/akaze-opencv/src
+)
+link_directories(
+  ${PROJECT_SOURCE_DIR}/thirdparty/akaze-opencv/lib
+)
+
+
+
+
+set(LIBRARIES
+    agast
+    akaze
     boost_system
-    #rbrief
+    rbrief
     #opengsurf
     #opengv #included via ros    
     #cvd
@@ -61,14 +88,27 @@ SET(PREPROC_FILES
     src/mainPreProc.cpp     
     src/PreProc.cpp 
     src/PreProcNode.cpp
-    #src/Aux.cpp
+    src/aux.cpp
     src/CameraATAN.cpp
+)
 
-)	
+SET(VO_FILES
+    src/mainVO.cpp
+    src/PreProc.cpp
+    src/VoNode.cpp
+    src/aux.cpp
+    src/CameraATAN.cpp
+    src/Frame.cpp
+    src/Detector.cpp
+    #src/Matcher.cpp
+)
 
-rosbuild_add_executable(preproc ${PREPROC_FILES} )
-target_link_libraries(preproc ${PREPROC_LIBRARIES} ${OpenCV_LIBS})
 
+#rosbuild_add_executable(preproc ${PREPROC_FILES} )
+#target_link_libraries(preproc ${LIBRARIES} ${OpenCV_LIBS})
+
+rosbuild_add_executable(vo ${VO_FILES} )
+target_link_libraries(vo ${LIBRARIES} ${OpenCV_LIBS})
 
 
 

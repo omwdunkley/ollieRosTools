@@ -1,7 +1,7 @@
 #ifndef PREPROC_HPP
 #define PREPROC_HPP
 
-#include <ollieRosTools/PreProcNode_paramsConfig.h>
+//#include <ollieRosTools/PreProcNode_paramsConfig.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -15,7 +15,16 @@ public:
     PreProc();
 
     // Set all the options
-    ollieRosTools::PreProcNode_paramsConfig& setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level);
+    //ollieRosTools::PreProcNode_paramsConfig& setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level);
+    void setParam(const int doPreprocess,
+                  const int doDeinterlace,
+                  const int doEqualise,
+                  const bool doEqualiseColor,
+                  const int kernelSize,
+                  const double sigmaX,
+                  const double sigmaY,
+                  const double brightness,
+                  const double contrast);
 
     // does all the processing and rectifying according to the settings
     cv::Mat process(const cv::Mat& in) const;

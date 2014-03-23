@@ -2,7 +2,9 @@
 #define CAMERAATAN_HPP
 #include <sensor_msgs/CameraInfo.h>
 #include <image_geometry/pinhole_camera_model.h>
-#include <ollieRosTools/PreProcNode_paramsConfig.h>
+#include <ros/ros.h>
+#include <ollieRosTools/aux.hpp>
+//#include <ollieRosTools/PreProcNode_paramsConfig.h>
 
 #include <Eigen/Core>
 #include <Eigen/Dense>
@@ -16,6 +18,8 @@
   */
 
 using namespace Eigen;
+
+
 
 class CameraATAN {
 
@@ -39,8 +43,9 @@ class CameraATAN {
         }
 
 
-        void rectify(const cv::Mat& imgIn, cv::Mat& imgOut, sensor_msgs::CameraInfoPtr& camInfo ){
+        cv::Mat rectify(const cv::Mat& imgIn){
             /// Rectifiy image using precomputed matricies and camInfoMessage
+            cv::Mat imgOut;
 
             // Check input image size vs previous size. Initial previous size is -1,
             // so this forces an update the first time this function is called
@@ -48,7 +53,7 @@ class CameraATAN {
                 inWidth  = imgIn.cols;
                 inHeight = imgIn.rows;
 
-                if (outSizeIsInSize){
+                if (outSizeIsInSize || interpolation<0){
                     outWidth = inWidth;
                     outHeight = inHeight;
                 }
@@ -72,21 +77,205 @@ class CameraATAN {
                 imgOut = imgIn;
                 //imgIn.copyTo(imgOut);
             }
-            camInfo = infoMsgPtr;
+            return imgOut;
 
+        }
+
+        const sensor_msgs::CameraInfoPtr& getCamInfo() const {
+            return infoMsgPtr;
         }
 
 
 
 
-        void bearingVectors(const std::vector<cv::KeyPoint>& keypoints, MatrixXf& bearings){
-            std::vector<cv::Point2f> points;
+
+        // Rotate a point in place
+        void rotatePoint(cv::Point2f& inout, const cv::Point2f& center, const double angleRad) const {
+            const cv::Point2f shifted = inout - center;
+            inout = cv::Point2f(cos(angleRad)*shifted.x - sin(angleRad)*shifted.y, sin(angleRad)*shifted.x + cos(angleRad)*shifted.y)+ center;
+        }
+        void rotatePoint(cv::KeyPoint& inout, const cv::Point2f& center, const double angleRad) const {
+            rotatePoint(inout.pt, center, angleRad);
+        }
+
+        KeyPoints rotatePoints(const KeyPoints& keypoints, const float angleRad, bool aroundOptical=true) const{
+            // Copy key points
+            KeyPoints keypointsOut = keypoints;
+
+            // Get center
+            cv::Point2f center;
+            if (aroundOptical){
+                center = cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]); //cx, cy
+            } else {
+                center = cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.);
+            }
+
+            // Rotate around center
+            for (uint i=0; i<keypointsOut.size(); ++i){
+                rotatePoint(keypointsOut[i].pt, center, angleRad);
+            }
+
+
+            /// DRAW
+            cv::Mat img = cv::Mat::zeros(infoMsgPtr->height, infoMsgPtr->width, CV_8UC3);
+
+            // Draw Chosen center
+            cv::circle(img, center, 10, CV_RGB(255,0,0),3, CV_AA);
+
+            // Draw line parallel to x
+            cv::line(img,
+                     cv::Point(0,                 center.y),
+                     cv::Point(infoMsgPtr->width, center.y),
+                     CV_RGB(0,255,0), 1, CV_AA);
+            // Draw line parallel to y
+            cv::line(img,
+                     cv::Point(center.x, infoMsgPtr->height),
+                     cv::Point(center.x, 0),
+                     CV_RGB(0,255,0), 1, CV_AA);
+            // Draw line parallel from optical center to image center
+            cv::line(img,
+                     cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]),
+                     cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.),
+                     CV_RGB(0,0,255), 1, CV_AA);
+            for (uint i=0; i<keypointsOut.size(); ++i){
+                cv::circle(img, keypointsOut[i].pt, 1, CV_RGB(255,0,0), 1, CV_AA);
+                cv::circle(img, keypoints[i].pt,    1, CV_RGB(0,255,0), 1, CV_AA);
+            }
+
+            cv::imshow("center", img);
+            cv::waitKey(10);
+
+            return keypointsOut;
+        }
+
+
+        Points2 rotatePoints(const Points2& points, const float angleRad, bool aroundOptical=false) const{
+            Points2 pointsOut = points;
+
+            // Get center
+            cv::Point2f center;
+            if (aroundOptical){
+                center = cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]); //cx, cy
+            } else {
+                center = cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.);
+            }
+
+            // Rotate around center
+            for (uint i=0; i<pointsOut.size(); ++i){
+                rotatePoint(pointsOut[i], center, angleRad);
+            }
+
+
+
+            /// DRAW
+            cv::Mat img = cv::Mat::zeros(infoMsgPtr->height, infoMsgPtr->width, CV_8UC3);
+            // Draw Chosen center
+            cv::circle(img, center, 10, CV_RGB(255,0,0),3, CV_AA);
+            // Draw line parallel to x
+            cv::line(img,
+                     cv::Point(0,                 center.y),
+                     cv::Point(infoMsgPtr->width, center.y),
+                     CV_RGB(0,255,0), 1, CV_AA);
+            // Draw line parallel to y
+            cv::line(img,
+                     cv::Point(center.x, infoMsgPtr->height),
+                     cv::Point(center.x, 0),
+                     CV_RGB(0,255,0), 1, CV_AA);
+            // Draw line parallel from optical center to image center
+            cv::line(img,
+                     cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]),
+                     cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.),
+                     CV_RGB(0,0,255), 1, CV_AA);
+            // Draw points
+            for (uint i=0; i<pointsOut.size(); ++i){
+                cv::circle(img, pointsOut[i], 1, CV_RGB(255,0,0), 1, CV_AA);
+                cv::circle(img, points[i],    1, CV_RGB(0,255,0), 1, CV_AA);
+            }
+            cv::imshow("center", img);
+            cv::waitKey(10);
+
+
+
+            return pointsOut;
+        }
+
+
+        KeyPoints rectifyPoints(const KeyPoints& keypoints, bool pointsFromCamera=true){
+            KeyPoints kps =keypoints;
+            if (pointsFromCamera && interpolation>=0 ){
+                /// Incoming points are rectified
+                // do nothing
+            } else {
+                Points2 points;
+                cv::KeyPoint::convert(keypoints, points);
+                Matrix<float, Dynamic, 2, RowMajor> f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                f2d.col(0).array() -= icx;
+                f2d.col(1).array() -= icy;
+                f2d.col(0) /= ifx;
+                f2d.col(1) /= ify;
+                const MatrixXf r = f2d.rowwise().norm();
+                const ArrayXf fac = (r* fov).array().tan() / (r*d2t).array();
+                f2d.array().colwise() *= fac;
+                f2d.col(0) *= ifx; //should it not sometimes be ofx depending on what we want?
+                f2d.col(1) *= ify;
+                f2d.col(0).array() += icx;
+                f2d.col(1).array() += icy;
+
+                // Put point locations back into keypoints
+                for (uint i=0; i<points.size(); ++i){
+                    kps[i].pt.x = f2d(i,0);
+                    kps[i].pt.y = f2d(i,1);
+                }
+            }
+
+            /// DRAW
+            cv::Point2f center = center = cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.);
+            cv::Mat img = cv::Mat::zeros(infoMsgPtr->height, infoMsgPtr->width, CV_8UC3);
+
+            // Draw Chosen center
+            cv::circle(img, center, 10, CV_RGB(255,0,0),3, CV_AA);
+
+            // Draw line parallel to x
+            cv::line(img,
+                     cv::Point(0,                 center.y),
+                     cv::Point(infoMsgPtr->width, center.y),
+                     CV_RGB(0,255,0), 1, CV_AA);
+            // Draw line parallel to y
+            cv::line(img,
+                     cv::Point(center.x, infoMsgPtr->height),
+                     cv::Point(center.x, 0),
+                     CV_RGB(0,255,0), 1, CV_AA);
+            // Draw line parallel from optical center to image center
+            cv::line(img,
+                     cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]),
+                     cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.),
+                     CV_RGB(0,0,255), 1, CV_AA);
+            // Draw circles before and after
+            for (uint i=0; i<kps.size(); ++i){
+                cv::circle(img, kps[i].pt, 2, CV_RGB(255,0,0), 1, CV_AA);
+                cv::circle(img, keypoints[i].pt,    1, CV_RGB(0,255,0), 1, CV_AA);
+            }
+
+            cv::imshow("rect", img);
+            cv::waitKey(10);
+
+            return kps;
+        }
+
+
+        KeyPoints unrectifyPoints(const KeyPoints& keypoints){
+            KeyPoints kps;
+
+            return kps;
+        }
+
+        void bearingVectors(const KeyPoints& keypoints, MatrixXf& bearings) const{
+            Points2 points;
             cv::KeyPoint::convert(keypoints, points);
             bearingVectors(points, bearings);
-
         }
 
-        void bearingVectors(const std::vector<cv::Point2f>& points, MatrixXf& bearings){
+        void bearingVectors(const Points2& points, MatrixXf& bearings) const{
             /// Given 2d points, compute the bearing vecotrs that point from the
             /// optical center in the direction of the features.
             // Note that this class might be rectifying images (in which case we just use the pinhole model)
@@ -95,9 +284,6 @@ class CameraATAN {
 
             // Use the precomputed look up table to rectify the points.
             const bool useLUT = false;
-
-            // Use the cameras estiamted attitude (from IMU) to rotate the bearing vectors
-            const bool useIMU = false;
 
             Matrix<float, Dynamic, 2, RowMajor> f2d;
 
@@ -141,12 +327,10 @@ class CameraATAN {
                     f2d.col(0) /= ifx;
                     f2d.col(1) /= ify;
 
-
                     const MatrixXf r = f2d.rowwise().norm();
                     const ArrayXf fac = (r* fov).array().tan() / (r*d2t).array();
                     f2d.array().colwise() *= fac;
 
-                    // TODO: why do we need this?
                     f2d.col(0) *= fx;
                     f2d.col(1) *= fy;
                     f2d.col(0).array() += cx;
@@ -171,47 +355,45 @@ class CameraATAN {
             bearings.transposeInPlace(); // Nx3
             //std::cout << "T:" << std::endl<< bearings << std::endl;
 
-
-            if (useIMU){
-                // Rotate the bearing vectors
-            }
-
-
-
         }
 
-
-        ollieRosTools::PreProcNode_paramsConfig& setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){
+        //ollieRosTools::PreProcNode_paramsConfig& setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){
+        void setParams(const double zoomFactor, const int zoom,
+                       const int PTAMRectify,
+                       const bool sameOutInSize,
+                       const int width, const int height,
+                       const double fx, const double fy,
+                       const double cx, const double cy,
+                       const double fov){
             /// Update the settings use roy dynamic reconfigure
 
-            outZoom = config.zoomFactor;
-            interpolation = config.PTAMRectify;           
-            outSizeIsInSize = config.sameOutInSize;
+            this->outZoom = zoomFactor;
+            interpolation = PTAMRectify;
+            outSizeIsInSize = sameOutInSize;
 
-            // Use image size as outsize if we do not allow manual size setting
-            if (outSizeIsInSize){
+            // Use image size as outsize if we do not allow manual size setting or if we are not rectifying
+            if (outSizeIsInSize || interpolation<0){
                 outWidth = inWidth;
                 outHeight = inHeight;
             } else {
-                outWidth = config.width;
-                outHeight = config.height;
+                outWidth = width;
+                outHeight = height;
             }
 
-            zoomType = static_cast<ZoomType>(config.zoom);
+            zoomType = static_cast<ZoomType>(zoom);
 
             // PTAM params
-            fx = config.fx;
-            fy = config.fy;
-            cx = config.cx;
-            cy = config.cy;
-            fov = config.s;
+            this->fx = fx;
+            this->fy = fy;
+            this->cx = cx;
+            this->cy = cy;
+            this->fov = fov;
 
             if (inWidth>0 && inHeight>0){
                 // Only call this after we have an image size
                 initialise();
             }
-
-            return config;
+            //return config;
         }
 
 
