@@ -252,6 +252,7 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
     case 18 : algo  = new cv::StarDetector(45, static_cast<int>(thresh), 10, 8, 5); break;
     case 19 : algo  = new cv::PyramidAdaptedFeatureDetector(new cv::StarDetector(45, static_cast<int>(thresh), 10, 8, 5), std::max(1, kp_octaves)); break;
     case 20 : algo  = new cv::BRISK(thresh<0.001 ? 20 : static_cast<int>(thresh), kp_octaves, fmin(0.1,static_cast<float>(kp_octaveLayers)/2.f)); break; //HYDRO+
+    case 21 : algo  = new cv::DenseFeatureDetector(1.f, kp_octaves, 0.1f, 6, 0, true, false);
 
 
 
@@ -445,6 +446,10 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
     case 20:
         thresh*=150;
         break;
+    // DENSE?
+    case 21:
+        thresh*=1;
+        break;
     // AKAZE
     case 30:
     case 31:
@@ -487,6 +492,7 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
     // None
     default:
         // should never happen
+        ROS_WARN("Unknown Feature Detector Nr");
         break;
     }
 

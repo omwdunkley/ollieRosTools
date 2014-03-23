@@ -75,11 +75,7 @@ class VoNode{
         std::string worldFrame;
 
         /// Callbacks
-
         void incomingImage(const sensor_msgs::ImageConstPtr& msg);
-
-
-
 
         /// REMOVE
         Frame prevFrame;

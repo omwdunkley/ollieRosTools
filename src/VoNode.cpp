@@ -110,25 +110,12 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     }
 
     /// Make Frame
-    Frame frame = Frame(cvPtr->image, imuStamped);
+    cv::Ptr<Frame> frame(new Frame(cvPtr->image, imuStamped));
 
 
-    frame.getDescriptors();
+    frame->getDescriptors();
 
-    cv::Mat drawImg = frame.getVisualImage();
-
-
-    if (!prevFrame.isInitialised()){
-        /// DO MATCHING TO PREVIOUS FRAME
-
-
-    }
-
-
-
-
-
-
+    cv::Mat drawImg = frame->getVisualImage();
 
 
 //    /// ROTATE KEYPOINTS
@@ -180,8 +167,6 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     /// OUTPUT POSE
 
 
-
-
     /// Compute running average of processing time
     timeAvg = timeAvg*timeAlpha + (1.0 - timeAlpha)*(ros::WallTime::now()-time_s0).toSec();
     ROS_INFO("Processing Time: %.1fms", timeAvg*1000.);
@@ -189,7 +174,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
     /// publish debug image
     if (pubCamera.getNumSubscribers()>0){
-        sensor_msgs::CameraInfoPtr camInfoPtr = frame.getCamInfo();
+        sensor_msgs::CameraInfoPtr camInfoPtr = frame->getCamInfo();
 
 //        if (imageRect.channels() != image.channels()){
 //            cv::cvtColor(imageRect, imageRect,CV_BGR2GRAY);
@@ -214,10 +199,6 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     } else {
         //ROS_INFO_THROTTLE(5, "Not processing images as not being listened to");
     }
-
-    prevFrame = frame;
-
-
 
     if (repeatOn!=configLast.repeatInput){
         if (configLast.repeatInput){

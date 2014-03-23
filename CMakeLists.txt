@@ -100,6 +100,7 @@ SET(VO_FILES
     src/CameraATAN.cpp
     src/Frame.cpp
     src/Detector.cpp
+    src/Tracker.cpp
     #src/Matcher.cpp
 )
 
