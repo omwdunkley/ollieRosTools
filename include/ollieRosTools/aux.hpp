@@ -7,6 +7,8 @@
 #include <boost/assign.hpp>
 #include <sensor_msgs/image_encodings.h>
 #include <string>
+//#include <ollieRosTools/Frame.hpp> //forward declated
+class Frame;
 
 #define __SHORTFILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
@@ -21,6 +23,7 @@ typedef std::vector< int > Ints;
 typedef std::vector< bool > Bools;
 typedef std::vector< float > Floats;
 typedef std::vector< cv::Mat > Mats;
+typedef cv::Ptr<Frame> FramePtr;
 
 const float toRad = M_PI/180;
 const float toDeg = 180/M_PI;

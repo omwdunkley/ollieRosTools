@@ -128,9 +128,9 @@ public:
         return roll;
     }
 
-    KeyPoints& getKeypoints(){
-        /// Gets keypoints. Computes them if required.
-        if (keypoints.empty()){
+    KeyPoints& getKeypoints(bool dontCompute=false){
+        /// Gets keypoints. Computes them if required unless dontCompute is true.
+        if (keypoints.empty() && !dontCompute){
             ros::WallTime t0 = ros::WallTime::now();
             detector.detect(image, keypoints, mask);
             timeDetect = (ros::WallTime::now()-t0).toSec();

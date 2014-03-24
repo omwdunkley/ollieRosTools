@@ -111,11 +111,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
     /// Make Frame
     cv::Ptr<Frame> frame(new Frame(cvPtr->image, imuStamped));
-
-
-    frame->getDescriptors();
-
-    cv::Mat drawImg = frame->getVisualImage();
+    cv::Mat drawImg = tracker.update(frame);
 
 
 //    /// ROTATE KEYPOINTS
@@ -242,6 +238,7 @@ ollieRosTools::VoNode_paramsConfig&  VoNode::setParameter(ollieRosTools::VoNode_
     colorId = config.color;
 
     Frame::setParameter(config, level);
+    tracker.setMax(config.match_max);
 
     configLast = config;
     return config;
