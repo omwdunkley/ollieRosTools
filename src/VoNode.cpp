@@ -239,6 +239,7 @@ ollieRosTools::VoNode_paramsConfig&  VoNode::setParameter(ollieRosTools::VoNode_
 
     Frame::setParameter(config, level);
     tracker.setMax(config.match_max);
+    tracker.setMin(config.match_px);
 
     configLast = config;
     return config;
