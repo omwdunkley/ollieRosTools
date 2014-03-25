@@ -48,6 +48,7 @@ class VoNode{
         ros::NodeHandle& n;
         image_transport::ImageTransport imTransport;
         image_transport::CameraPublisher pubCamera;
+        image_transport::Publisher pubImage;
         image_transport::Subscriber subImage;
         tf::TransformBroadcaster pubTF;
         tf::TransformListener subTF;

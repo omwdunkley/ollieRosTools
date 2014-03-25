@@ -4,6 +4,7 @@
 
 //Initialize ROS node.
 int main(int argc, char** argv){
+    //Eigen::initParallel();
     ros::init(argc, argv, "VoNode");
     ros::NodeHandle n("~");
 

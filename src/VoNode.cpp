@@ -38,7 +38,8 @@ VoNode::VoNode(ros::NodeHandle& _n):
     subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
 
     /// Publish to Topics
-    pubCamera  = imTransport.advertiseCamera("/vo" + inputTopic, 1);
+    pubCamera  = imTransport.advertiseCamera("/vo/image_raw", 1);
+    pubImage   = imTransport.advertise("/vo/debug_image_raw", 1);
 
     /// Dynamic Reconfigure
     nodeOn = true;
@@ -85,10 +86,6 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         return;
     }
 
-    /// PreProcess Image
-
-
-
     /// GET IMU
     tf::StampedTransform imuStamped;
 
@@ -111,7 +108,17 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
     /// Make Frame
     cv::Ptr<Frame> frame(new Frame(cvPtr->image, imuStamped));
-    cv::Mat drawImg = tracker.update(frame);
+
+    ros::WallTime t0 = ros::WallTime::now();
+    cv::Mat drawImg;
+    if (configLast.SET_KEYFRAME){
+        configLast.SET_KEYFRAME=false;
+        drawImg = tracker.update(frame, true);
+    } else {
+        drawImg = tracker.update(frame);
+    }
+    OVO::putInt(drawImg, 1000.*(ros::WallTime::now()-t0).toSec(), cv::Point(20,drawImg.rows-3*25), CV_RGB(200,0,200), false, "T:");
+
 
 
 //    /// ROTATE KEYPOINTS
@@ -165,11 +172,12 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
     /// Compute running average of processing time
     timeAvg = timeAvg*timeAlpha + (1.0 - timeAlpha)*(ros::WallTime::now()-time_s0).toSec();
-    ROS_INFO("Processing Time: %.1fms", timeAvg*1000.);
+    ROS_INFO_STREAM(std::setprecision(4) << timeAvg*1000. << " " << *frame);
+    OVO::putInt(drawImg, timeAvg*1000., cv::Point(20,drawImg.rows-1*25), CV_RGB(200,0,200), false, "S:");
 
 
     /// publish debug image
-    if (pubCamera.getNumSubscribers()>0){
+    if (pubCamera.getNumSubscribers()>0 || pubImage.getNumSubscribers()>0){
         sensor_msgs::CameraInfoPtr camInfoPtr = frame->getCamInfo();
 
 //        if (imageRect.channels() != image.channels()){
@@ -181,20 +189,20 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         cvi.header.stamp = msg->header.stamp;
         cvi.header.seq = msg->header.seq;
         cvi.header.frame_id = msg->header.frame_id;
-        //cvi.encoding = enc::MONO8;
         cvi.encoding = sensor_msgs::image_encodings::BGR8;// OVO::COLORS[colorId];
         //cvi.image = imageRect;
         cvi.image = drawImg;
         camInfoPtr->header = cvi.header;
-        pubCamera.publish(cvi.toImageMsg(), camInfoPtr);
+        //pubCamera.publish(cvi.toImageMsg(), camInfoPtr);
+        pubImage.publish(cvi.toImageMsg());
 
-
-
-        //ROS_INFO_THROTTLE(1, "Processing Time: %.1fms", timeAvg*1000.);
-
-    } else {
-        //ROS_INFO_THROTTLE(5, "Not processing images as not being listened to");
     }
+
+
+
+
+
+
 
     if (repeatOn!=configLast.repeatInput){
         if (configLast.repeatInput){
@@ -206,6 +214,8 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         }
         repeatOn = configLast.repeatInput;
     }
+
+
     if (repeatOn){
         ROS_INFO_THROTTLE(1,"Repeating Input");
         ros::spinOnce(); // check for changes in dynamic reconfigure
@@ -234,14 +244,23 @@ ollieRosTools::VoNode_paramsConfig&  VoNode::setParameter(ollieRosTools::VoNode_
         }
     }
 
+    // make sure max>=min
+    int minKp, maxKp;
+    minKp=std::min(config.kp_min, config.kp_max);
+    maxKp=std::max(config.kp_min, config.kp_max);
+    config.kp_max = maxKp;
+    config.kp_min = minKp;
+
     imgDelay = ros::Duration(config.imgDelay);
     colorId = config.color;
 
     Frame::setParameter(config, level);
-    tracker.setMax(config.match_max);
-    tracker.setMin(config.match_px);
+    /// TODO:
+
+    tracker.setParameter(config,level);
 
     configLast = config;
+    config.SET_KEYFRAME=false;
     return config;
 
 }
