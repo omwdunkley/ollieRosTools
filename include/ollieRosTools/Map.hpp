@@ -22,7 +22,7 @@ class OdoMap {
         }
 
         cv::Mat getVisualImage(){
-            cv::Mat img =  tracker.getVisualImage();
+            cv::Mat img = tracker.getVisualImage();
             return img;
         }
 

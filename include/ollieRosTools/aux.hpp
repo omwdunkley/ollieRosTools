@@ -49,6 +49,8 @@ namespace OVO {
     // Removes rows of Mat if index is not in ind. Can also change the order of elements.
     void matReduceInd (const cv::Mat& matIn, cv::Mat& matOut, const Ints& ind);
 
+    void match2ind(const DMatches& ms, Ints& query, Ints& train);
+
     static std::map<int, std::string> COLORS= boost::assign::map_list_of
             (-1, std::string(""))
             (0, sensor_msgs::image_encodings::BGR8)

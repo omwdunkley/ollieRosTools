@@ -7,7 +7,7 @@ Matcher::Matcher(){
     m_thresh = 0; // 0 = no threshold
     m_ratio = 1; //1 = off
     m_max = 0; // 0 = unlimited
-    m_pxdist = 100;
+    //m_pxdist = 100;
     descType=-1;
     updateMatcher(CV_8U,205);
 }
@@ -72,7 +72,7 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
     m_max = config.match_max;
     m_ratio = config.match_ratio;
     m_type = config.matcher;
-    m_pxdist = config.match_px;
+    //m_pxdist = config.match_px;
     m_sym_neighbours = config.match_symmetric;
 
     // For ease of use later
@@ -82,7 +82,7 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
     m_doThresh = m_thresh>0;
     m_doRatio  = m_ratio>1;
     m_doMax    = m_max>0;
-    m_doPxdist = m_pxdist>1;
+    //m_doPxdist = m_pxdist>1;
 
 
     updateMatcher(descType, true);
@@ -218,8 +218,9 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
 // Note that the distance member of each Dmatch will hold the disparity of the match in pixels
 void Matcher::match( FramePtr& fQuery,
                      FramePtr& fTrain,
-                     DMatches& matches,
+                     DMatches& matches,                     
                      double& time,
+                     float maxDisparity,
                      const cv::Mat& mask, //only input if crosscheck=off and matcher=BruteForce
                      const Ints& maskIdx  //only inpuot if mask=empty. idx of valid descriptor rows
                      ) {
@@ -329,7 +330,7 @@ void Matcher::match( FramePtr& fQuery,
 
     // filter if disparity too high
     // sets distance to be the l2 norm squared
-    matches = disparityFilter(matches, fQuery, fTrain, m_pxdist, m_doPxdist);
+    matches = disparityFilter(matches, fQuery, fTrain, maxDisparity, maxDisparity>0);
 
 
     // At this stage everything should be sorted anyway (if we need to do the following)..., so we can just cut the "tail" off

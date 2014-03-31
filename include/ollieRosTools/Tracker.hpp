@@ -159,13 +159,15 @@ class Tracker{
                     doKLT(frame);
                     break;
                 case F2F: // track against previous frame
-                    //doF2F(FramePtr& frame, DMatches& matches, float& disparity, double& time, bool isKeyFrame=false)
+                    //doF2F(FramePtr& frame, DMatches& matches, float& disparity, double& time, bool isKeyFrame=false)                    
                     ROS_ERROR("FTR = Not implemented F2F tracking");
+                    doF2F(frame);
                     break;
                 case F2KF: // always tracking against keyframe
                     doF2KF(frame);
                     break;
                 default: // Dont do anything                    
+                    currFrame = frame;
                     ROS_ERROR("FTR = Unknown Tracker Type <%d>", method);
                     break;
             }
@@ -238,7 +240,7 @@ class Tracker{
 
 
 
-
+/*      //Flow image
         cv::Mat getFlowImage(cv::Mat& flowImg, FramePtr& f, FramePtr& kf, const DMatches& msTrack, const DMatches& msVo, const opengv::points_t& worldPts) const{
             if (flowImg.empty()) {
                 cv::drawMatches(f->getVisualImage(), KeyPoints(), kf->getVisualImage(), KeyPoints(), DMatches(), flowImg);
@@ -322,11 +324,11 @@ class Tracker{
             return flowImg;
         }
 
+*/
 
 
 
-
-
+/*
         void getFlowImage(cv::Mat& flowImg, FramePtr& f, FramePtr& kf, DMatches& ms, float disparity, bool rot=false, bool vo=false) const{
             // Draw an image showing the flow only
             if (flowImg.empty()){
@@ -380,7 +382,7 @@ class Tracker{
 
 
         }
-
+*/
 
 
         void initKLT(){
@@ -487,6 +489,7 @@ class Tracker{
                             float normStep = cv::norm(prevPts[i]-klt_predictedPts[i]);
                             if (normStep < m_pxdistStep || m_pxdistStep<=0){
 
+                                /// TODO should be rotated norm
                                 float norm = cv::norm(kfPts[KFMatches[i].trainIdx]-klt_predictedPts[i]);
 
                                 if (norm< m_pxdist || m_pxdist<=0) {
@@ -638,27 +641,74 @@ class Tracker{
         // puts matches into class member prevMatches
         void doF2KF(FramePtr& newFrame){
             std::swap(FMatches, KFMatches); // store previous matches here
-            matcher.match(newFrame, keyFrame, KFMatches, time);
+            matcher.match(newFrame, keyFrame, KFMatches, time, m_pxdist);
             border = cv::Rect(borderF2KF, cv::Point(newFrame->getSize().width, newFrame->getSize().height)-borderF2KF);
 
             // the first time this function is called we do not have a new frame
-            if (currFrame.empty()){
-                currFrame = newFrame;
-            }
+//            if (currFrame.empty()){
+//                currFrame = newFrame;
+//            }
             previousFrame = currFrame;
             currFrame = newFrame;
         }
-        // puts matches into class member prevMatches
-//        cv::Mat doF2F(FramePtr& frame, DMatches& matches, float& disparity, double& time, bool isKeyFrame=false){
-//            cv::Mat outputImage;
-//            matcher.match(frame, keyframe, matches, disparity, time);
-//            cv::drawMatches(frame->getVisualImage(), frame->getKeypoints(true), keyframe->getVisualImage(), keyframe->getKeypoints(true), matches, outputImage, CV_RGB(0,0,100), CV_RGB(150,0,100),std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-//            return outputImage;
-//        }
 
 
+        void doF2F(FramePtr& newFrame){
+            border = cv::Rect(borderF2KF, cv::Point(newFrame->getSize().width, newFrame->getSize().height)-borderF2KF);
+            if (!klt_init){
+                klt_init = true;
+                currFrame = keyFrame;
+                matcher.match(newFrame, keyFrame, FMatches, time);
+//                KFMatches = disparityFilter(KFMatches, newFrame, currFrame, m_pxdist, m_pxdist>0 && (m_pxdist<m_pxdistStep || m_pxdistStep==0) );
+                //KFMatches = FMatches;
+            } else {
+
+//                // only match against points that have previous matches
+
+//                DMatches newFMatches;
+//                DMatches newKFMatches;
+//                DMatches ms;
+//                const KeyPoints& cfPts = currFrame->getKeypoints();
+//                const KeyPoints& kfPts = keyFrame->getKeypoints();
+//                const KeyPoints& nfPts = newFrame->getKeypoints();
+
+
+                Ints queryIdx, trainIdx;
+                OVO::match2ind(FMatches, queryIdx, trainIdx);
+//                matcher.match(newFrame, currFrame, ms, time, 0.f, cv::Mat(), queryIdx );
+                  matcher.match(newFrame, currFrame, FMatches, time, 0.f, cv::Mat(), queryIdx );
+
+//                for (uint i=0; i<ms.size(); ++i){
+//                    float normStep = cv::norm(nfPts[ms[i].queryIdx].pt-cfPts[ms[i].queryIdx].pt);
+//                    if (normStep < m_pxdistStep || m_pxdistStep<=0){
+
+//                        /// TODO kf-nf norm check
+
+//                        newFMatches.push_back(cv::DMatch(ms[i].queryIdx, ms[i].trainIdx, normStep));
+//                        //newKFMatches.push_back(cv::DMatch(ms[i].queryIdx, KFMatches[ms[i].trainIdx].trainIdx, 0)); /// TODO norm
+
+
+//                    } else {
+//                        //normStep failed
+//                    }
+//                }
+
+
+//                //std::swap(newKFMatches, KFMatches);
+//                std::swap(newFMatches, FMatches);
+            }
+
+
+            previousFrame = currFrame;
+            currFrame = newFrame;
+
+
+
+        }
+
+      // Draws flow between the current frame and keyframe
         cv::Mat getVisualImage(){
-            // Draws flow between the current frame and keyframe
+
 
             cv::Mat img;
             CvScalar col;
@@ -722,7 +772,6 @@ class Tracker{
                 }
 
 
-                // print disparity info
 
 
             } else if (method==F2KF){
@@ -730,27 +779,43 @@ class Tracker{
                 // Draw good keypoints
                 const KeyPoints& kfpts = keyFrame->getKeypoints(true);
                 const KeyPoints& cfpts = currFrame->getKeypoints(true);
-                const KeyPoints& pfpts = previousFrame->getKeypoints(true);
+                //const KeyPoints& pfpts = previousFrame->getKeypoints(true);
 
                 // current frame to key frame (right side)
                 CV_RGB(0,200,0);
                 for (uint i=0; i<KFMatches.size(); ++i){
                     cv::line(img, width+cfpts[KFMatches[i].queryIdx].pt, width+kfpts[KFMatches[i].trainIdx].pt, OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
                 }
-                // current frame to prev frame (left side)
-//                col = CV_RGB(200,0,0);
-//                for (uint i=0; i<FMatches.size(); ++i){
-//                    cv::line(img, cfpts[KFMatches[i].queryIdx].pt, pfpts[FMatches[i].queryIdx].pt, col, 1, CV_AA);
-//                }
 
+            } else if (method==F2F){
+                // Draw good keypoints
+                const Points2f& kfpts = keyFrame->getPoints(true);
+                const Points2f& cfpts = currFrame->getPoints(true);
+                const Points2f& pfpts = previousFrame->getPoints(true);
+
+                // current frame to key frame (right side)
+                col = CV_RGB(0,200,0);
+                for (uint i=0; i<KFMatches.size(); ++i){
+                    cv::line(img, width+cfpts[KFMatches[i].queryIdx], width+kfpts[KFMatches[i].trainIdx], OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
+                }
+                // current frame to prev frame (left side)
+                col = CV_RGB(0,0,200);
+                for (uint i=0; i<FMatches.size(); ++i){
+                    cv::line(img, cfpts[FMatches[i].queryIdx], pfpts[FMatches[i].trainIdx], OVO::getColor(0.f, m_pxdistStep, FMatches[i].distance*1.1), 1, CV_AA);
+                }
+                OVO::drawTextCenter(img, "NOT IMPLEMENTED VIS", CV_RGB(255,0,0), 3, 1);
 
             } else {
                 cv::drawMatches(currFrame->getVisualImage(), KeyPoints(), keyFrame->getVisualImage(), KeyPoints(), DMatches(), img);
                 OVO::drawTextCenter(img, "NOT IMPLEMENTED VIS", CV_RGB(255,0,0), 3, 1);
             }
 
+            ///  print disparity info
+            ///  print timing info
+
             return img;
         }
+
 
 
 
@@ -762,12 +827,18 @@ class Tracker{
             if (config.tracker!=preConfig.tracker){
                 // We changed the tracker type - to be safe we clear some temporaty vars
                 KFMatches.clear();
+                FMatches.clear();
+                klt_init = false;
+
                 // this function gets called before we have any frames, so be check the pointers are not empty
                 if (!currFrame.empty()){
                     currFrame->clearAllPoints();
                 }
                 if (!keyFrame.empty()) {
                     keyFrame->clearAllPoints();
+                }
+                if (!previousFrame.empty()){
+                    previousFrame->clearAllPoints();
                 }
 
                 if (config.tracker<4){
@@ -777,12 +848,14 @@ class Tracker{
                 } else {
                     method = F2KF;
                 }
+
                 f2kfRecovery = false;
                 if (method!=F2KF) {
                     if (config.tracker ==2 || config.tracker ==3 || config.tracker ==5){
                         f2kfRecovery = true;
                     }
                 }
+
             }
             failRatio = config.f2f_failRatio;
 

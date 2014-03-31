@@ -81,6 +81,19 @@ void OVO::matReduceInd (const cv::Mat& matIn, cv::Mat& matOut, const Ints& ind){
     }
 }
 
+void OVO::match2ind(const DMatches& ms, Ints& query, Ints& train){
+    query.clear();
+    train.clear();
+
+    query.reserve(ms.size());
+    train.reserve(ms.size());
+    for(uint i=0;i<ms.size(); ++i){
+        query.push_back(ms[i].queryIdx);
+        train.push_back(ms[i].trainIdx);
+    }
+}
+
+
 void OVO::alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, opengv::bearingVectors_t& bv1, opengv::bearingVectors_t& bv2){
     bv1.clear();
     bv2.clear();

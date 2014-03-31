@@ -18,7 +18,7 @@ void matchClip(DMatches& ms, const uint max_nr, bool is_sorted=true);
 void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total);
 
 // Calculate disparity and filter pixels by disparity if required
-DMatches disparityFilter(const DMatches& in, FramePtr& f1, FramePtr& f2, const float maxDisparity, bool disparityFilter);
+DMatches disparityFilter(const DMatches& in, FramePtr& f1, FramePtr& f2, const float maxDisparity, bool disparityFilter=true);
 
 // Filter out matches that are not unique. Specifically unqiue = dist1/dist2 > similarity
 void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float similarity, const bool keep_sorted = false);
@@ -55,8 +55,9 @@ public:
     // Match frame-frame
     void match(FramePtr& f1,
                FramePtr& f2,
-               DMatches& matches,                           // matches out
+               DMatches& matches,                           // matches out               
                double& time,
+               float maxDisparit = 0.f, // in
                const cv::Mat& mask=cv::Mat(),
                const Ints& maskIdx=Ints()
             );
