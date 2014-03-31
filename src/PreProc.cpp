@@ -2,6 +2,7 @@
 
 
 
+
 PreProc::PreProc(){
 
     // DEFAULT VALUES
@@ -196,6 +197,8 @@ void PreProc::setParam(const int doPreprocess,
               const double brightness,
               const double contrast){
 
+    ROS_INFO("PPR > SETTING PARAMS");
+
     smootherNr = doPreprocess;
     this->doPreprocess = smootherNr >=0;
     this->doDeinterlace = doDeinterlace;
@@ -209,6 +212,8 @@ void PreProc::setParam(const int doPreprocess,
     kSize = cv::Size(k,k);
     this->sigmaX = sigmaX;
     this->sigmaY = sigmaY;
+
+    ROS_INFO("PPR < PARAMS SET");
 
     //return config;
 }

@@ -4,6 +4,7 @@
 //#include <ollieRosTools/PreProcNode_paramsConfig.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
+#include <ros/ros.h>
 
 
 

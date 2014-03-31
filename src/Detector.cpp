@@ -125,8 +125,8 @@ void Detector::extract(const cv::Mat& image, KeyPoints &kps_inout, cv::Mat& desc
 
     //ROS_INFO("DESCRIPTOR TYPE: %d   SIZE: %d", cv_extractor->descriptorType(), cv_extractor->descriptorSize());
 
-    cv_extractor->compute(image, kps_inout, descs_out);
-    ROS_INFO("Extracting Descriptors (Type: %d, Size: %d)", cv_extractor->descriptorType(), cv_extractor->descriptorSize()) ;
+    ROS_INFO("DET = Extracting Descriptors (Type: %d, Size: %d)", cv_extractor->descriptorType(), cv_extractor->descriptorSize()) ;
+    cv_extractor->compute(image, kps_inout, descs_out);    
 
 }
 
@@ -144,7 +144,7 @@ void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const 
 
     //TODO This shouldnt happen but it does. FIXME
     if (cv_detector==0){
-        ROS_ERROR("detector not instanciated...");
+        ROS_ERROR("DET = Detector not instanciated...");
         return;
     }
 
@@ -201,7 +201,7 @@ void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const 
 
     uint total; double rmin; double rmax;
     minMaxTotal(kps_out, rmin, rmax, total);
-    ROS_INFO("KP DETECTION: Response [%g,  %g], KPs: %d KPs, Thresh: %g", rmin, rmax, total, kp_thresh);
+    ROS_INFO("DET = KP DETECTION: Response [%g,  %g], KPs: %d KPs, Thresh: %g", rmin, rmax, total, kp_thresh);
 
 
 }
@@ -390,6 +390,7 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
 
 
 void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
+    ROS_INFO("DET > SETTING PARAMS");
 
     //////////////////////////////////////////////////////////////// DETECTOR
     kp_border = config.kp_border;
@@ -495,7 +496,7 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
     // None
     default:
         // should never happen
-        ROS_WARN("Unknown Feature Detector Nr");
+        ROS_WARN("DET = Unknown Feature Detector Nr");
         break;
     }
 
@@ -508,6 +509,7 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
         kp_thresh != thresh ||
         cv_detector == 0
         ) {
+        ROS_INFO("DET = CREATING NEW DETECTOR");
 
         // Assign new values
         detectorNr = config.detector;
@@ -515,7 +517,6 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
         kp_octaves = config.kp_octaves;
         kp_octaveLayers = config.kp_octaveLayers;
         kp_thresh = thresh;
-        std::cout << "new thresh: "<<thresh <<std::endl;
 
         // Create detector
         switch(detectorNr){
@@ -537,11 +538,14 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
     //////////////////////////////////////////////////////////////// EXTRACTOR
 
     if(extractorNr != config.extractor || cv_extractor == 0){
+        ROS_INFO("DET = CREATING NEW EXTRACTOR");
         extractorNr = config.extractor;
         cv_extractor = getAlgo(extractorNr, thresh);
     }
 
     // Cache to detect fugure differences
     config_pre = config;
+
+    ROS_INFO("DET < PARAMS SET");
 
 }

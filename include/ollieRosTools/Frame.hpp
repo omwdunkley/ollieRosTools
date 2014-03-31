@@ -33,8 +33,8 @@ private:
         double accX, accY, accZ;
 
         // Meta
-        static long unsigned int idCounter;
-        static long unsigned int kfIdCounter;
+        static int idCounter;
+        static int kfIdCounter;
         ros::Time time;
         int id;
         int kfId; //keyframe id
@@ -111,11 +111,15 @@ private:
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     Frame() : initialised(false){
+        ROS_INFO("FRA = NEW UNINITIALISED FRAME");
     }
 
     Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask=cv::Mat()) : initialised(true) {
         id = ++idCounter;
         kfId = -1;
+
+        ROS_INFO("FRA > CREATING NEW FRAME [ID: %d]", id);
+
         timePreprocess = 0;
         timeExtract    = 0;
         timeDetect     = 0;
@@ -143,6 +147,8 @@ public:
 
         /// TODO: estiamte quality of imageu using acceleromter, gyro and blurriness estiamtion
         estimateImageQuality();
+
+        ROS_INFO("FRA < NEW FRAME CREATED [ID: %d]", id);
     }
 
 
@@ -346,7 +352,7 @@ public:
                     keypointsRotated = cameraModel.rotatePoints(keypoints, -getRoll(), aroundOptical);
                 } else {
                     // compute them?
-                    ROS_WARN("Asked for rotated keypoints but dont have any points or keypoints to compute them from");
+                    ROS_WARN("FRA = Asked for rotated keypoints but dont have any points or keypoints to compute them from");
                 }
             }
         }
@@ -383,6 +389,7 @@ public:
 
 
     static void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
+        ROS_INFO("FRA > SETTING PARAMS");
         preproc.setParam(config.doPreprocess,
                          config.doDeinterlace,
                          config.doEqualise,
@@ -401,6 +408,8 @@ public:
                            config.s);
 
         detector.setParameter(config, level);
+
+        ROS_INFO("FRA < PARAMS SET");
 
     }
 

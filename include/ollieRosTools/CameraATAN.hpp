@@ -45,6 +45,7 @@ class CameraATAN {
 
         cv::Mat rectify(const cv::Mat& imgIn){
             /// Rectifiy image using precomputed matricies and camInfoMessage
+            ROS_INFO("CAM > RECTIFYING");
             cv::Mat imgOut;
 
             // Check input image size vs previous size. Initial previous size is -1,
@@ -64,7 +65,11 @@ class CameraATAN {
 
             if (interpolation>=0){
                 // Interpolate
+
+                ROS_INFO("CAM = WARPING RECTIFICATION");
                 cv::remap(imgIn, imgOut, rect_mapx, rect_mapy, interpolation);
+
+
 
 //                cv::Mat testP;
 //                cv::remap(imgOut, testP, rect_mapInvX, rect_mapInvY, interpolation);
@@ -75,8 +80,10 @@ class CameraATAN {
             } else {
                 // Skip, just copy header
                 imgOut = imgIn;
+                ROS_INFO("CAM = RECTIFYING TURED OFF, PASS THROUGH");
                 //imgIn.copyTo(imgOut);
             }
+            ROS_INFO("CAM < RECTIFYIED");
             return imgOut;
 
         }
@@ -264,7 +271,7 @@ class CameraATAN {
 
         KeyPoints unrectifyPoints(const KeyPoints& keypoints){
             KeyPoints kps;
-
+            ROS_ERROR("CAM = NOT IMPLEMENTED unrectifyPoints");
             return kps;
         }
 
@@ -365,6 +372,7 @@ class CameraATAN {
                        const double cx, const double cy,
                        const double fov){
             /// Update the settings use roy dynamic reconfigure
+            ROS_INFO("CAM > SETTING PARAM");
 
             this->outZoom = zoomFactor;
             interpolation = PTAMRectify;
@@ -392,6 +400,7 @@ class CameraATAN {
                 // Only call this after we have an image size
                 initialise();
             }
+            ROS_INFO("CAM < PARAM SET");
             //return config;
         }
 
@@ -434,6 +443,7 @@ class CameraATAN {
 
         void initialise(){
             /// Depending on the incoming image size, outgoing image size/zoom, update the camera_info message and then precompute the warping matrices
+            ROS_INFO("CAM > INITIALISING NEW CAMERA MATRIX");
 
             // Input parameters
             d2t = 2.0 * tan(fov / 2.0); // equation (13) inner part [see reference at top]
@@ -493,7 +503,7 @@ class CameraATAN {
                 infoMsg.P.at(2) = icx;
                 infoMsg.P.at(6) = icy;
 
-                ROS_INFO("   Default camera matrix without rectification [%dpx*%dpx (%.3f)]",
+                ROS_INFO("CAM = Default camera matrix without rectification [%dpx*%dpx (%.3f)]",
                          inWidth, inHeight, static_cast<double>(inWidth)/inHeight);
 
 
@@ -537,7 +547,7 @@ class CameraATAN {
 
                     double hor, vert, invHor, invVert;
                     if (zoomType == FULL_MIN){
-                        ROS_INFO("Initialising calibration: Zoom Full Min");
+                        ROS_INFO("CAM = Initialising calibration: Zoom Full Min");
                         // std::maximum distorted
                         hor  =  std::min(std::min(radBR, radTR), std::min(radBL, radTL));
                         vert =  std::min(std::min(radTR, radTL), std::min(radBL, radBR));
@@ -551,7 +561,7 @@ class CameraATAN {
                         ocx = invHor/hor*ofx/ifx*icx;
                         ocy = invVert/vert*ofy/ify*icy;
                     } else {
-                        ROS_INFO("Initialising calibration: Zoom Full Max");
+                        ROS_INFO("CAM = Initialising calibration: Zoom Full Max");
                         // std::maximum distorted
                         hor  = std::max(radBR, radTR) + std::max(radBL, radTL);
                         vert = std::max(radTR, radTL) + std::max(radBL, radBR);
@@ -569,7 +579,7 @@ class CameraATAN {
 
 
                 } else if (zoomType == CROP){
-                    ROS_INFO("Initialising calibration: Zoom Crop");
+                    ROS_INFO("CAM = Initialising calibration: Zoom Crop");
                     /// Zoom, pan and stretch so the whole output image is valid. Might crop sides of image depending on distortion
                     // find left-most and right-most radius
                     double radL = (icx)/ifx;
@@ -592,7 +602,7 @@ class CameraATAN {
 
                 } else { //if (zoomType == MANUAL){
                     /// Just manual scale, no panning
-                    ROS_INFO("Initialising calibration: Manual Zoom: %.2f", outZoom);
+                    ROS_INFO("CAM = Initialising calibration: Manual Zoom: %.2f", outZoom);
                     ofx = fx * outWidth  * outZoom;
                     ofy = fy * outHeight * outZoom;
                     ocx = cx * outWidth  - 0.5;
@@ -600,20 +610,43 @@ class CameraATAN {
                 }
 
 
+                ROS_INFO("CAM = Computing warp matrix");
                 /// PRECOMPUTE WARP MATRIX
                 rect_mapx = cv::Mat(outHeight, outWidth, CV_32FC1, cv::Scalar(0));
                 rect_mapy = cv::Mat(outHeight, outWidth, CV_32FC1, cv::Scalar(0));
 
                 for (int x=0; x<outWidth; ++x){
                     for (int y=0; y<outHeight; ++y){
-                        const double ix = (x - ocx) / ofx;
-                        const double iy = (y - ocy) / ofy;
-                        const double r = sqrt(ix*ix + iy*iy);
-                        const double fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
-                        rect_mapx.at<double>(y,x) = ifx*fac*ix+icx;
-                        rect_mapy.at<double>(y,x) = ify*fac*iy+icy;
+                        const float ix = (x - ocx) / ofx;
+                        const float iy = (y - ocy) / ofy;
+                        const float r = sqrt(ix*ix + iy*iy);
+                        const float fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
+                        rect_mapx.at<float>(y,x) = ifx*fac*ix+icx;
+                        rect_mapy.at<float>(y,x) = ify*fac*iy+icy;
                     }
                 }
+
+//                //calculate angle and magnitude
+//                cv::Mat magnitude, angle;
+//                cv::cartToPolar(rect_mapx, rect_mapy, magnitude, angle, true);
+//                //translate magnitude to range [0;1]
+//                double mag_max=60;
+//                cv::minMaxLoc(magnitude, 0, &mag_max);
+//                magnitude.convertTo(magnitude, -1, 1.0/mag_max);
+//                //build hsv image
+//                cv::Mat _hls[3], hsv;
+//                _hls[0] = angle;
+//                _hls[1] = cv::Mat::ones(angle.size(), CV_32F);
+//                _hls[2] = magnitude;
+//                cv::merge(_hls, 3, hsv);
+//                //convert to BGR and show
+//                cv::Mat bgr;//CV_32FC3 matrix
+//                cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+//                cv::imshow("camera refectification", bgr); cv::waitKey(1000);
+
+
+
+
 
 
                 //            rect_mapInvX = cv::Mat(inHeight, inWidth, CV_32FC1, cv::Scalar(0));
@@ -629,6 +662,7 @@ class CameraATAN {
                 //                }
                 //            }
 
+                ROS_INFO("CAM = Computing camera matrix and its inverse");
                 P = Matrix3f::Identity();
                 P(0, 0) = ofx;
                 P(1, 1) = ofy;
@@ -662,10 +696,10 @@ class CameraATAN {
                 infoMsg.P.at(2) = ocx;
                 infoMsg.P.at(6) = ocy;
 
-                ROS_INFO("   Input [%dpx*%dpx (%.3f)] Output: [%dpx*%dpx (%.3f)]",
+                ROS_INFO("CAM = Input [%dpx*%dpx (%.3f)] Output: [%dpx*%dpx (%.3f)]",
                          inWidth, inHeight, static_cast<double>(inWidth)/inHeight,
                          outWidth, outHeight, static_cast<double>(outWidth)/outHeight);
-                ROS_INFO("   NEW MODEL:  Focal: [%.1f, %.1f] Center: [%.1f, %.1f]", ofx, ofy, ocx, ocy);
+                ROS_INFO("CAM < INITIALISED NEW MODEL:  Focal: [%.1f, %.1f] Center: [%.1f, %.1f]", ofx, ofy, ocx, ocy);
 
             }
 

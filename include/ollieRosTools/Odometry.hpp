@@ -355,7 +355,7 @@ public:
 
                 disparity = track(frame);
 
-                /// Check if we can initialised
+                /// Check if we can initialise
                 if (control==DO_INIT || disparity>voInitDisparity){
                     control = DO_NOTHING;
                     setInitialKFVO(frame); // JUST FOR TESTING

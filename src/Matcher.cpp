@@ -32,25 +32,25 @@ void Matcher::updateMatcher(int type, bool update){
 
     if(m_type){ //FLANN
         if (type==CV_8U){ // BINARY DESCRIPTOR
-            ROS_INFO("Updated Matcher: FLANN BINARY");
+            ROS_INFO("MAT = Updated Matcher: FLANN BINARY");
             matcher = new cv::FlannBasedMatcher(new cv::flann::LshIndexParams(20,10,2),new cv::flann::SearchParams(32,0,true));
         } else if (type==CV_32F){ // FLOAT DESCRIPTOR
-            ROS_INFO("Updated Matcher: FLANN FLOAT");
+            ROS_INFO("MAT = Updated Matcher: FLANN FLOAT");
             matcher = new cv::FlannBasedMatcher(new cv::flann::KDTreeIndexParams(4), new cv::flann::SearchParams(32, 0, true));
         } else {
-            ROS_WARN("Unknown Desc Type: %d", type);
+            ROS_WARN("MAT = Unknown Desc Type: %d", type);
         }
     } else { //BRUTEFORCE
         if (type==CV_8U){ // BINARY DESCRIPTOR
-            ROS_INFO("Updated Matcher: BRUTEFORCE BINARY");
+            ROS_INFO("MAT = Updated Matcher: BRUTEFORCE BINARY");
             matcher = new cv::BFMatcher(cv::NORM_HAMMING2, m_doSym);
             // orb 3,4:
             //matcher = new cv::BFMatcher(cv::NORM_HAMMING, m_doSym);
         } else if (type==CV_32F){ // FLOAT DESCRIPTOR
-            ROS_INFO("Updated Matcher: BRUTEFORCE FLOAT");
+            ROS_INFO("MAT = Updated Matcher: BRUTEFORCE FLOAT");
             matcher = new cv::BFMatcher(m_norm, m_doSym);
         } else {
-            ROS_WARN("Unknown Desc Type: %d", type);
+            ROS_WARN("MAT = Unknown Desc Type: %d", type);
         }
     }
 
@@ -61,7 +61,7 @@ void Matcher::updateMatcher(int type, bool update){
 
 
 void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
-
+    ROS_INFO("MAT > SETTING PARAM");
 
     //////////////////////////////////////////////////////////////// MATCHER
     //TODO add FLANN vars
@@ -87,11 +87,10 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
 
     updateMatcher(descType, true);
 
-
-
-
     // Cache to detect fugure differences
     config_pre = config;
+
+    ROS_INFO("MAT < PARAM SET");
 
 }
 

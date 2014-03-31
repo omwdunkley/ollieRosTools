@@ -821,6 +821,7 @@ class Tracker{
 
 
         void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
+            ROS_INFO("FTR > SETTING PARAM");
             matcher.setParameter(config, level);
 
 
@@ -901,6 +902,7 @@ class Tracker{
             }
             */
             preConfig = config;
+            ROS_INFO("FTR < PARAM SET");
 
         }
 
