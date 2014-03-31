@@ -16,6 +16,15 @@
 
 namespace RP = opengv::sac_problems::relative_pose;
 
+
+
+
+
+
+
+
+
+
 class Odometry
 {
 
@@ -49,6 +58,7 @@ private:
     int voRelRansacIter;
     int voRelPoseMethod;    
     float voInitDisparity;   // disparity required to trigger initialisation
+    float voKfDisparity;     // disparity required to trigger new KF
     float frameQualityThreshold;
     float keyFrameQualityThreshold;
 
@@ -248,12 +258,17 @@ private:
         opengv::points_t worldPoints;
         DMatches voMatches;
 
-        bool okay = initialise(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches(), worldPoints, voMatches );
 
+
+        bool okay = initialise(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches(), worldPoints, voMatches );
         //addKFVO();
 
         if (okay){
             ROS_INFO("ODO < INITIALISATION SUCCESS");
+
+
+            map.initialise(worldPoints, voMatches);
+
             state = INITIALISED;
         } else {
             ROS_WARN("ODO < INITIALISATION FAIL");
@@ -358,8 +373,7 @@ public:
                 /// Check if we can initialise
                 if (control==DO_INIT || disparity>voInitDisparity){
                     control = DO_NOTHING;
-                    setInitialKFVO(frame); // JUST FOR TESTING
-                    //initialiseVO();
+                    initialiseVO();
 
                 }
             }
@@ -374,7 +388,7 @@ public:
 
             estimatePoseVO();
 
-            if (control==DO_ADDKF || disparity>voInitDisparity){
+            if (control==DO_ADDKF || disparity>voKfDisparity){
                 control = DO_NOTHING;
                 addKFVO();
             }
@@ -418,6 +432,7 @@ public:
         voTriangulationMethod = config.vo_triMethod;
         voRelNLO          = config.vo_relNLO;
         voInitDisparity   = config.vo_initDisparity;
+        voKfDisparity     = config.vo_kfDisparity;
 
 
         // User controls

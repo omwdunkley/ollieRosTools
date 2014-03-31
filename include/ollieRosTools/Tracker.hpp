@@ -33,7 +33,7 @@ class Tracker{
 
 
         // time used for matching / KLTing
-        double time;
+        double timeTrack;
 
         // rotated disparity between keyframe and current frame
         double disparity;
@@ -100,7 +100,7 @@ class Tracker{
             //voDoIntitialise = false;
             m_pxdist = 300;
             m_pxdistStep = 50;
-            time = 0;
+            timeTrack = 0;
             disparity = 0;
             //pubMarkers = n.advertise<visualization_msgs::Marker>("/vo/markers", 1);
         }
@@ -405,7 +405,7 @@ class Tracker{
             }
 
             /// buffer frame for next update
-            time = (ros::WallTime::now()-t0).toSec();
+            timeTrack = (ros::WallTime::now()-t0).toSec();
 
             klt_init = true;
             ROS_INFO("KLT < INITIALISED WITH %lu POINTS", kf_keypoints.size());
@@ -632,7 +632,7 @@ class Tracker{
             previousFrame = currFrame;
             currFrame = newFrame;
 
-            time = (ros::WallTime::now()-t0).toSec();
+            timeTrack = (ros::WallTime::now()-t0).toSec();
             ROS_INFO("KLT < TRACKED [OK: %4d]  [FAILED: KLT: %lu | STEP: %4lu | DIST: %4lu | BORDER: %4lu]", counter, cKLT.size(), cStepDist.size(), cDist.size(), cBorder.size());
             return;
 
@@ -641,7 +641,7 @@ class Tracker{
         // puts matches into class member prevMatches
         void doF2KF(FramePtr& newFrame){
             std::swap(FMatches, KFMatches); // store previous matches here
-            matcher.match(newFrame, keyFrame, KFMatches, time, m_pxdist);
+            matcher.match(newFrame, keyFrame, KFMatches, timeTrack, m_pxdist);
             border = cv::Rect(borderF2KF, cv::Point(newFrame->getSize().width, newFrame->getSize().height)-borderF2KF);
 
             // the first time this function is called we do not have a new frame
@@ -658,7 +658,7 @@ class Tracker{
             if (!klt_init){
                 klt_init = true;
                 currFrame = keyFrame;
-                matcher.match(newFrame, keyFrame, FMatches, time);
+                matcher.match(newFrame, keyFrame, FMatches, timeTrack);
 //                KFMatches = disparityFilter(KFMatches, newFrame, currFrame, m_pxdist, m_pxdist>0 && (m_pxdist<m_pxdistStep || m_pxdistStep==0) );
                 //KFMatches = FMatches;
             } else {
@@ -676,7 +676,7 @@ class Tracker{
                 Ints queryIdx, trainIdx;
                 OVO::match2ind(FMatches, queryIdx, trainIdx);
 //                matcher.match(newFrame, currFrame, ms, time, 0.f, cv::Mat(), queryIdx );
-                  matcher.match(newFrame, currFrame, FMatches, time, 0.f, cv::Mat(), queryIdx );
+                  matcher.match(newFrame, currFrame, FMatches, timeTrack, 0.f, cv::Mat(), queryIdx );
 
 //                for (uint i=0; i<ms.size(); ++i){
 //                    float normStep = cv::norm(nfPts[ms[i].queryIdx].pt-cfPts[ms[i].queryIdx].pt);
@@ -713,46 +713,47 @@ class Tracker{
             cv::Mat img;
             CvScalar col;
             cv::drawMatches(currFrame->getVisualImage(), KeyPoints(), keyFrame->getVisualImage(), KeyPoints(), DMatches(), img);
+            cv::Mat imgOverlay = cv::Mat::zeros(img.size(), img.type());
             const cv::Point2f width = cv::Point2f(img.cols/2, 0);
 
 
             // draw borders on both images
-            cv::rectangle(img, border, CV_RGB(0,0,128));
-            cv::rectangle(img, cv::Rect(cv::Point(width.x, width.y)+border.tl(), cv::Point(width.x, width.y)+border.br()), CV_RGB(0,0,128));
+            cv::rectangle(imgOverlay, border, CV_RGB(0,0,128));
+            cv::rectangle(imgOverlay, cv::Rect(cv::Point(width.x, width.y)+border.tl(), cv::Point(width.x, width.y)+border.br()), CV_RGB(0,0,128));
 
             if (method==KLT){
 
                 // draw all failed border points
                 col = CV_RGB(200,0,0);
                 for (uint i=0; i<cBorder.size(); ++i){
-                    cv::circle(img, failedCF[i], 3, col, 1, CV_AA);
-                    cv::circle(img, failedKF[i]+width, 3, col, 1, CV_AA);
-                    cv::line(img, failedCF[i], failedPF[i], col, 1, CV_AA);
-                    cv::line(img, failedKF[i]+width, failedCF[i]+width, col, 1, CV_AA);
+                    cv::circle(imgOverlay, failedCF[i], 3, col, 1, CV_AA);
+                    cv::circle(imgOverlay, failedKF[i]+width, 3, col, 1, CV_AA);
+                    cv::line(imgOverlay, failedCF[i], failedPF[i], col, 1, CV_AA);
+                    cv::line(imgOverlay, failedKF[i]+width, failedCF[i]+width, col, 1, CV_AA);
                 }
                 // draw all failed klt points
                 col = CV_RGB(255,0,0);
                 for (uint i=0; i<cKLT.size(); ++i){
-                    cv::circle(img, failedCF[i], 3, col, 1, CV_AA);
-                    cv::circle(img, failedKF[i]+width, 3, col, 1, CV_AA);
-                    cv::line(img, failedCF[i], failedPF[i], col, 1, CV_AA);
-                    cv::line(img, failedKF[i]+width, failedCF[i]+width, col, 1, CV_AA);
+                    cv::circle(imgOverlay, failedCF[i], 3, col, 1, CV_AA);
+                    cv::circle(imgOverlay, failedKF[i]+width, 3, col, 1, CV_AA);
+                    cv::line(imgOverlay, failedCF[i], failedPF[i], col, 1, CV_AA);
+                    cv::line(imgOverlay, failedKF[i]+width, failedCF[i]+width, col, 1, CV_AA);
                 }
                 // draw all failed step points
                 col = CV_RGB(150,0,50);
                 for (uint i=0; i<cStepDist.size(); ++i){
-                    cv::circle(img, failedCF[i], 3, col, 1, CV_AA);
-                    cv::circle(img, failedKF[i]+width, 3, col, 1, CV_AA);
-                    cv::line(img, failedCF[i], failedPF[i], col, 1, CV_AA);
-                    cv::line(img, failedKF[i]+width, failedCF[i]+width, col, 1, CV_AA);
+                    cv::circle(imgOverlay, failedCF[i], 3, col, 1, CV_AA);
+                    cv::circle(imgOverlay, failedKF[i]+width, 3, col, 1, CV_AA);
+                    cv::line(imgOverlay, failedCF[i], failedPF[i], col, 1, CV_AA);
+                    cv::line(imgOverlay, failedKF[i]+width, failedCF[i]+width, col, 1, CV_AA);
                 }
                 // draw all failed dist points
                 col = CV_RGB(150,50,0);
                 for (uint i=0; i<cDist.size(); ++i){
-                    cv::circle(img, failedCF[i], 3, col, 1, CV_AA);
-                    cv::circle(img, failedKF[i]+width, 3, col, 1, CV_AA);
-                    cv::line(img, failedCF[i], failedPF[i], col, 1, CV_AA);
-                    cv::line(img, failedKF[i]+width, failedCF[i]+width, col, 1, CV_AA);
+                    cv::circle(imgOverlay, failedCF[i], 3, col, 1, CV_AA);
+                    cv::circle(imgOverlay, failedKF[i]+width, 3, col, 1, CV_AA);
+                    cv::line(imgOverlay, failedCF[i], failedPF[i], col, 1, CV_AA);
+                    cv::line(imgOverlay, failedKF[i]+width, failedCF[i]+width, col, 1, CV_AA);
                 }
 
                 // Draw good keypoints
@@ -763,12 +764,12 @@ class Tracker{
                 // current frame to key frame (right side)
                 col = CV_RGB(0,200,0);
                 for (uint i=0; i<KFMatches.size(); ++i){
-                    cv::line(img, width+cfpts[KFMatches[i].queryIdx], width+kfpts[KFMatches[i].trainIdx], OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
+                    cv::line(imgOverlay, width+cfpts[KFMatches[i].queryIdx], width+kfpts[KFMatches[i].trainIdx], OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
                 }
                 // current frame to prev frame (left side)
                 col = CV_RGB(0,0,200);
                 for (uint i=0; i<FMatches.size(); ++i){
-                    cv::line(img, cfpts[FMatches[i].queryIdx], pfpts[FMatches[i].trainIdx], OVO::getColor(0.f, m_pxdistStep, FMatches[i].distance*1.1), 1, CV_AA);
+                    cv::line(imgOverlay, cfpts[FMatches[i].queryIdx], pfpts[FMatches[i].trainIdx], OVO::getColor(0.f, m_pxdistStep, FMatches[i].distance*1.1), 1, CV_AA);
                 }
 
 
@@ -783,8 +784,10 @@ class Tracker{
 
                 // current frame to key frame (right side)
                 CV_RGB(0,200,0);
-                for (uint i=0; i<KFMatches.size(); ++i){
-                    cv::line(img, width+cfpts[KFMatches[i].queryIdx].pt, width+kfpts[KFMatches[i].trainIdx].pt, OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
+                for (uint i=0; i<KFMatches.size(); ++i){                    
+                    cv::circle(imgOverlay, cfpts[KFMatches[i].queryIdx].pt, 3, CV_RGB(0, 96*2, 0), 1, CV_AA);
+                    cv::circle(imgOverlay, cfpts[KFMatches[i].queryIdx].pt, 2, OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
+                    cv::line(imgOverlay, width+cfpts[KFMatches[i].queryIdx].pt, width+kfpts[KFMatches[i].trainIdx].pt, OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
                 }
 
             } else if (method==F2F){
@@ -796,22 +799,32 @@ class Tracker{
                 // current frame to key frame (right side)
                 col = CV_RGB(0,200,0);
                 for (uint i=0; i<KFMatches.size(); ++i){
-                    cv::line(img, width+cfpts[KFMatches[i].queryIdx], width+kfpts[KFMatches[i].trainIdx], OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
+                    cv::line(imgOverlay, width+cfpts[KFMatches[i].queryIdx], width+kfpts[KFMatches[i].trainIdx], OVO::getColor(0.f, m_pxdist, KFMatches[i].distance*1.1), 1, CV_AA);
                 }
                 // current frame to prev frame (left side)
                 col = CV_RGB(0,0,200);
                 for (uint i=0; i<FMatches.size(); ++i){
-                    cv::line(img, cfpts[FMatches[i].queryIdx], pfpts[FMatches[i].trainIdx], OVO::getColor(0.f, m_pxdistStep, FMatches[i].distance*1.1), 1, CV_AA);
+                    cv::line(imgOverlay, cfpts[FMatches[i].queryIdx], pfpts[FMatches[i].trainIdx], OVO::getColor(0.f, m_pxdistStep, FMatches[i].distance*1.1), 1, CV_AA);
                 }
-                OVO::drawTextCenter(img, "NOT IMPLEMENTED VIS", CV_RGB(255,0,0), 3, 1);
+                OVO::drawTextCenter(imgOverlay, "NOT IMPLEMENTED VIS", CV_RGB(255,0,0), 3, 1);
 
             } else {
-                cv::drawMatches(currFrame->getVisualImage(), KeyPoints(), keyFrame->getVisualImage(), KeyPoints(), DMatches(), img);
-                OVO::drawTextCenter(img, "NOT IMPLEMENTED VIS", CV_RGB(255,0,0), 3, 1);
+                cv::drawMatches(currFrame->getVisualImage(), KeyPoints(), keyFrame->getVisualImage(), KeyPoints(), DMatches(), imgOverlay);
+                OVO::drawTextCenter(imgOverlay, "NOT IMPLEMENTED VIS", CV_RGB(255,0,0), 3, 1);
             }
 
+
+
             ///  print disparity info
+
+            /// Matches Info
+            OVO::putInt(img, KFMatches.size(), cv::Point(10,2*25), CV_RGB(0,96*2,0),  true, "MA:");
+            OVO::putInt(img, disparity, cv::Point(10,3*25), CV_RGB(0,96*2,0), false , "DI:");
+
+
             ///  print timing info
+            OVO::putInt(img, timeTrack*1000., cv::Point(10,img.rows-3*25), CV_RGB(200,0,200), false, "T:");
+            cv::addWeighted(img, 1.0, imgOverlay, 0.8, 0.0, img);
 
             return img;
         }

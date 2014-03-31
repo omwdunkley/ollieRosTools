@@ -110,5 +110,3 @@ void OVO::transformPoints(const Eigen::Affine3d& transform, opengv::points_t& po
         points[i] = transform * points[i];
     }
 }
-
-

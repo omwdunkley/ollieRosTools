@@ -102,6 +102,7 @@ SET(VO_FILES
     src/Tracker.cpp
     src/Matcher.cpp
     src/Odometry.cpp
+    src/Map.cpp
 )
 
 

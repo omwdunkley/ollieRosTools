@@ -77,6 +77,7 @@ VoNode::~VoNode() {
 
 /// PINHOLE
 void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
+    ROS_INFO("\n");
 
     /// Measure HZ, Processing time, Image acquisation time
     ros::WallTime time_s0 = ros::WallTime::now();

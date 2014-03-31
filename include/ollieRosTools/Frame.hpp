@@ -214,7 +214,7 @@ public:
 
         // Draw keypoints if they exist, also makes img colour
         cv::drawKeypoints(image, keypoints, img, CV_RGB(0,90,20));
-        OVO::putInt(img, keypoints.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"");
+        OVO::putInt(img, keypoints.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"KP: ");
 
         // Draw Frame ID
         OVO::putInt(img, id, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,100,110), true,  "FID:");
