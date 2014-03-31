@@ -27,11 +27,13 @@ public:
     Detector();
     void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
-    void detect(const cv::Mat& img, KeyPoints& kps_out,const cv::Mat& mask=cv::Mat()) const;
-    void extract(const cv::Mat& img, KeyPoints& kps_inout, cv::Mat& descs_out, double angleRad = 0.0) const;
+    void detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask=cv::Mat()) const;
+    void extract(const cv::Mat& img, KeyPoints& kps_inout, cv::Mat& descs_out, int& descId, double angleRad = 0.0) const;
 
-    int get_detector_id() const {return detector_nr;}
-    int get_extractor_id() const {return extractor_nr;}
+    int getDetectorId() const {return detectorNr;}
+    int getExtractorId() const {return extractorNr;}
+    int getDescriptorType() const {return cv_extractor->descriptorType();}
+    int getDescriptorSize() const {return cv_extractor->descriptorSize();}
 
 
 
@@ -39,7 +41,6 @@ private:
 
     // Cache settings to notice changes
     ollieRosTools::VoNode_paramsConfig config_pre;
-
     cv::Ptr< agast::AstDetector> ast_detector;
     cv::Ptr< cv::FeatureDetector> cv_detector;
     cv::Ptr< cv::DescriptorExtractor> cv_extractor;
@@ -52,8 +53,8 @@ private:
 
 
 
-    int detector_nr;
-    int extractor_nr;
+    int detectorNr;
+    int extractorNr;
 
     double kp_thresh;
     uint kp_max;

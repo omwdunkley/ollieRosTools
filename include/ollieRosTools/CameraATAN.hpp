@@ -94,20 +94,21 @@ class CameraATAN {
             const cv::Point2f shifted = inout - center;
             inout = cv::Point2f(cos(angleRad)*shifted.x - sin(angleRad)*shifted.y, sin(angleRad)*shifted.x + cos(angleRad)*shifted.y)+ center;
         }
-        void rotatePoint(cv::KeyPoint& inout, const cv::Point2f& center, const double angleRad) const {
+        void rotatePoint(cv::KeyPoint& inout, const cv::Point2d& center, const double angleRad) const {
             rotatePoint(inout.pt, center, angleRad);
         }
 
-        KeyPoints rotatePoints(const KeyPoints& keypoints, const float angleRad, bool aroundOptical=true) const{
+        /// TODO DO this with eigen, and we have some+- mistakes somewhere along the way
+        KeyPoints rotatePoints(const KeyPoints& keypoints, const double angleRad, bool aroundOptical=true) const{
             // Copy key points
             KeyPoints keypointsOut = keypoints;
 
             // Get center
-            cv::Point2f center;
+            cv::Point2d center;
             if (aroundOptical){
-                center = cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]); //cx, cy
+                center = cv::Point2d(infoMsgPtr->K[2], infoMsgPtr->K[5]); //cx, cy
             } else {
-                center = cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.);
+                center = cv::Point2d(infoMsgPtr->width/2., infoMsgPtr->height/2.);
             }
 
             // Rotate around center
@@ -116,48 +117,45 @@ class CameraATAN {
             }
 
 
-            /// DRAW
-            cv::Mat img = cv::Mat::zeros(infoMsgPtr->height, infoMsgPtr->width, CV_8UC3);
-
-            // Draw Chosen center
-            cv::circle(img, center, 10, CV_RGB(255,0,0),3, CV_AA);
-
-            // Draw line parallel to x
-            cv::line(img,
-                     cv::Point(0,                 center.y),
-                     cv::Point(infoMsgPtr->width, center.y),
-                     CV_RGB(0,255,0), 1, CV_AA);
-            // Draw line parallel to y
-            cv::line(img,
-                     cv::Point(center.x, infoMsgPtr->height),
-                     cv::Point(center.x, 0),
-                     CV_RGB(0,255,0), 1, CV_AA);
-            // Draw line parallel from optical center to image center
-            cv::line(img,
-                     cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]),
-                     cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.),
-                     CV_RGB(0,0,255), 1, CV_AA);
-            for (uint i=0; i<keypointsOut.size(); ++i){
-                cv::circle(img, keypointsOut[i].pt, 1, CV_RGB(255,0,0), 1, CV_AA);
-                cv::circle(img, keypoints[i].pt,    1, CV_RGB(0,255,0), 1, CV_AA);
-            }
-
-            cv::imshow("center", img);
-            cv::waitKey(10);
+//            /// DRAW
+//            cv::Mat img = cv::Mat::zeros(infoMsgPtr->height, infoMsgPtr->width, CV_8UC3);
+//            // Draw Chosen center
+//            cv::circle(img, center, 10, CV_RGB(255,0,0),3, CV_AA);
+//            // Draw line parallel to x
+//            cv::line(img,
+//                     cv::Point(0,                 center.y),
+//                     cv::Point(infoMsgPtr->width, center.y),
+//                     CV_RGB(0,255,0), 1, CV_AA);
+//            // Draw line parallel to y
+//            cv::line(img,
+//                     cv::Point(center.x, infoMsgPtr->height),
+//                     cv::Point(center.x, 0),
+//                     CV_RGB(0,255,0), 1, CV_AA);
+//            // Draw line parallel from optical center to image center
+//            cv::line(img,
+//                     cv::Point2d(infoMsgPtr->K[2], infoMsgPtr->K[5]),
+//                     cv::Point2d(infoMsgPtr->width/2., infoMsgPtr->height/2.),
+//                     CV_RGB(0,0,255), 1, CV_AA);
+//            for (uint i=0; i<keypointsOut.size(); ++i){
+//                cv::circle(img, keypointsOut[i].pt, 1, CV_RGB(255,0,0), 1, CV_AA);
+//                cv::circle(img, keypoints[i].pt,    1, CV_RGB(0,255,0), 1, CV_AA);
+//            }
+//            cv::imshow("center", img);
+//            cv::waitKey(10);
 
             return keypointsOut;
         }
 
-
-        Points2 rotatePoints(const Points2& points, const float angleRad, bool aroundOptical=false) const{
+/*
+        Points2 rotatePoints(const Points2& points, const double angleRad, bool aroundOptical=false) const{
             Points2 pointsOut = points;
 
             // Get center
-            cv::Point2f center;
+            cv::Point2d center;
             if (aroundOptical){
-                center = cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]); //cx, cy
+                center = cv::Point2d(infoMsgPtr->K[2], infoMsgPtr->K[5]); //cx, cy
             } else {
-                center = cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.);
+                center = cv::Point2d(infoMsgPtr->width/2., infoMsgPtr->height/2.);
             }
 
             // Rotate around center
@@ -183,8 +181,8 @@ class CameraATAN {
                      CV_RGB(0,255,0), 1, CV_AA);
             // Draw line parallel from optical center to image center
             cv::line(img,
-                     cv::Point2f(infoMsgPtr->K[2], infoMsgPtr->K[5]),
-                     cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.),
+                     cv::Point2d(infoMsgPtr->K[2], infoMsgPtr->K[5]),
+                     cv::Point2d(infoMsgPtr->width/2., infoMsgPtr->height/2.),
                      CV_RGB(0,0,255), 1, CV_AA);
             // Draw points
             for (uint i=0; i<pointsOut.size(); ++i){
@@ -198,6 +196,7 @@ class CameraATAN {
 
             return pointsOut;
         }
+*/
 
 
         KeyPoints rectifyPoints(const KeyPoints& keypoints, bool pointsFromCamera=true){
@@ -206,7 +205,7 @@ class CameraATAN {
                 /// Incoming points are rectified
                 // do nothing
             } else {
-                Points2 points;
+                Points2f points;
                 cv::KeyPoint::convert(keypoints, points);
                 Matrix<float, Dynamic, 2, RowMajor> f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
                 f2d.col(0).array() -= icx;
@@ -269,13 +268,13 @@ class CameraATAN {
             return kps;
         }
 
-        void bearingVectors(const KeyPoints& keypoints, MatrixXf& bearings) const{
-            Points2 points;
+        void bearingVectors(const KeyPoints& keypoints, MatrixXd& bearings) const{
+            Points2f points;
             cv::KeyPoint::convert(keypoints, points);
             bearingVectors(points, bearings);
         }
 
-        void bearingVectors(const Points2& points, MatrixXf& bearings) const{
+        void bearingVectors(const Points2f& points, MatrixXd& bearings) const{
             /// Given 2d points, compute the bearing vecotrs that point from the
             /// optical center in the direction of the features.
             // Note that this class might be rectifying images (in which case we just use the pinhole model)
@@ -311,10 +310,10 @@ class CameraATAN {
 
 //                    MatrixXf f2dCV(points.size(),2);
 //                    for (uint i=0; i<points.size(); ++i){
-//                        const float ox = (points[i].x - icx) / ifx;
-//                        const float oy = (points[i].y - icy) / ify;
-//                        const float r = sqrt(ox*ox + oy*oy);
-//                        const float fac = tan(r * fov) / (r*d2t);
+//                        const double ox = (points[i].x - icx) / ifx;
+//                        const double oy = (points[i].y - icy) / ify;
+//                        const double r = sqrt(ox*ox + oy*oy);
+//                        const double fac = tan(r * fov) / (r*d2t);
 //                        f2dCV(i,0) = fac*ox;
 //                        f2dCV(i,1) = fac*oy; // ofy*fac*oy+ocy;
 //                    }
@@ -346,7 +345,7 @@ class CameraATAN {
             //std::cout << "TCH:" << std::endl << f2dh << std::endl;
 
             // Project 2d -> 3d rays
-            bearings = Pinv.solve(f2dh);
+            bearings = Pinv.solve(f2dh).cast<double>();
             //std::cout << "SOLVE:" << std::endl << bearings << std::endl;
 
             bearings.colwise().normalize();
@@ -414,8 +413,8 @@ class CameraATAN {
         Eigen::PartialPivLU<Matrix3f> Pinv;
 
         // PTAM parameters
-        float fx,fy,cx,cy,fov; // normalised, ie [0 1]
-        float d2t, ifx, ify, icx, icy;
+        double fx,fy,cx,cy,fov; // normalised, ie [0 1]
+        double d2t, ifx, ify, icx, icy;
 
         // Set according to imcoming images
         int inWidth, inHeight;
@@ -425,7 +424,7 @@ class CameraATAN {
         int outWidth, outHeight;
 
         // Rectified image scale and scale method
-        float outZoom;
+        double outZoom;
         ZoomType zoomType;
         // interpolation method (<0 means off)
         int interpolation;
@@ -495,14 +494,14 @@ class CameraATAN {
                 infoMsg.P.at(6) = icy;
 
                 ROS_INFO("   Default camera matrix without rectification [%dpx*%dpx (%.3f)]",
-                         inWidth, inHeight, static_cast<float>(inWidth)/inHeight);
+                         inWidth, inHeight, static_cast<double>(inWidth)/inHeight);
 
 
             } else {
                 /// RECIFYING IMAGE
 
                 // Output paramters
-                float ofx ,ofy, ocx, ocy;
+                double ofx ,ofy, ocx, ocy;
 
 
                 if (zoomType == NOZOOM){
@@ -519,24 +518,24 @@ class CameraATAN {
 
 
                     // Find radii to each side
-                    const float radL = icx/ifx;
-                    const float radR = (inWidth-1 - icx)/ifx;
-                    const float radT = icy/ify;
-                    const float radB = (inHeight-1 - icy)/ify;
+                    const double radL = icx/ifx;
+                    const double radR = (inWidth-1 - icx)/ifx;
+                    const double radT = icy/ify;
+                    const double radB = (inHeight-1 - icy)/ify;
 
                     // Find radii to each corner distored
-                    const float radTL = sqrt(pow(radT, 2) + pow(radL, 2));
-                    const float radTR = sqrt(pow(radT, 2) + pow(radR, 2));
-                    const float radBL = sqrt(pow(radB, 2) + pow(radL, 2));
-                    const float radBR = sqrt(pow(radB, 2) + pow(radR, 2));
+                    const double radTL = sqrt(pow(radT, 2) + pow(radL, 2));
+                    const double radTR = sqrt(pow(radT, 2) + pow(radR, 2));
+                    const double radBL = sqrt(pow(radB, 2) + pow(radL, 2));
+                    const double radBR = sqrt(pow(radB, 2) + pow(radR, 2));
 
                     // Radii to each undistored corner: equation (14) inverse distortion function [see reference at top]
-                    float invTL = tan(radTL * fov)/d2t * outZoom;
-                    float invTR = tan(radTR * fov)/d2t * outZoom;
-                    float invBL = tan(radBL * fov)/d2t * outZoom;
-                    float invBR = tan(radBR * fov)/d2t * outZoom;
+                    double invTL = tan(radTL * fov)/d2t * outZoom;
+                    double invTR = tan(radTR * fov)/d2t * outZoom;
+                    double invBL = tan(radBL * fov)/d2t * outZoom;
+                    double invBR = tan(radBR * fov)/d2t * outZoom;
 
-                    float hor, vert, invHor, invVert;
+                    double hor, vert, invHor, invVert;
                     if (zoomType == FULL_MIN){
                         ROS_INFO("Initialising calibration: Zoom Full Min");
                         // std::maximum distorted
@@ -547,8 +546,8 @@ class CameraATAN {
                         invVert = std::min(std::min(invTR, invTL), std::min(invBL, invBR));
 
                         // Ratios define output
-                        ofx = ifx * ((hor ) / (invHor )) * ((float)outWidth /(float)inWidth );
-                        ofy = ify * ((vert) / (invVert)) * ((float)outHeight/(float)inHeight);
+                        ofx = ifx * ((hor ) / (invHor )) * ((double)outWidth /(double)inWidth );
+                        ofy = ify * ((vert) / (invVert)) * ((double)outHeight/(double)inHeight);
                         ocx = invHor/hor*ofx/ifx*icx;
                         ocy = invVert/vert*ofy/ify*icy;
                     } else {
@@ -561,8 +560,8 @@ class CameraATAN {
                         invVert = std::max(invTR, invTL) + std::max(invBL, invBR);
 
                         // Ratios define output
-                        ofx = ifx * ((hor ) / (invHor )) * ((float)outWidth /(float)inWidth );
-                        ofy = ify * ((vert) / (invVert)) * ((float)outHeight/(float)inHeight);
+                        ofx = ifx * ((hor ) / (invHor )) * ((double)outWidth /(double)inWidth );
+                        ofy = ify * ((vert) / (invVert)) * ((double)outHeight/(double)inHeight);
                         ocx = std::max(invBL/radBL, invTL/radTL)*ofx/ifx*icx;
                         ocy = std::max(invTL/radTL, invTR/radTR)*ofy/ify*icy;
                     }
@@ -573,20 +572,20 @@ class CameraATAN {
                     ROS_INFO("Initialising calibration: Zoom Crop");
                     /// Zoom, pan and stretch so the whole output image is valid. Might crop sides of image depending on distortion
                     // find left-most and right-most radius
-                    float radL = (icx)/ifx;
-                    float radR = (inWidth-1 - icx)/ifx;
-                    float radT = (icy)/ify;
-                    float radB = (inHeight-1 - icy)/ify;
+                    double radL = (icx)/ifx;
+                    double radR = (inWidth-1 - icx)/ifx;
+                    double radT = (icy)/ify;
+                    double radB = (inHeight-1 - icy)/ify;
 
                     // Undisorted radii to each side
-                    float invL = tan(radL * fov)/d2t* outZoom;
-                    float invR = tan(radR * fov)/d2t* outZoom;
-                    float invT = tan(radT * fov)/d2t* outZoom;
-                    float invB = tan(radB * fov)/d2t* outZoom;
+                    double invL = tan(radL * fov)/d2t* outZoom;
+                    double invR = tan(radR * fov)/d2t* outZoom;
+                    double invT = tan(radT * fov)/d2t* outZoom;
+                    double invB = tan(radB * fov)/d2t* outZoom;
 
                     // Ratios define output
-                    ofx = ifx * ((radL + radR) / (invL + invR)) * ((float)outWidth /(float)inWidth);
-                    ofy = ify * ((radT + radB) / (invT + invB)) * ((float)outHeight/(float)inHeight);
+                    ofx = ifx * ((radL + radR) / (invL + invR)) * ((double)outWidth /(double)inWidth);
+                    ofy = ify * ((radT + radB) / (invT + invB)) * ((double)outHeight/(double)inHeight);
                     ocx = (invL/radL)*ofx/ifx*icx;
                     ocy = (invT/radT)*ofy/ify*icy;
 
@@ -607,12 +606,12 @@ class CameraATAN {
 
                 for (int x=0; x<outWidth; ++x){
                     for (int y=0; y<outHeight; ++y){
-                        const float ix = (x - ocx) / ofx;
-                        const float iy = (y - ocy) / ofy;
-                        const float r = sqrt(ix*ix + iy*iy);
-                        const float fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
-                        rect_mapx.at<float>(y,x) = ifx*fac*ix+icx;
-                        rect_mapy.at<float>(y,x) = ify*fac*iy+icy;
+                        const double ix = (x - ocx) / ofx;
+                        const double iy = (y - ocy) / ofy;
+                        const double r = sqrt(ix*ix + iy*iy);
+                        const double fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
+                        rect_mapx.at<double>(y,x) = ifx*fac*ix+icx;
+                        rect_mapy.at<double>(y,x) = ify*fac*iy+icy;
                     }
                 }
 
@@ -621,12 +620,12 @@ class CameraATAN {
                 //            rect_mapInvY = cv::Mat(inHeight, inWidth, CV_32FC1, cv::Scalar(0));
                 //            for (int x=0; x<inWidth; ++x){
                 //                for (int y=0; y<inHeight; ++y){
-                //                    const float ox = (x - icx) / ifx;
-                //                    const float oy = (y - icy) / ify;
-                //                    const float r = sqrt(ox*ox + oy*oy);
-                //                    const float fac = tan(r * fov)/(2*r*tan(fov/2));
-                //                    rect_mapInvX.at<float>(y,x) = ofx*fac*ox+ocx;
-                //                    rect_mapInvY.at<float>(y,x) = ofy*fac*oy+ocy;
+                //                    const double ox = (x - icx) / ifx;
+                //                    const double oy = (y - icy) / ify;
+                //                    const double r = sqrt(ox*ox + oy*oy);
+                //                    const double fac = tan(r * fov)/(2*r*tan(fov/2));
+                //                    rect_mapInvX.at<double>(y,x) = ofx*fac*ox+ocx;
+                //                    rect_mapInvY.at<double>(y,x) = ofy*fac*oy+ocy;
                 //                }
                 //            }
 
@@ -664,8 +663,8 @@ class CameraATAN {
                 infoMsg.P.at(6) = ocy;
 
                 ROS_INFO("   Input [%dpx*%dpx (%.3f)] Output: [%dpx*%dpx (%.3f)]",
-                         inWidth, inHeight, static_cast<float>(inWidth)/inHeight,
-                         outWidth, outHeight, static_cast<float>(outWidth)/outHeight);
+                         inWidth, inHeight, static_cast<double>(inWidth)/inHeight,
+                         outWidth, outHeight, static_cast<double>(outWidth)/outHeight);
                 ROS_INFO("   NEW MODEL:  Focal: [%.1f, %.1f] Center: [%.1f, %.1f]", ofx, ofy, ocx, ocy);
 
             }

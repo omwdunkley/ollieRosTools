@@ -21,9 +21,11 @@
   <depend package="visualization_msgs"/>
   <depend package="opengv"/>
   <depend package="tf_conversions"/>
+  <depend package="eigen_conversions"/>
   <depend package="rbrief"/>
   <depend package="joy"/>
   <depend package="rospy"/>
+
 
   <rosdep name="opencv2"/>
   <rosdep name="eigen"/>

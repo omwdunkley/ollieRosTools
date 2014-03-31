@@ -5,57 +5,57 @@
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/opencv.hpp>
 #include <ollieRosTools/aux.hpp>
-//#include <ollieRosTools/KeyFrame.hpp>
+#include <ollieRosTools/Frame.hpp>
 //#include <ollieRosTools/PointMap.hpp>
 
 
 
 // Sort matches by response and take nr best
 // NOTE: Usually you wont need this as the matchers sort the output by distance
-void match_clip(DMatches& ms, const uint max_nr, bool is_sorted);
+void matchClip(DMatches& ms, const uint max_nr, bool is_sorted=true);
 
 // Return the smallest and largest distance along with the total nr of matches
-void minMaxTotal(const DMatches& ms, double& minval, double& maxval, uint& total);
+void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total);
 
 // Calculate disparity and filter pixels by disparity if required
-DMatches disparityFilter(const DMatches& in, KeyFrame& f1, KeyFrame& f2, const double maxDisparity, bool disparityFilter);
+DMatches disparityFilter(const DMatches& in, FramePtr& f1, FramePtr& f2, const float maxDisparity, bool disparityFilter);
 
 // Filter out matches that are not unique. Specifically unqiue = dist1/dist2 > similarity
-void match_filter_unique(const DMatchesKNN& msknn, DMatches& ms, const double similarity, const bool keep_sorted = false);
+void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float similarity, const bool keep_sorted = false);
 
 // Reduces vector of vectors DMatchesKNN to a single vector DMatches
-void match_knn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_sorted=false);
+void matchKnn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_sorted=false);
 
 // remove matches that are ratio * worse than the best
-void match_filter_ratio(DMatches& ms, const double ratio, const bool is_sorted=false);
+void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted=false);
 
 // Remove all matches below threshold.
-void match_threshold(DMatches& ms, double thresh, bool is_sorted=false);
+void matchThreshold(DMatches& ms, float thresh, bool is_sorted=false);
 
 // Compute average/median distance of a set of matches
-double matchAverageDistance(const DMatches& ms);
-double matchMedianDistance(DMatches ms);
+float matchAverageDistance(const DMatches& ms);
+float matchMedianDistance(DMatches& ms, const bool is_sorted=false);
 
 // Returns true if match not good enough
-bool match_bad(const cv::DMatch& match, const double thresh);
+bool matchBad(const cv::DMatch& match, const float thresh);
+
 // Returns true if match good enough
-bool match_good(const cv::DMatch& match, const double thresh);
+bool matchGood(const cv::DMatch& match, const float thresh);
 
 
 class Matcher
 {
 public:
     Matcher();
-    ollieRosTools::VoNode_paramsConfig& setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
+    void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
 
 
 
     // Match frame-frame
-    void match(KeyFrame& f1,
-               KeyFrame& f2,
+    void match(FramePtr& f1,
+               FramePtr& f2,
                DMatches& matches,                           // matches out
-               double& disparity,
                double& time,
                const cv::Mat& mask=cv::Mat(),
                const Ints& maskIdx=Ints()
@@ -63,14 +63,14 @@ public:
 
 
     // Match frame-map
-    void match( KeyFrame& frame,
-                PointMap& map,
-                DMatchesKNN& matches,
-                double& disparity,
-                double& time
-            );
+//    void match( FramePtr& frame,
+//                PointMap& map,
+//                DMatchesKNN& matches,
+//                float& disparity,
+//                float& time
+//            );
 
-    double getMaxDisp() const{return m_pxdist;}
+    float getMaxDisp() const{return m_pxdist;}
 
 private:
     cv::Ptr<cv::DescriptorMatcher> matcher;
@@ -80,11 +80,11 @@ private:
     int m_type;
     int m_norm;
     int m_sym_neighbours; // 0 = no symmetry
-    double m_unique; // 0 = off
-    double m_thresh; // 0 = no threshold
-    double m_ratio; //1 = off
+    float m_unique; // 0 = off
+    float m_thresh; // 0 = no threshold
+    float m_ratio; //1 = off
     int m_max; // 0 = unlimited
-    int m_pxdist;
+    float m_pxdist;
 
 
     bool m_doUnique;

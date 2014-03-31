@@ -24,8 +24,13 @@ private:
         cv::Mat mask;
         Mats pyramid;
         cv::Size pyramidWindowSize;
-        Eigen::Matrix3d imuAttitude;
-        float roll, pitch, yaw;
+        opengv::rotation_t imuAttitude;
+        Eigen::Affine3d pose; // transformation in the world frame
+        double roll, pitch, yaw;
+
+        /// TODO not used
+        double gyroX, gyroY, GyroZ;
+        double accX, accY, accZ;
 
         // Meta
         static long unsigned int idCounter;
@@ -35,6 +40,12 @@ private:
         int kfId; //keyframe id
         bool initialised;
         double timePreprocess, timeDetect, timeExtract;
+        float quality; // <0 means not measured, 0 means bad, 1 means perfect
+        static float averageQuality;
+
+        // Type of descriptor / detector used
+        int descId;
+        int detId;
 
 
         // Features
@@ -42,7 +53,7 @@ private:
         KeyPoints keypointsRotated; // TODO: should be eigen
         Points2f points; // used by KLT, should be same as keypoints
         cv::Mat descriptors;
-        Eigen::MatrixXf bearings;
+        Eigen::MatrixXd bearings;
 
         //
         static CameraATAN cameraModel;
@@ -68,10 +79,37 @@ private:
             OVO::putInt(img, Yd, cv::Point2d(img.cols-75,img.rows-1*25), CV_RGB(0,200,200), false, "Y:");
         }
 
+        void computeKeypoints(){
+            keypointsRotated.clear();
+            points.clear();
+            descriptors = cv::Mat();
+            ros::WallTime t0 = ros::WallTime::now();
+            detector.detect(image, keypoints, detId, mask);
+            timeDetect = (ros::WallTime::now()-t0).toSec();
+        }
+
+        /// TODO: estiamte image quality. -1 = not estaimted, 0 = bad, 1 = perfect
+        void estimateImageQuality(){
+            /// USE MASK
+            /// estimate noise
+            /// estiamte drop outs
+            /// estimate blur
+
+            quality =  -1.0;
+
+            // compute average quality
+            const float alpha = 0.9;
+            if (quality>0){
+                averageQuality = averageQuality*alpha + quality*(1.f-alpha);
+            }
+
+        }
+
 
 
 
 public:
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     Frame() : initialised(false){
     }
 
@@ -82,6 +120,14 @@ public:
         timeExtract    = 0;
         timeDetect     = 0;
 
+
+        /// SHOULD BE SET SOMEHOW
+        gyroX = gyroY = GyroZ = 0.0;
+        accX  = accY  = accZ  = 0.0;
+
+        detId = -1; //-1 = none, -2 = KLT
+        descId = -1;
+
         this->mask = mask;
 
         ros::WallTime t0 = ros::WallTime::now();
@@ -89,18 +135,63 @@ public:
         image = cameraModel.rectify(imgProc);
         timePreprocess = (ros::WallTime::now()-t0).toSec();
 
+        pose.setIdentity();
 
         tf::matrixTFToEigen(imu.getBasis(), imuAttitude);
         time = imu.stamp_;
         OVO::tf2RPY(imu, roll, pitch, yaw); /// TODO: RPY mighrt be negative
+
+        /// TODO: estiamte quality of imageu using acceleromter, gyro and blurriness estiamtion
+        estimateImageQuality();
+    }
+
+
+    float getQuality() const {
+        return quality;
+    }
+
+    cv::Size getSize(){
+        return image.size();
+    }
+
+    const tf::Pose getTFPose() const {
+        //TODO
+        tf::Pose pose;
+        tf::poseEigenToTF(getPose(), pose);
+        return pose;
+    }
+
+    const Eigen::Affine3d& getPose() const {
+        return pose;
+    }
+
+    void setPose(const opengv::transformation_t& t){
+        pose = t;
+    }
+
+    void setPoseRotationFromImu(){
+        // sets the pose from the imu rotation. This is usually used on the very first keyframe
+        pose.linear() = imuAttitude;
     }
 
     bool isInitialised() const{
         return initialised;
     }
 
-    void setAsKF(){
+    void setAsKF(bool first=false){
+        if(first){
+            // reset static variables
+            kfIdCounter = 0;
+            idCounter   = 0;
+            // initial pose is zero translation with IMU rotation
+            pose.setIdentity();
+            setPoseRotationFromImu();
+        }
         kfId = ++kfIdCounter;
+    }
+
+    const opengv::rotation_t& getImuRotation() const {
+        return imuAttitude;
     }
 
     const sensor_msgs::CameraInfoPtr& getCamInfo() const {
@@ -116,7 +207,7 @@ public:
         cv::Mat img;
 
         // Draw keypoints if they exist, also makes img colour
-        cv::drawKeypoints(image, keypoints, img, CV_RGB(0,128,20));
+        cv::drawKeypoints(image, keypoints, img, CV_RGB(0,90,20));
         OVO::putInt(img, keypoints.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"");
 
         // Draw Frame ID
@@ -148,28 +239,57 @@ public:
         return roll;
     }
 
-    KeyPoints& getKeypoints(bool dontCompute=false){
-        /// Gets keypoints. Computes them if required unless dontCompute is true. Uses points as kps if possible.
-        if (keypoints.empty() && !dontCompute){
-            // If we have points (eg from klt), use as keypoints
-            if (points.empty()){
-                ros::WallTime t0 = ros::WallTime::now();
-                detector.detect(image, keypoints, mask);
-                timeDetect = (ros::WallTime::now()-t0).toSec();
-            } else {
+    KeyPoints& getKeypoints(bool dontCompute=false, bool allowKLT=true){
+        /// Gets keypoints. Computes them if required/outdated type unless dontCompute is true. Uses points as kps if possible.
+        if (keypoints.empty()){
+            // We dont have key points
+            if (!points.empty() && allowKLT){
+                // use klt points as keypoints
                 cv::KeyPoint::convert(points, keypoints);
+            } else {
+                // we dont have points either or dont want to use them
+                if (!dontCompute){
+                    // compute  points
+                   computeKeypoints();
+                }
+            }
+        } else {
+            // we have keypoints
+            if (!dontCompute && getDetId() != detector.getDetectorId()){
+                // we have outdated keypoints - recompute
+                computeKeypoints();
             }
         }
         return keypoints;
     }
 
-    const Points2f& getPoints(){
-        /// Gets points. Use kps as pts if we dont have pts
+    bool hasPoints() const {
+        return keypoints.size()>0 || points.size()>0;
+    }
+
+
+    /// TODO: dont shortcut here, rotate points directly
+    const Points2f getRotatedPoints(bool aroundOpticalAxis = true){
+        // simply returns rotates keypoints as points
+        Points2f pts;
+        cv::KeyPoint::convert(getRotatedKeypoints(aroundOpticalAxis), pts);
+        return pts;
+    }
+
+    const Points2f& getPoints(bool dontCompute=true){
+        /// Gets points. Use kps as pts if we dont have pts. IF we dont have pts or kps, only compute them if dontCompute = false.
         if (points.empty()){
             // dont have points
             if (!keypoints.empty()){
                 // but have keypoints
                 cv::KeyPoint::convert(keypoints, points);
+            } else {
+                // dont have keypoints
+                if (!dontCompute){
+                    // compute them
+                    computeKeypoints();
+                    cv::KeyPoint::convert(keypoints, points);
+                }
             }
         }
         return points;
@@ -181,6 +301,8 @@ public:
         keypointsRotated.clear();
         points.clear();
         descriptors = cv::Mat();
+        descId = -1;
+        detId = -2; // unknown type
         std::swap(keypoints, kps);
     }
     void swapPoints(Points2f& pts){
@@ -188,7 +310,17 @@ public:
         keypointsRotated.clear();
         keypoints.clear();
         descriptors = cv::Mat();
+        descId = -1;
+        detId = -2; // unknown type
         std::swap(points, pts);
+    }
+    void clearAllPoints(){
+            keypointsRotated.clear();
+            keypoints.clear();
+            points.clear();
+            descriptors = cv::Mat();
+            descId = -1;
+            detId = -2; // unknown type
     }
 
     const Mats& getPyramid(const cv::Size& winSize, const int maxLevel, const bool withDerivatives=true, int pyrBorder=cv::BORDER_REFLECT_101, int derivBorder=cv::BORDER_CONSTANT){
@@ -206,29 +338,47 @@ public:
     const KeyPoints& getRotatedKeypoints(bool aroundOptical=false){
         /// Gets rotated keypoints. Computes them if required.
         if (keypointsRotated.empty()){
-            keypointsRotated = cameraModel.rotatePoints(getKeypoints(), -getRoll(), aroundOptical);
+            if (!keypoints.empty()){
+                keypointsRotated = cameraModel.rotatePoints(keypoints, -getRoll(), aroundOptical);
+            } else {
+                if (!points.empty()){
+                    cv::KeyPoint::convert(points, keypoints);
+                    keypointsRotated = cameraModel.rotatePoints(keypoints, -getRoll(), aroundOptical);
+                } else {
+                    // compute them?
+                    ROS_WARN("Asked for rotated keypoints but dont have any points or keypoints to compute them from");
+                }
+            }
         }
         return keypointsRotated;
     }
 
     const cv::Mat& getDescriptors(){
-        /// Gets descriptors. Computes them if required
-        if (descriptors.empty()){
-            KeyPoints kps = getKeypoints();
+        /// Gets descriptors. Computes them if they are empty or the wrong type (determined from the current set extraxtor)
+        if (descriptors.empty() || keypoints.empty() || getDescId() != detector.getExtractorId()){
+            getKeypoints();
             ros::WallTime t0 = ros::WallTime::now();
-            detector.extract(image, kps, descriptors, getRoll() );
+            detector.extract(image, keypoints, descriptors, descId, getRoll() );
             timeExtract = (ros::WallTime::now()-t0).toSec();
         }
         return descriptors;
     }
 
-    //const Eigen::MatrixXf& getBearings(){
-        /// TODO
-        // get bearings
-        // if not existant, compute from keypoiints
-        // if no keypoints, compute from points
-        // else return none
-    //}
+    const Eigen::MatrixXd& getBearings(){
+        /// Computes unit bearing vectors projected from the optical center through the (key) points on the image plane
+        if (points.size()>0){
+            cameraModel.bearingVectors(points, bearings);
+        } else if (keypoints.size()>0){
+            cv::KeyPoint::convert(keypoints, points);
+            cameraModel.bearingVectors(points, bearings);
+        }
+        return bearings;
+
+    }
+
+    int getId() const {
+        return id;
+    }
 
 
 
@@ -253,6 +403,18 @@ public:
         detector.setParameter(config, level);
 
     }
+
+    int getDescType() const{
+        return detector.getDescriptorType();
+    }
+
+    int getDescId() const {
+        return descId;
+    }
+    int getDetId() const {
+        return detId;
+    }
+
 
     friend std::ostream& operator<< (std::ostream& stream, const Frame& frame) {
         stream << "[ID:" << std::setw(5) << std::setfill(' ') << frame.id << "]"

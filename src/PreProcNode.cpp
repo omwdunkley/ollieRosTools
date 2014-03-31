@@ -98,7 +98,7 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         //cv::drawChessboardCorners(imageRect, cv::Size(8,6), kps, found);
 
 
-        Eigen::MatrixXf bv;
+        Eigen::MatrixXd bv;
         camModel.bearingVectors(kps, bv);
         const tf::Quaternion q(1,0,0,0);
         for (uint i=0; i<kps.size(); ++i){

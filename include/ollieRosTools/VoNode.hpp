@@ -16,8 +16,8 @@
 #include <ollieRosTools/VoNode_paramsConfig.h>
 #include <ollieRosTools/aux.hpp>
 #include <ollieRosTools/Frame.hpp>
-#include <ollieRosTools/aux.hpp>
-#include <ollieRosTools/Tracker.hpp>
+//#include <ollieRosTools/Tracker.hpp>
+#include <ollieRosTools/Odometry.hpp>
 #include <opencv2/opencv.hpp>
 #include <ros/package.h>
 #include <ros/ros.h>
@@ -61,7 +61,8 @@ class VoNode{
         /// Members
         float timeAlpha;
         ros::Time lastTime; // Keep track of time to detect loops in bag files
-        Tracker tracker;
+        //Tracker tracker;
+        Odometry odometry;
 
 
         /// Dynamic parameters
@@ -74,7 +75,7 @@ class VoNode{
 
         /// Parameters
         std::string inputTopic;
-        bool useIMU;
+        //bool useIMU;
         std::string imuFrame;
         std::string worldFrame;
 

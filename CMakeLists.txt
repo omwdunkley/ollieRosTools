@@ -11,19 +11,18 @@ include_directories(${Eigen_INCLUDE_DIRS})
 #Boost
 rosbuild_add_boost_directories()
 
+#### BUILD TYPE
+#set(ROS_BUILD_TYPE Release)
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Ofast   -Wall -Wextra -msse2 -msse3 -msse4 -march=native -ffast-math")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Ofast  -Wall -Wextra -msse2 -msse3 -msse4 -march=native -ffast-math")
 
-# Set the build type.  Options are:
-#  Coverage       : w/ debug symbols, w/o optimization, w/ code-coverage
-#  Debug          : w/ debug symbols, w/o optimization
-#  Release        : w/o debug symbols, w/ optimization
-#  RelWithDebInfo : w/ debug symbols, w/ optimization
-#  MinSizeRel     : w/o debug symbols, w/ optimization, stripped binaries
-#set(ROS_BUILD_TYPE Debug)
+#set(ROS_BUILD_TYPE RelWithDebInfo)
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -msse2 -msse3 -msse4 -march=native -g") #-Wdouble-promotion
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Wall -Wextra -msse2 -msse3 -msse4 -march=native -g") #-Wdouble-promotion
 
-#set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -O3  -Wall -Wextra -Wunused-variable  -g -msse2 -msse3 -msse4 -ffast-math -march=native -fopenmp")
-#set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -O3 -Wall -Wextra -Wunused-variable -g -msse2 -msse3 -msse4 -ffast-math -march=native -fopenmp")
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -Wdouble-promotion -g -march=native")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}  -Wall -Wextra -Wdouble-promotion -g -m-march=native")
+set(ROS_BUILD_TYPE Debug)
+#set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -Wdouble-promotion -g")
+#set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}  -Wall -Wextra -Wdouble-promotion -g")
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
@@ -101,7 +100,8 @@ SET(VO_FILES
     src/Frame.cpp
     src/Detector.cpp
     src/Tracker.cpp
-    #src/Matcher.cpp
+    src/Matcher.cpp
+    src/Odometry.cpp
 )
 
 

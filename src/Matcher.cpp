@@ -60,7 +60,7 @@ void Matcher::updateMatcher(int type, bool update){
 
 
 
-ollie_vo::VoNode_paramsConfig& Matcher::setParameter(ollie_vo::VoNode_paramsConfig &config, uint32_t level){
+void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
 
 
     //////////////////////////////////////////////////////////////// MATCHER
@@ -72,7 +72,7 @@ ollie_vo::VoNode_paramsConfig& Matcher::setParameter(ollie_vo::VoNode_paramsConf
     m_max = config.match_max;
     m_ratio = config.match_ratio;
     m_type = config.matcher;
-    m_pxdist = config.match_px*config.match_px;
+    m_pxdist = config.match_px;
     m_sym_neighbours = config.match_symmetric;
 
     // For ease of use later
@@ -93,8 +93,6 @@ ollie_vo::VoNode_paramsConfig& Matcher::setParameter(ollie_vo::VoNode_paramsConf
     // Cache to detect fugure differences
     config_pre = config;
 
-    return config;
-
 }
 
 
@@ -103,161 +101,163 @@ ollie_vo::VoNode_paramsConfig& Matcher::setParameter(ollie_vo::VoNode_paramsConf
 
 
 /// TODO: so far just a place holder
-void Matcher::match( KeyFrame& frame,
-                     PointMap& map,
-                     DMatchesKNN& matches,                           // matches out
-                     double& disparity,
-                     double& time
-                     ) {
+//void Matcher::match( FramePtr& frame,
+//                     PointMap& map,
+//                     DMatchesKNN& matches,                           // matches out
+//                     float& disparity,
+//                     float& time
+//                     ) {
 
 
-    /// maximum number of kfs to match against
-    const uint maxKFMatch = 1; ///TODO
-    /// minimum required matches per KF
-    const uint minMatchPerKF = 5; ///TODO
+//    /// maximum number of kfs to match against
+//    const uint maxKFMatch = 1; ///TODO
+//    /// minimum required matches per KF
+//    const uint minMatchPerKF = 5; ///TODO
 
-    ROS_INFO(" ---> MATCHING CF against %d MAP KFs", map.size());
-
-
-
-    ros::WallTime m0 = ros::WallTime::now();
+//    ROS_INFO(" ---> MATCHING CF against %d MAP KFs", map.size());
 
 
 
-    /// Need some way of chosing which map frames are close to frame. For now just use last X frames
-    // idea: images should look similar (ssd of imu-rotated SBIs)
-    // idea: rotation should be similar
-    // idea: estimated distance should be similar
-    const KeyFrame f = map.getClosestKF(frame);
+//    ros::WallTime m0 = ros::WallTime::now();
 
 
 
-
-
-
-    matches.clear();
-    matches.resize(map.size(),DMatches());
-    double timeNotUsed;
-    Doubles disparities;
-    disparities.resize(map.size(),INFINITY);
-
-    /// todo dont show all the image
-
-    const bool wasDoingDispThresh = m_doPxdist;
-
-    for (uint m = 0; m < std::min(maxKFMatch, static_cast<uint>(map.size())); ++m){
-        //ROS_INFO("Matching frame against map frame[%d]", m);
-        cv::Mat mask;
-
-        /// Use mask to select valid pairs - only use desc that have associated 3d points
-        if (matcher->isMaskSupported() && !m_doSym){
-            mask = cv::Mat::zeros(frame.getDesc().rows, map.getKF(m).getDesc().rows, CV_8U);
-            Bools jok = map.getKF(m).getHasMapPoints();
-            for (uint j=0; j< jok.size(); ++j){
-                if (jok[j]){
-                    mask.col(j)=1;
-                }
-            }
-            match(frame, map.getKF(m), matches[m], disparities[m], timeNotUsed, mask);
-        } else {
-            // Mask not supported. Select subset of desc, rebuild matches afterwards
-            match(frame, map.getKF(m), matches[m], disparities[m], timeNotUsed, cv::Mat(), map.getKF(m).getMapPointIdx());
-        }
-
-        // Reject matches if there are too few
-        if (matches[m].size()<minMatchPerKF){
-            disparities[m] = INFINITY;
-            matches[m].clear();
-        }
-
-        /// only disparity threshold matches on the previous frame. not the rest
-        if (m==0){
-            m_doPxdist = false;
-        }
-
-    }
-
-    // reset to previous setting
-    m_doPxdist = wasDoingDispThresh;
+//    /// Need some way of chosing which map frames are close to frame. For now just use last X frames
+//    // idea: images should look similar (ssd of imu-rotated SBIs)
+//    // idea: rotation should be similar
+//    // idea: estimated distance should be similar
+//    const FramePtr f = map.getClosestKF(frame);
 
 
 
 
-    /// TODO: FILTER
-    // Only take groups of matches that have a certain amount of matches, eg any group with < 10 matches should be disgarded
-    // for now we only use the previous frame
-    // return boolean if at least some good ones were found
+
+
+//    matches.clear();
+//    matches.resize(map.size(),DMatches());
+//    float timeNotUsed;
+//    floats disparities;
+//    disparities.resize(map.size(),INFINITY);
+
+//    /// todo dont show all the image
+
+//    const bool wasDoingDispThresh = m_doPxdist;
+
+//    for (uint m = 0; m < std::min(maxKFMatch, static_cast<uint>(map.size())); ++m){
+//        //ROS_INFO("Matching frame against map frame[%d]", m);
+//        cv::Mat mask;
+
+//        /// Use mask to select valid pairs - only use desc that have associated 3d points
+//        if (matcher->isMaskSupported() && !m_doSym){
+//            mask = cv::Mat::zeros(frame.getDesc().rows, map.getKF(m).getDesc().rows, CV_8U);
+//            Bools jok = map.getKF(m).getHasMapPoints();
+//            for (uint j=0; j< jok.size(); ++j){
+//                if (jok[j]){
+//                    mask.col(j)=1;
+//                }
+//            }
+//            match(frame, map.getKF(m), matches[m], disparities[m], timeNotUsed, mask);
+//        } else {
+//            // Mask not supported. Select subset of desc, rebuild matches afterwards
+//            match(frame, map.getKF(m), matches[m], disparities[m], timeNotUsed, cv::Mat(), map.getKF(m).getMapPointIdx());
+//        }
+
+//        // Reject matches if there are too few
+//        if (matches[m].size()<minMatchPerKF){
+//            disparities[m] = INFINITY;
+//            matches[m].clear();
+//        }
+
+//        /// only disparity threshold matches on the previous frame. not the rest
+//        if (m==0){
+//            m_doPxdist = false;
+//        }
+
+//    }
+
+//    // reset to previous setting
+//    m_doPxdist = wasDoingDispThresh;
 
 
 
 
-    /// Chose disparity to be the min disparity. Note we set disparity to inf if we dont consider a KF
-    /// Could also use disparity of KF with most matches
-
-    uint mostMatchKFID = 0;
-    int minDispKF = 0;
-    cv::minMaxIdx(disparities,&disparity, NULL, &minDispKF);
-    for(uint i=0; i<disparities.size(); ++i){
-        if (matches[i].size()>matches[mostMatchKFID].size()){
-            mostMatchKFID = i;
-        }
-        ROS_INFO("MAP KF[%d]: Matches %d  Disparity: %.2f",i,matches[i].size(), sqrt(disparities[i]));
-    }
+//    /// TODO: FILTER
+//    // Only take groups of matches that have a certain amount of matches, eg any group with < 10 matches should be disgarded
+//    // for now we only use the previous frame
+//    // return boolean if at least some good ones were found
 
 
-    ROS_INFO("Disparity [MIN    ] -> MAP KF[%d]=%f",minDispKF, sqrt(disparity));
-    ROS_INFO("Disparity [MATCHES] -> MAP KF[%d]=%f",mostMatchKFID, sqrt(disparities[mostMatchKFID]));
 
 
-    time = (ros::WallTime::now()-m0).toSec();
+//    /// Chose disparity to be the min disparity. Note we set disparity to inf if we dont consider a KF
+//    /// Could also use disparity of KF with most matches
+
+//    uint mostMatchKFID = 0;
+//    int minDispKF = 0;
+//    cv::minMaxIdx(disparities,&disparity, NULL, &minDispKF);
+//    for(uint i=0; i<disparities.size(); ++i){
+//        if (matches[i].size()>matches[mostMatchKFID].size()){
+//            mostMatchKFID = i;
+//        }
+//        ROS_INFO("MAP KF[%d]: Matches %d  Disparity: %.2f",i,matches[i].size(), sqrt(disparities[i]));
+//    }
 
 
-}
+//    ROS_INFO("Disparity [MIN    ] -> MAP KF[%d]=%f",minDispKF, sqrt(disparity));
+//    ROS_INFO("Disparity [MATCHES] -> MAP KF[%d]=%f",mostMatchKFID, sqrt(disparities[mostMatchKFID]));
+
+
+//    time = (ros::WallTime::now()-m0).toSec();
+
+
+//}
 
 
 
 // Does the matching and match filtering.
-// Note that the distance member of each Dmatch now holds the disparity of the pixels
-void Matcher::match( KeyFrame& f1,
-                     KeyFrame& f2,
-                     DMatches& matches,                           // matches out
-                     double& disparity,
+// Note that the distance member of each Dmatch will hold the disparity of the match in pixels
+void Matcher::match( FramePtr& fQuery,
+                     FramePtr& fTrain,
+                     DMatches& matches,
                      double& time,
                      const cv::Mat& mask, //only input if crosscheck=off and matcher=BruteForce
                      const Ints& maskIdx  //only inpuot if mask=empty. idx of valid descriptor rows
                      ) {
-    ros::WallTime m0 = ros::WallTime::now();
+
     matches.clear();
 
-    updateMatcher(f1.getDescType());
-
-    if(f1.getDescId()!=f2.getDescId()){
-        ROS_WARN("Skipping match as both frames have different descriptor types: %d != %d",f1.getDescId(), f2.getDescId());
-        return;
-    }
+    // Update they type of matcher depending on the descriptor type (eg float vs uchar)
+    updateMatcher(fQuery->getDescType());
 
 
     DMatchesKNN matchesKNN;
-    const cv::Mat d1 = f1.getDesc();
-    cv::Mat d2 = f2.getDesc();
+
+    const cv::Mat d1 = fQuery->getDescriptors();
+    cv::Mat d2 = fTrain->getDescriptors();
 
 
+
+    ros::WallTime m0 = ros::WallTime::now();
     // Mask not supported, use maskIDx instead
     if (maskIdx.size()>0){
         cv::Mat temp;
-        matReduceInd(d2,temp,maskIdx);
+        OVO::matReduceInd(d2, temp, maskIdx);
         cv::swap(d2,temp);
         //matcher->set("crossCheck", false);
     }
 
 
-    // turn off m_doSym flag if we are using brute force matcher, as these do m_sym internally
+
 
     // Manually do symmetric test
     bool sorted = false;
+
+    // turn off m_doSym flag if we are using brute force matcher, as these do m_sym internally
     bool doSym =(m_doSym && m_type==1 );
-    int idx = m_doUnique*8 + doSym*4+ m_doThresh*2+ m_doRatio;
     ROS_WARN_COND(doSym, "FLANN SYMMETRY MATCHER NOT IMPLEMENTED");
+
+    int idx = m_doUnique*8 + doSym*4+ m_doThresh*2+ m_doRatio;
+
     switch(idx){
     case 0 : // - - - - nothing
         // Best match for each kp
@@ -265,16 +265,16 @@ void Matcher::match( KeyFrame& f1,
         break;
     case 1 : // - - - R
         matcher->match(d1,d2,matches,mask); sorted = true;
-        match_filter_ratio(matches, m_ratio, sorted);
+        matchFilterRatio(matches, m_ratio, sorted);
         break;
     case 2 : // - - T -
         matcher->radiusMatch(d1, d2, matchesKNN, m_thresh, mask); sorted = m_doMax; // flag we should sort
-        match_knn2single(matchesKNN, matches, sorted);
+        matchKnn2single(matchesKNN, matches, sorted);
         break;
     case 3 : // - - T R
         matcher->radiusMatch(d1, d2, matchesKNN, m_thresh, mask); sorted = true;
-        match_knn2single(matchesKNN, matches, sorted);
-        match_filter_ratio(matches, m_ratio, sorted);
+        matchKnn2single(matchesKNN, matches, sorted);
+        matchFilterRatio(matches, m_ratio, sorted);
         break;
     case 4 : // - S - -
         break;
@@ -286,23 +286,23 @@ void Matcher::match( KeyFrame& f1,
         break;
     case 8 : // U - - -
         matcher->knnMatch(d1,d2,matchesKNN,2,mask); sorted = m_doMax;
-        match_filter_unique(matchesKNN, matches, m_unique, sorted);
+        matchFilterUnique(matchesKNN, matches, m_unique, sorted);
         break;
     case 9 : // U - - R
         matcher->knnMatch(d1,d2,matchesKNN,2,mask); sorted = m_doMax;
-        match_filter_unique(matchesKNN, matches, m_unique, sorted);
-        match_filter_ratio(matches, m_ratio, m_doMax);
+        matchFilterUnique(matchesKNN, matches, m_unique, sorted);
+        matchFilterRatio(matches, m_ratio, m_doMax);
         break;
     case 10: // U - T -
         matcher->knnMatch(d1,d2,matchesKNN,2,mask); sorted = m_doMax;
-        match_filter_unique(matchesKNN, matches, m_unique, sorted);
-        match_threshold(matches, m_thresh, m_doMax);
+        matchFilterUnique(matchesKNN, matches, m_unique, sorted);
+        matchThreshold(matches, m_thresh, m_doMax);
         break;
     case 11: // U - T R
         matcher->knnMatch(d1,d2,matchesKNN,2,mask);sorted = true;
-        match_filter_unique(matchesKNN, matches, m_unique, sorted);
-        match_threshold(matches, m_thresh, sorted);
-        match_filter_ratio(matches, m_ratio, sorted);
+        matchFilterUnique(matchesKNN, matches, m_unique, sorted);
+        matchThreshold(matches, m_thresh, sorted);
+        matchFilterRatio(matches, m_ratio, sorted);
         break;
     case 12: // U S - -
         break;
@@ -327,19 +327,23 @@ void Matcher::match( KeyFrame& f1,
 
 
 
-    // put disparity in matches
     // filter if disparity too high
-    matches = disparityFilter(matches, f1, f2, m_pxdist, m_doPxdist);
+    // sets distance to be the l2 norm squared
+    matches = disparityFilter(matches, fQuery, fTrain, m_pxdist, m_doPxdist);
 
 
-    // At this stage everything should be sorted anyway...
-    // Here is sorts by disparity. This might not be good...
+    // At this stage everything should be sorted anyway (if we need to do the following)..., so we can just cut the "tail" off
     if (m_doMax){
-        match_clip(matches, m_max, sorted);
+        matchClip(matches, m_max, sorted);
     }
 
-    disparity = matchMedianDistance(matches);
-    //disparity = sqrt(matchAverageDistance(matches));
+
+//    // use median distance if sorted, as we can jsut take the middle element. Else compute average
+//    if (sorted){
+//        disparity = matchMedianDistance(matches, sorted);
+//    } else {
+//        disparity = matchAverageDistance(matches);
+//    }
 
     time = (ros::WallTime::now()-m0).toSec();
 
@@ -348,9 +352,9 @@ void Matcher::match( KeyFrame& f1,
 
 
 
-// Sort matches by response and take nr best
+// Sort matches by distance and take nr best
 // NOTE: Usually you wont need this as the matchers sort the output by distance
-void match_clip(DMatches& ms, const uint max_nr, bool is_sorted){
+void matchClip(DMatches& ms, const uint max_nr, bool is_sorted){
     if (ms.size()>max_nr){
         if (!is_sorted){
             std::sort( ms.begin(),ms.end());
@@ -363,12 +367,15 @@ void match_clip(DMatches& ms, const uint max_nr, bool is_sorted){
 
 
 
-// cant use const here, need a copy to sort
-double matchMedianDistance(DMatches ms){
-    double median=0;
+// cant use const here
+// will sort if is not sorted
+float matchMedianDistance(DMatches& ms, const bool is_sorted){
+    float median=0;
     const size_t size = ms.size();
     if (size>0){
-        sort(ms.begin(), ms.end());
+        if (!is_sorted){
+            sort(ms.begin(), ms.end());
+        }
         if (size  %2 == 0)  {
             median = (ms[size/2 -1].distance + ms[size / 2].distance) / 2;
         }  else   {
@@ -379,8 +386,8 @@ double matchMedianDistance(DMatches ms){
 }
 
 
-double matchAverageDistance(const DMatches& ms){
-  double s = 0;
+float matchAverageDistance(const DMatches& ms){
+  float s = 0;
   const uint size = ms.size();
   for (uint i=0; i<size; ++i){
       s+=ms[i].distance;
@@ -392,56 +399,56 @@ double matchAverageDistance(const DMatches& ms){
 
 
 // Returns true if match not good enough
-bool match_bad(const cv::DMatch& match, const double thresh){
+bool matchBad(const cv::DMatch& match, const float thresh){
     return (match.distance > thresh);
 }
 
 
 
 // Returns true if match good enough
-bool match_good(const cv::DMatch& match, const double thresh){
+bool matchGood(const cv::DMatch& match, const float thresh){
     return (match.distance < thresh);
 }
 
 
 // Remove all matches below threshold.
-void match_threshold(DMatches& ms, double thresh, bool is_sorted){
+void matchThreshold(DMatches& ms, float thresh, bool is_sorted){
     if (is_sorted){
         // Logarithmic version
-        DMatches::iterator low = std::lower_bound (ms.begin(), ms.end(), thresh, match_good);
+        DMatches::iterator low = std::lower_bound (ms.begin(), ms.end(), thresh, matchGood);
         ms.erase( low, ms.end() );
     } else {
         // O(N)
-        ms.erase( std::remove_if( ms.begin(), ms.end(), boost::bind(match_bad, _1, thresh)), ms.end() );
+        ms.erase( std::remove_if( ms.begin(), ms.end(), boost::bind(matchBad, _1, thresh)), ms.end() );
     }
 }
 
 
 // remove matches that are ratio * worse than the best
-void match_filter_ratio(DMatches& ms, const double ratio, const bool is_sorted){
+void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted){
 
     if (ms.size()>1){
-        double best;
+        float best;
 
         if (is_sorted){
             best = ms[0].distance;
         } else {
-            double worst;
+            float worst;
             uint nrd;
             minMaxTotal(ms, best, worst, nrd);
         }
 
-        const double thresh = std::max(1e-8,ratio*best);
-        ROS_INFO("Match Ratio: %d matches, %f closest distance, %f ratio, %f thresh, %d sorted", ms.size(), best, ratio, thresh, is_sorted);
-        match_threshold(ms, thresh, is_sorted);
-        ROS_INFO(" ---> %d left",ms.size());
+        const double thresh = std::max(1e-8f,ratio*best);
+        ROS_INFO("Match Ratio: %lu matches, %f closest distance, %f ratio, %f thresh, %d sorted", ms.size(), best, ratio, thresh, is_sorted);
+        matchThreshold(ms, thresh, is_sorted);
+        ROS_INFO(" ---> %lu left",ms.size());
     }
 }
 
 
 
 // Reduces vector of vectors DMatchesKNN to a single vector DMatches
-void match_knn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_sorted){
+void matchKnn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_sorted){
     ms.clear();
     ms.reserve(msknn.size()*2); // just guess
     // TO DO some kind of insertion sort could be better?
@@ -461,7 +468,7 @@ void match_knn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_so
 
 
 // Filter out matches that are not unique. Specifically unqiue = dist1/dist2 > similarity
-void match_filter_unique(const DMatchesKNN& msknn, DMatches& ms, const double similarity, const bool keep_sorted){
+void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float similarity, const bool keep_sorted){
     ms.clear();
     ms.reserve(msknn.size());
     for (uint m = 0; m < msknn.size(); ++m){
@@ -481,19 +488,16 @@ void match_filter_unique(const DMatchesKNN& msknn, DMatches& ms, const double si
     }
 }
 
-
-
-// Only accept matches where the pixel distance^2 between two matches is < thresh
-/// TODO use l1 norm!
 // Preserves sorting
 // changes distance member of DMatch to disparity
-DMatches disparityFilter(const DMatches& in, KeyFrame& f1, KeyFrame& f2, const double maxDisparity, bool disparityFilterOn){
-    const cv::Size& size= f1.getImage().size();
-    cv::Mat img = cv::Mat::zeros(size,CV_8UC3);
-    DMatches out;
+DMatches disparityFilter(const DMatches& in, FramePtr& fQuery, FramePtr& fTrain, const float maxDisparity, bool disparityFilterOn){
 
-    const KeyPoints& kp1 = f1.getKPsUnRot();
-    const KeyPoints& kp2 = f2.getKPsUnRot();
+//    const cv::Size& size= fQuery->getImage().size();
+//    cv::Mat img = cv::Mat::zeros(size,CV_8UC3);
+    DMatches outMatches;
+
+    const KeyPoints& kp1 = fQuery->getRotatedKeypoints();
+    const KeyPoints& kp2 = fTrain->getRotatedKeypoints();
 
 
 
@@ -509,53 +513,44 @@ DMatches disparityFilter(const DMatches& in, KeyFrame& f1, KeyFrame& f2, const d
 
 
 
-    out.reserve(in.size());
+    outMatches.reserve(in.size());
 
 
-    double sum = 0; // just for the color
+    //float sum = 0; // just for the color
     for (uint m = 0; m < in.size(); ++m){
 
-        const cv::Point2d p1 = kp1[in[m].queryIdx].pt;
-        const cv::Point2d p2 = kp2[in[m].trainIdx].pt;
+        const cv::Point2f p1 = kp1[in[m].queryIdx].pt;
+        const cv::Point2f p2 = kp2[in[m].trainIdx].pt;
 
-        const cv::Point2d diff = p1-p2;
+        const cv::Point2f diff = p1-p2;
 
         // this is L2 norm, L1 norm also option! Eg diff.x+diff.y
-        double l2 = diff.x*diff.x + diff.y*diff.y;
+        float l2 = norm(diff);//diff.x*diff.x + diff.y*diff.y;
         if (!disparityFilterOn || l2 < maxDisparity){
-            out.push_back(in[m]);
-            out.back().distance = l2;
-            const int col =  250 - (l2/maxDisparity* 200);
-            cv::line(img, p1, p2, CV_RGB(255-col,col,0),1,CV_AA);
-            cv::circle(img, p1,2,CV_RGB(0,255,255),1,CV_AA);
-            cv::circle(img, p2,2,CV_RGB(255,0,255),1,CV_AA);
-            sum +=sqrt(l2);
+            outMatches.push_back(in[m]);
+            outMatches.back().distance = l2;
+//            const int col =  250 - (l2/maxDisparity* 200);
+//            cv::line(img, p1, p2, CV_RGB(255-col,col,0),1,CV_AA);
+//            cv::circle(img, p1,2,CV_RGB(0,255,255),1,CV_AA);
+//            cv::circle(img, p2,2,CV_RGB(255,0,255),1,CV_AA);
         } else {
-            const int col =  60 - (std::min(1.,l2/maxDisparity)* 60);
-            cv::line(img, p1, p2, CV_RGB(60-col,col,0),1,CV_AA);
-            cv::circle(img, p1,2,CV_RGB(0,60,60),1,CV_AA);
-            cv::circle(img, p2,2,CV_RGB(60,0,60),1,CV_AA);
+//            const int col =  60 - (std::min(1.f,l2/maxDisparity)* 60);
+//            cv::line(img, p1, p2, CV_RGB(60-col,col,0),1,CV_AA);
+//            cv::circle(img, p1,2,CV_RGB(0,60,60),1,CV_AA);
+//            cv::circle(img, p2,2,CV_RGB(60,0,60),1,CV_AA);
         }
     }
-
-//    cv::circle(img, cv::Point2d(size.width/2, size.height/2), std::max(1.,sqrt(maxDisparity)), CV_RGB(255,255,0),1,CV_AA);
-//    const double avg = (sum/out.size());
-//    const int col =  250 - (avg/sqrt(maxDisparity)* 200);
-//    cv::circle(img, cv::Point2d(size.width/2, size.height/2), std::max(1.,avg), CV_RGB(255-col,col,0),1,CV_AA);
-
-//    //ROS_INFO("Left: %d/%d", out.size(), in.size());
-//    cv::imshow("unrotated disparity", img); cv::waitKey(30);
-    return out;
+    return outMatches;
 }
 
 
 
 // Return the smallest, largest distance along with the total nr of matches
-void minMaxTotal(const DMatches& ms, double& minval, double& maxval, uint& total){
+void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total){
     minval = INFINITY;
     maxval = -INFINITY;
     for (uint x=0; x < ms.size(); ++x){
-        double r = ms[x].distance;
+        float r = ms[x].distance;
         if( r < minval ) {
             minval = r;
         }
@@ -563,6 +558,6 @@ void minMaxTotal(const DMatches& ms, double& minval, double& maxval, uint& total
             maxval = r;
         }
     }
-    total =ms.size();
+    total = ms.size();
 }
 

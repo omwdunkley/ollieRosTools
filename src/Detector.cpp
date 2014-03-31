@@ -97,8 +97,8 @@ Detector::Detector(){
     kp_removeDouble = false;
     kp_subPix = 0;
     kp_border = 0;
-    detector_nr = 6; // orb
-    extractor_nr = 6; // orb
+    detectorNr = 6; // orb
+    extractorNr = 6; // orb
 
 }
 
@@ -106,16 +106,16 @@ Detector::Detector(){
 
 
 
+/// TODO check if rotation should be negative or not for rbrief/kp_imuRotate
+void Detector::extract(const cv::Mat& image, KeyPoints &kps_inout, cv::Mat& descs_out, int& descId, const double rotRad) const {
 
-void Detector::extract(const cv::Mat& image, KeyPoints &kps_inout, cv::Mat& descs_out, const double rotRad) const {
-
+    descId = extractorNr;
 
     // Deal with R-BRIEF pre rotation
-    if ((extractor_nr == 203 || extractor_nr == 204 ||extractor_nr == 205 ) && std::abs(rotRad)>0.0017 ){
-        (static_cast<cv::Ptr<cv::RBriefDescriptorExtractor> >(cv_extractor))->setRotationCase(rotRad); /// TODO check if should be negative or not
-//shouldnt be dynamic cast?
-    } else if(kp_imuRotate && std::abs(rotRad)<0.0001){
-
+    if ((extractorNr == 203 || extractorNr == 204 ||extractorNr == 205 ) && std::abs(rotRad)>0.0017 ){
+        (static_cast<cv::Ptr<cv::RBriefDescriptorExtractor> >(cv_extractor))->setRotationCase(rotRad);
+        //shouldnt be dynamic cast?
+    } else if(kp_imuRotate && std::abs(rotRad)>0.0001){
         for (uint i=0; i < kps_inout.size(); ++i){
             // PROBLEM: docs says angle is [-000,360) but sometimes it is [-180,180)
             kps_inout[i].angle = rotRad*toDeg;//cv::min(359.9,cv::max(0.,180 + rotRad*180./M_PI)) ;
@@ -126,17 +126,19 @@ void Detector::extract(const cv::Mat& image, KeyPoints &kps_inout, cv::Mat& desc
     //ROS_INFO("DESCRIPTOR TYPE: %d   SIZE: %d", cv_extractor->descriptorType(), cv_extractor->descriptorSize());
 
     cv_extractor->compute(image, kps_inout, descs_out);
+    ROS_INFO("Extracting Descriptors (Type: %d, Size: %d)", cv_extractor->descriptorType(), cv_extractor->descriptorSize()) ;
 
 }
 
 
 
 
-void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, const cv::Mat& mask) const {
+void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask) const {
     kps_out.clear();
+    detId = detectorNr;
 
     // detector is off
-    if (detector_nr<0){
+    if (detectorNr<0){
         return;
     }
 
@@ -146,7 +148,7 @@ void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, const cv::Mat& mas
         return;
     }
 
-    if (detector_nr>=100){
+    if (detectorNr>=100){
         ast_detect(ast_detector, img, kps_out);
         if (!mask.empty() ){
             kp_filter.runByPixelsMask(kps_out, mask);
@@ -170,11 +172,11 @@ void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, const cv::Mat& mas
         if (kp_thresh>0){
 
             // some have the threshold in their contstructors
-            if (detector_nr!=20 && detector_nr>3
-                    && detector_nr!=11 && detector_nr!=12
-                    && detector_nr!=9 && detector_nr!=10
-                    && detector_nr!=18 && detector_nr!=19
-                    && (detector_nr>65 || detector_nr<30)){
+            if (detectorNr!=20 && detectorNr>3
+                    && detectorNr!=11 && detectorNr!=12
+                    && detectorNr!=9 && detectorNr!=10
+                    && detectorNr!=18 && detectorNr!=19
+                    && (detectorNr>65 || detectorNr<30)){
                 kp_threshold(kps_out, kp_thresh);
             }
         }
@@ -199,10 +201,11 @@ void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, const cv::Mat& mas
 
     uint total; double rmin; double rmax;
     minMaxTotal(kps_out, rmin, rmax, total);
-    ROS_INFO("RESPONSE %g -> %g (%d) Thresh: %g", rmin, rmax, total, kp_thresh);
+    ROS_INFO("KP DETECTION: Response [%g,  %g], KPs: %d KPs, Thresh: %g", rmin, rmax, total, kp_thresh);
 
 
 }
+
 
 void Detector::ast_detect(cv::Ptr<agast::AstDetector> detecter, const cv::Mat& img, KeyPoints& keypoints, const cv::Mat& mask ) const{
 
@@ -212,7 +215,7 @@ void Detector::ast_detect(cv::Ptr<agast::AstDetector> detecter, const cv::Mat& i
     //TODO segfaults
     //detecter->set_threshold(kp_thresh);
 
-    if (detector_nr>=104){
+    if (detectorNr>=104){
         detecter->processImage((unsigned char *)img.data, points);
     } else {
         detecter->detect((unsigned char *)img.data, points);
@@ -498,7 +501,7 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
 
 
     // IF something detector related changed, create new one
-    if (detector_nr != config.detector ||
+    if (detectorNr != config.detector ||
         static_cast<int>(kp_max) != config.kp_max ||
         kp_octaves != config.kp_octaves ||
         kp_octaveLayers != config.kp_octaveLayers ||
@@ -507,7 +510,7 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
         ) {
 
         // Assign new values
-        detector_nr = config.detector;
+        detectorNr = config.detector;
         kp_max = config.kp_max;
         kp_octaves = config.kp_octaves;
         kp_octaveLayers = config.kp_octaveLayers;
@@ -515,7 +518,7 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
         std::cout << "new thresh: "<<thresh <<std::endl;
 
         // Create detector
-        switch(detector_nr){
+        switch(detectorNr){
             case 100:
             case 104: ast_detector = new agast::AgastDetector5_8();   break;
             case 101:
@@ -525,7 +528,7 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
             case 103:
             case 107: ast_detector = new agast::OastDetector9_16();   break;
             default:
-                cv_detector = getAlgo(detector_nr, thresh);
+                cv_detector = getAlgo(detectorNr, thresh);
                 break;
         }
 
@@ -533,9 +536,9 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
 
     //////////////////////////////////////////////////////////////// EXTRACTOR
 
-    if(extractor_nr != config.extractor || cv_extractor == 0){
-        extractor_nr = config.extractor;
-        cv_extractor = getAlgo(extractor_nr, thresh);
+    if(extractorNr != config.extractor || cv_extractor == 0){
+        extractorNr = config.extractor;
+        cv_extractor = getAlgo(extractorNr, thresh);
     }
 
     // Cache to detect fugure differences

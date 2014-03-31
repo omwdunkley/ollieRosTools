@@ -15,9 +15,6 @@
 #include <boost/lexical_cast.hpp> //boost::lexical_cast<std::string>(i);
 
 
-
-
-
 /// Initialise ROS Node
 VoNode::VoNode(ros::NodeHandle& _n):
     n(_n),
@@ -25,14 +22,17 @@ VoNode::VoNode(ros::NodeHandle& _n):
     timeAlpha(0.95),
     timeAvg(0),
     imgDelay(0),
-    repeatOn(false){
+    repeatOn(false)
+    {
 
     /// Set default values
     n.param("image", inputTopic, std::string("/cf/cam/image_raw"));
-    n.param("useIMU", useIMU, true);
+    n.param("useIMU", USEIMU, true);
     n.param("imuFrame", imuFrame, std::string("/cf"));
     n.param("worldFrame", worldFrame, std::string("/world"));
     // Cam frame is specified from the header in the cam msg
+
+
 
     /// Subscribe to Topics    
     subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
@@ -49,12 +49,24 @@ VoNode::VoNode(ros::NodeHandle& _n):
 
 
     ROS_INFO("Starting <%s> node with <%s> as image source", /*ros::this_node::getNamespace().c_str(),*/ ros::this_node::getName().c_str(), inputTopic.c_str());
-    if (useIMU){
+    if (USEIMU){
         ROS_INFO("Using <%s> as imu frame", imuFrame.c_str());
     } else {
         ROS_INFO("NOT Using imu!");
     }
     ROS_INFO("Using <%s> as world frame",  worldFrame.c_str());
+
+
+
+//    // test color map
+//    cv::Mat test = cv::Mat(100,1600,CV_8UC3);
+//    for(int i=0; i<test.cols; ++i){
+//        test.col(i) = OVO::getColor(100,test.cols-100,i);
+//    }
+//    cv::imshow("colmap",test);
+//    cv::waitKey(1000);
+
+
 }
 
 
@@ -89,7 +101,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     /// GET IMU
     tf::StampedTransform imuStamped;
 
-    if (useIMU){
+    if (USEIMU){
         try{
             // sent out by the crazyflie driver driver.py
             subTF.waitForTransform(imuFrame, worldFrame, msg->header.stamp-imgDelay, ros::Duration(0.1) );
@@ -109,76 +121,27 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     /// Make Frame
     cv::Ptr<Frame> frame(new Frame(cvPtr->image, imuStamped));
 
-    ros::WallTime t0 = ros::WallTime::now();
-    cv::Mat drawImg;
-    if (configLast.SET_KEYFRAME){
-        configLast.SET_KEYFRAME=false;
-        drawImg = tracker.update(frame, true);
-    } else {
-        drawImg = tracker.update(frame);
-    }
-    OVO::putInt(drawImg, 1000.*(ros::WallTime::now()-t0).toSec(), cv::Point(20,drawImg.rows-3*25), CV_RGB(200,0,200), false, "T:");
+    ROS_INFO("NODE > PROCESSING FRAME [%d]", frame->getId());
 
+    /// Do visual odometry
+    odometry.update(frame);
 
-
-//    /// ROTATE KEYPOINTS
-//    std::vector<cv::KeyPoint> kpsRect = camModel.rectifyPoints(kps);
-//    std::vector<cv::KeyPoint> kpsR;
-//    if (useIMU){
-//        kpsR = camModel.rotatePoints(kpsRect, -r, false);
-//    } else {
-//        kpsR = kps;
-//    }
-
-//    cv::Mat img = cv::Mat::zeros(image.size(), CV_8UC3);
-//    cv::Mat imgRect;
-
-//    int width=img.size().width;
-//    int height=img.size().height;
-//    for(int i=0; i<height; i+=height/8){
-//        cv::line(img,cv::Point(0,i),cv::Point(width,i),CV_RGB(255,255,255),2);
-//    }
-
-//    for(int i=0; i<width; i+=width/8){
-//        cv::line(img,cv::Point(i,0),cv::Point(i,height),CV_RGB(255,255,255), 2);
-//    }
-
-
-//    camModel.rectify(img, imgRect, camInfoPtr);
-//    cv::imshow("grid", imgRect); cv::waitKey(10);
-
-
-
-
-
-
-
-
-
-    /// BEARING VECTORS
-    //    Eigen::MatrixXf bv;
-    //    camModel.bearingVectors(kps, bv);
-    //    const tf::Quaternion q(1,0,0,0);
-    //    for (uint i=0; i<kps.size(); ++i){
-    //        pubTF.sendTransform(tf::StampedTransform(tf::Transform(q,tf::Vector3(bv(i,0),bv(i,1),bv(i,2))), ros::Time::now(), "/cam", "/F"+boost::lexical_cast<std::string>(i)));
-    //    }
-
-    /// ADD TO MAP
-
-    /// GET POSE
-
-    /// OUTPUT POSE
 
 
     /// Compute running average of processing time
     timeAvg = timeAvg*timeAlpha + (1.0 - timeAlpha)*(ros::WallTime::now()-time_s0).toSec();
-    ROS_INFO_STREAM(std::setprecision(4) << timeAvg*1000. << " " << *frame);
-    OVO::putInt(drawImg, timeAvg*1000., cv::Point(20,drawImg.rows-1*25), CV_RGB(200,0,200), false, "S:");
+
+
+
+
+    ROS_INFO_STREAM("NODE < FRAME ["<<frame->getId() << "] PROCESSED [" << std::setprecision(4) << timeAvg*1000. << "ms]");
 
 
     /// publish debug image
     if (pubCamera.getNumSubscribers()>0 || pubImage.getNumSubscribers()>0){
         sensor_msgs::CameraInfoPtr camInfoPtr = frame->getCamInfo();
+        cv::Mat drawImg = odometry.getVisualImage();
+        OVO::putInt(drawImg, timeAvg*1000., cv::Point(20,drawImg.rows-1*25), CV_RGB(200,0,200), false, "S:");
 
 //        if (imageRect.channels() != image.channels()){
 //            cv::cvtColor(imageRect, imageRect,CV_BGR2GRAY);
@@ -207,9 +170,9 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     if (repeatOn!=configLast.repeatInput){
         if (configLast.repeatInput){
             subImage.shutdown();
-            ROS_INFO("Repeat on");
+            ROS_INFO("NODE = Repeat on");
         } else {
-            ROS_INFO("Repeat off");
+            ROS_INFO("NODE = Repeat off");
             subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
         }
         repeatOn = configLast.repeatInput;
@@ -217,7 +180,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
 
     if (repeatOn){
-        ROS_INFO_THROTTLE(1,"Repeating Input");
+        ROS_INFO_THROTTLE(1,"NODE = Repeating Input");
         ros::spinOnce(); // check for changes in dynamic reconfigure
         incomingImage(msg);
     }
@@ -227,8 +190,8 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
 
 
-ollieRosTools::VoNode_paramsConfig&  VoNode::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
-    ROS_INFO("Setting VoNode param");
+ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
+    ROS_INFO("NODE > SETTING PARAM");
 
     /// Turn node on and off when settings change
     if (nodeOn!=config.nodeOn){
@@ -236,31 +199,33 @@ ollieRosTools::VoNode_paramsConfig&  VoNode::setParameter(ollieRosTools::VoNode_
         if (nodeOn){
             // Node was just turned on
             subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
-            ROS_INFO("Node On");
+            ROS_INFO("NODE = Node On");
         } else {
             // Node was just turned off
             subImage.shutdown();
-            ROS_INFO("Node Off");
+            ROS_INFO("NODE = Node Off");
         }
     }
 
-    // make sure max>=min
-    int minKp, maxKp;
-    minKp=std::min(config.kp_min, config.kp_max);
-    maxKp=std::max(config.kp_min, config.kp_max);
-    config.kp_max = maxKp;
-    config.kp_min = minKp;
+
+    // maxKp == 0 means dont cap size
+    if (config.kp_max!=0){
+        // make sure max>=min
+        int minKp, maxKp;
+        minKp=std::min(config.kp_min, config.kp_max);
+        maxKp=std::max(config.kp_min, config.kp_max);
+        config.kp_max = maxKp;
+        config.kp_min = minKp;
+    }
 
     imgDelay = ros::Duration(config.imgDelay);
     colorId = config.color;
 
     Frame::setParameter(config, level);
-    /// TODO:
+    odometry.setParameter(config, level);
 
-    tracker.setParameter(config,level);
 
-    configLast = config;
-    config.SET_KEYFRAME=false;
+    ROS_INFO("NODE < PARAM SET");
     return config;
 
 }
