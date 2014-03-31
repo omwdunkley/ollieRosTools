@@ -250,6 +250,8 @@ private:
 
         bool okay = initialise(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches(), worldPoints, voMatches );
 
+        //addKFVO();
+
         if (okay){
             ROS_INFO("ODO < INITIALISATION SUCCESS");
             state = INITIALISED;
@@ -356,7 +358,9 @@ public:
                 /// Check if we can initialised
                 if (control==DO_INIT || disparity>voInitDisparity){
                     control = DO_NOTHING;
+                    setInitialKFVO(frame); // JUST FOR TESTING
                     //initialiseVO();
+
                 }
             }
 
@@ -413,6 +417,7 @@ public:
         voRelPoseMethod   = config.vo_relPoseMethod;
         voTriangulationMethod = config.vo_triMethod;
         voRelNLO          = config.vo_relNLO;
+        voInitDisparity   = config.vo_initDisparity;
 
 
         // User controls
