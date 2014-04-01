@@ -434,7 +434,7 @@ class Tracker{
 
             if (!klt_init){
                 initKLT(); // keyframe must be set here
-                // return
+                return;
             }
 
 
@@ -819,7 +819,7 @@ class Tracker{
 
             /// Matches Info
             OVO::putInt(img, KFMatches.size(), cv::Point(10,2*25), CV_RGB(0,96*2,0),  true, "MA:");
-            OVO::putInt(img, disparity, cv::Point(10,3*25), CV_RGB(0,96*2,0), false , "DI:");
+            OVO::putInt(img, disparity, cv::Point(10,8*25), CV_RGB(0,96*2,0), false , "DI:");
 
 
             ///  print timing info

@@ -111,8 +111,10 @@ class OdoMap {
         // Assumes worldPoiints are triangulated from current frame and frame
         /// TODO
         void initialise(const opengv::points_t worldPoints, const DMatches& voMatches){
+            ROS_INFO("MAP < INITIALISING MAP ");
             points = worldPoints;
             kfMatches = voMatches;
+            ROS_INFO("MAP < MAP INITIALISED ");
         }
 
         void shirnkKFs(){

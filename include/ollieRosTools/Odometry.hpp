@@ -41,6 +41,12 @@ private:
                   DO_ADDKF,   // Force adding KF (if initialised, this adds one, if not, it replaces the current)
                   DO_RESET
                };
+    enum BaselineMethod {UNCHANGED=-1,       // Baseline is not altered
+                         FIXED,           // Baseline fixed to one meter
+                         MANUAL_BASELINE, // Baseline specified by the user
+                         MANUAL_AVGDEPTH, // Baseline adjusted so the specified avg depth is reached
+                         AUTO_MARKER      // Baseline is estimated absoluted, eg by known markers
+               };
 
     /// ////////////////////////////////////////////////////////////////////////////////////// PRIVATE MEMBERS
     // Map
@@ -61,10 +67,15 @@ private:
     float voKfDisparity;     // disparity required to trigger new KF
     float frameQualityThreshold;
     float keyFrameQualityThreshold;
+    BaselineMethod voBaselineMethod;
+    double voBaseline;
 
     // ABSOLUTE POSE - used when computing pose vs keyframe
 
 
+    // just for drawing
+    double baselineInitial;
+    double baselineCorrected;
 
     /// ////////////////////////////////////////////////////////////////////////////////////// PRIVATE METHODS
 
@@ -72,7 +83,7 @@ private:
     void triangulate(const opengv::transformation_t& trans1to2, const opengv::bearingVectors_t& bv1, const opengv::bearingVectors_t& bv2, opengv::points_t& points3d) const{
         /// The 3D points are expressed in the frame of the first viewpoint.
 
-        ROS_INFO("      Triangulating with baseline %f", trans1to2.col(3).norm());
+        ROS_INFO("OVO > Triangulating");
 
 
         // Triangulate point pairs of each match
@@ -92,6 +103,7 @@ private:
                points3d.push_back(opengv::triangulation::triangulate(adapter,i));
             }
         }
+        ROS_INFO("OVO < Triangulated");
     }
 
 
@@ -100,8 +112,8 @@ private:
     /// data associsation through matches
     /// Sets the pose of frame f
     /// Outputs triangulated world points and the corresponding inlier matches
-    bool initialise(FramePtr& f, FramePtr& kf, const DMatches& matches, opengv::points_t& worldPoints, DMatches& matchesVO, double scale=1.0) const{
-        ROS_INFO("   Initialising");
+    bool initialise(FramePtr& f, FramePtr& kf, const DMatches& matches, opengv::points_t& worldPoints, DMatches& matchesVO){
+        ROS_INFO(" ODO > Initialising");
 
         /// Get unit features aligned
         opengv::bearingVectors_t bvF;
@@ -150,7 +162,7 @@ private:
         }
 
         if (inliers.size()<10){
-            ROS_WARN("RANSAC failed init with %lu/%lu inliers", inliers.size(), matches.size());
+            ROS_WARN("ODO = RANSAC failed on Relative Pose Estimation with %lu/%lu inliers", inliers.size(), matches.size());
             return false;
         }
 
@@ -158,13 +170,12 @@ private:
         /// TODO: estimate yaw bias
         if (voRelNLO){
             // check order
-            ROS_INFO("Doing NLO");
-
+            ROS_INFO("ODO > Doing NLO on Relative Pose");
             adapter.sett12(transKFtoF.col(3));
             adapter.setR12(transKFtoF.block<3,3>(0,0));
-            ROS_INFO_STREAM("   Before:\n  " << transKFtoF);
+            ROS_INFO_STREAM("ODO = NLO Before:\n  " << transKFtoF);
             transKFtoF = opengv::relative_pose::optimize_nonlinear(adapter, inliers);
-            ROS_INFO_STREAM("   After :\n  " << transKFtoF);
+            ROS_INFO_STREAM("ODO < NLO AFTER:\n  " << transKFtoF);
         }
 
         /// g2o BUNDLE ADJUST
@@ -181,20 +192,74 @@ private:
         OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
 
         /// Scale Pose
-        double length = transKFtoF.col(3).norm();
+        baselineInitial = transKFtoF.col(3).norm();
 
-        ROS_INFO("   Relative Pose baseline %f", length);
-        transKFtoF.col(3) *= scale/length;
+        /// TRIANGULATE points in the keyframe frame
+        ROS_INFO("ODO = Relative Pose baseline [%f]", baselineInitial);
+        double meanDepth=0.0;
+        switch (voBaselineMethod){
+            case UNCHANGED:
+                ROS_INFO("ODO = Baseline left unchanged [%f]", baselineInitial);
+                triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
+                break;
+            case FIXED:
+                ROS_INFO("ODO = Baseline scaled [1.0]");
+                transKFtoF.col(3) *= 1.0/baselineInitial;
+                triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
+                break;
+            case MANUAL_BASELINE:
+                ROS_INFO("ODO = Baseline selected scaled [%f]", voBaseline);
+                transKFtoF.col(3) *= voBaseline/baselineInitial;
+                triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
+                break;
+            case MANUAL_AVGDEPTH:
+                ROS_INFO("ODO > Scaling Baseline so avg depth is [%f]", voBaseline);
+                transKFtoF.col(3) /= baselineInitial;
 
-        /// set poses
+                // Triangulate with baseline = 1
+                triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
+
+                // calculate mean depth
+                for (uint i=0; i<worldPoints.size(); ++i){
+                   meanDepth += worldPoints[i].norm();
+                }
+                meanDepth /=static_cast<double>(worldPoints.size());
+                ROS_INFO("ODO = Baseline is [%f] with mean depth [%f]", baselineInitial, meanDepth);
+
+                // modify points
+                for (uint i=0; i<worldPoints.size(); ++i){
+                    worldPoints[i] /= meanDepth/voBaseline;
+                }
+                // modify baseline
+                transKFtoF.col(3) /= meanDepth/voBaseline;
+                ROS_INFO("ODO < Baseline updated to [%f] with mean depth [%f]", transKFtoF.col(3).norm(), voBaseline);
+                break;
+            case AUTO_MARKER:
+                ROS_ERROR("ODO = NOT IMPLEMENTED: Baseline being scaled using Markers");
+                transKFtoF.col(3) *= 1.0/baselineInitial;
+                triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
+                break;
+
+        }
+
+        // just for drawing really
+        baselineCorrected = transKFtoF.col(3).norm();
+
+        meanDepth = 0;
+        for (uint i=0; i<worldPoints.size(); ++i){
+           meanDepth += worldPoints[i].norm();
+        }
+        meanDepth /=static_cast<double>(worldPoints.size());
+        ROS_INFO("ODO = Mean depth [%f]", meanDepth);
+
+
+        /// Set pose of F from KF->F to world->F
         //f2->setPose(); //
         f->setPose(kf->getPose() * transKFtoF);
 
-        /// triangulate
-        // get points in f2 frame
-        triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
-        // put them in world frame
+        /// put points from KF->Points frame to World->Points frame
         OVO::transformPoints(kf->getPose(), worldPoints);
+        ROS_INFO(" ODO < Initialised");
         return true;
     }
 
@@ -237,6 +302,7 @@ private:
         ROS_INFO("ODO < INITIAL KEYFRAME ADDED ");
 
 
+
     }
 
 
@@ -245,6 +311,8 @@ private:
     void reset(){
         ROS_INFO("ODO > RESETTING");
         state=WAIT_FIRST_FRAME;
+        baselineInitial = -1;
+        baselineCorrected = -1;
         map.reset();
         ROS_INFO("ODO < RESET");
     }
@@ -327,6 +395,8 @@ public:
 
         frameQualityThreshold = 0.2;
         keyFrameQualityThreshold = 0.6;
+        baselineInitial = -1;
+        baselineCorrected = -1;
 
     }
 
@@ -410,6 +480,15 @@ public:
     cv::Mat getVisualImage(){
         /// TODO
         cv::Mat image = map.getVisualImage();
+
+        if (baselineInitial>=0){
+        OVO::putInt(image, baselineInitial, cv::Point(10,9*25), CV_RGB(0,96*2,0), false , "BLD:");
+        }
+        if (baselineCorrected>=0){
+        OVO::putInt(image, baselineCorrected, cv::Point(10,10*25), CV_RGB(0,96*2,0), false , "BLC:");
+        }
+
+
         // show timings
         // show state
         // show user controls
@@ -433,6 +512,9 @@ public:
         voRelNLO          = config.vo_relNLO;
         voInitDisparity   = config.vo_initDisparity;
         voKfDisparity     = config.vo_kfDisparity;
+        voBaselineMethod  = static_cast<BaselineMethod>(config.vo_relBaselineMethod);
+        voBaseline        = config.vo_relBaseline;
+
 
 
         // User controls
