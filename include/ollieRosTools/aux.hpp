@@ -28,6 +28,7 @@ typedef Points2d Points2;
 typedef std::vector< int > Ints;
 typedef std::vector< bool > Bools;
 typedef std::vector< float > Floats;
+typedef std::vector< double > Doubles;
 typedef std::vector< cv::Mat > Mats;
 typedef cv::Ptr<Frame> FramePtr;
 
@@ -68,6 +69,11 @@ namespace OVO {
     void alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, opengv::bearingVectors_t& bv1, opengv::bearingVectors_t& bv2);
 
     void transformPoints(const Eigen::Affine3d& transform, opengv::points_t& points);
+
+    Eigen::VectorXd reprojectErrPointsVsBV(
+            const Eigen::Affine3d& model,
+            const opengv::points_t& points,
+            const opengv::bearingVectors_t& bv);
 
     template <class T, class T2> void vecAlignMatch (const T& vec1in, const T2& vec2in,
                                                      T& vec1out,      T2& vec2out,

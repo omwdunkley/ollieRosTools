@@ -110,3 +110,55 @@ void OVO::transformPoints(const Eigen::Affine3d& transform, opengv::points_t& po
         points[i] = transform * points[i];
     }
 }
+
+Eigen::VectorXd OVO::reprojectErrPointsVsBV(
+        const Eigen::Affine3d& model,
+        const opengv::points_t& points,
+        const opengv::bearingVectors_t& bv){
+
+
+    Eigen::Affine3d inverseSolution;
+    inverseSolution = model.inverse();
+
+    Eigen::VectorXd scores(points.size());
+    for(uint i = 0; i < points.size(); ++i){
+        opengv::point_t reprojection = inverseSolution * points[i];
+        reprojection /= reprojection.norm();
+        scores[i] = 1.0 - (reprojection.transpose() * bv[i]);
+    }
+    return scores;
+}
+
+//Doubles OVO::reprojectErrBvVsBv(
+//        const Eigen::Affine3d& model,
+//        const opengv::points_t& points,
+//        const opengv::bearingVectors_t& bv){
+////    const model_t & model,
+////    const std::vector<int> & indices,
+////    std::vector<double> & scores) {
+
+//    Eigen::Affine3d inverseSolution;
+//    //inverseSolution.block<3,3>(0,0) = model.block<3,3>(0,0).transpose();
+//    //inverseSolution.col(3) = -inverseSolution.block<3,3>(0,0)*model.col(3);
+//    inverseSolution = model.inverse();
+
+//  Eigen::Matrix<double,4,1> p_hom;
+//  p_hom[3] = 1.0;
+
+//  for( size_t i = 0; i < points.size(); ++i ) {
+//    p_hom.block<3,1>(0,0) = opengv::triangulation::triangulate2(_adapter,indices[i]);
+//    bearingVector_t reprojection1 = p_hom.block<3,1>(0,0);
+//    bearingVector_t reprojection2 = inverseSolution * p_hom;
+//    reprojection1 = reprojection1 / reprojection1.norm();
+//    reprojection2 = reprojection2 / reprojection2.norm();
+//    bearingVector_t f1 = _adapter.getBearingVector1(indices[i]);
+//    bearingVector_t f2 = _adapter.getBearingVector2(indices[i]);
+
+//    //bearing-vector based outlier criterium (select threshold accordingly):
+//    //1-(f1'*f2) = 1-cos(alpha) \in [0:2]
+//    double reprojError1 = 1.0 - (f1.transpose() * reprojection1);
+//    double reprojError2 = 1.0 - (f2.transpose() * reprojection2);
+//    scores.push_back(reprojError1 + reprojError2);
+//  }
+//}
+

@@ -76,6 +76,7 @@ private:
     // just for drawing
     double baselineInitial;
     double baselineCorrected;
+    double timeVO;
 
     /// ////////////////////////////////////////////////////////////////////////////////////// PRIVATE METHODS
 
@@ -114,6 +115,7 @@ private:
     /// Outputs triangulated world points and the corresponding inlier matches
     bool initialise(FramePtr& f, FramePtr& kf, const DMatches& matches, opengv::points_t& worldPoints, DMatches& matchesVO){
         ROS_INFO(" ODO > Initialising");
+        ros::WallTime t0 = ros::WallTime::now();
 
         /// Get unit features aligned
         opengv::bearingVectors_t bvF;
@@ -162,7 +164,8 @@ private:
         }
 
         if (inliers.size()<10){
-            ROS_WARN("ODO = RANSAC failed on Relative Pose Estimation with %lu/%lu inliers", inliers.size(), matches.size());
+            timeVO = (ros::WallTime::now()-t0).toSec();
+            ROS_WARN("ODO = RANSAC failed on Relative Pose Estimation with %lu/%lu inliers [%fms]", inliers.size(), matches.size(),timeVO);
             return false;
         }
 
@@ -253,13 +256,26 @@ private:
         ROS_INFO("ODO = Mean depth [%f]", meanDepth);
 
 
+
+
         /// Set pose of F from KF->F to world->F
         //f2->setPose(); //
         f->setPose(kf->getPose() * transKFtoF);
 
         /// put points from KF->Points frame to World->Points frame
         OVO::transformPoints(kf->getPose(), worldPoints);
-        ROS_INFO(" ODO < Initialised");
+
+        /// just to print!
+        Eigen::VectorXd repjerr;
+        repjerr = OVO::reprojectErrPointsVsBV(kf->getPose(), worldPoints, bvKFinlier );
+        ROS_INFO("ODO = Min / Avg / Max RePrjErr KF = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
+        repjerr = OVO::reprojectErrPointsVsBV(f->getPose(), worldPoints, bvFinlier );
+        ROS_INFO("ODO = Min / Avg / Max RePrjErr  F = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
+
+
+        timeVO = (ros::WallTime::now()-t0).toSec();
+        ROS_INFO("ODO < Initialised [%fms]", timeVO);
+
         return true;
     }
 
@@ -362,18 +378,23 @@ private:
 
     /// estiamte pose vs MAP
     void estimatePoseVO(){
+        ros::WallTime t0 = ros::WallTime::now();
         ROS_INFO("ODO > DOING POSE ESTIMATION");
 
 
 
+        timeVO = (ros::WallTime::now()-t0).toSec();
         bool okay = true;
         if (okay){
-            ROS_INFO("ODO < POSE ESTIMATION SUCCESS");
+            ROS_INFO("ODO < POSE ESTIMATION SUCCESS [%fms]", timeVO);
             state = INITIALISED;
         } else {
-            ROS_WARN("ODO < POSE ESTIMATION FAIL");
+            ROS_WARN("ODO < POSE ESTIMATION FAIL [%fms]", timeVO);
             state = LOST;
         }
+
+
+
     }
 
 
@@ -397,6 +418,7 @@ public:
         keyFrameQualityThreshold = 0.6;
         baselineInitial = -1;
         baselineCorrected = -1;
+        timeVO = 0;
 
     }
 
