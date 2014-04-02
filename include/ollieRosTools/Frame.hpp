@@ -4,7 +4,7 @@
 
 #include <iostream>
 #include <iomanip>      // std::setprecision
-
+#include <vector>
 
 #include <opencv2/opencv.hpp>
 #include <Eigen/Eigen>
@@ -13,13 +13,17 @@
 #include <tf/tf.h>
 #include <tf_conversions/tf_eigen.h>
 
-#include <ollieRosTools/aux.hpp>
 #include <ollieRosTools/Detector.hpp>
 #include <ollieRosTools/CameraATAN.hpp>
 #include <ollieRosTools/PreProc.hpp>
+//#include <ollieRosTools/Map.hpp>
+#include <ollieRosTools/aux.hpp>
+
+
+
 
 class Frame{
-private:
+    private:
         cv::Mat image;
         cv::Mat mask;
         Mats pyramid;
@@ -27,6 +31,15 @@ private:
         opengv::rotation_t imuAttitude;
         Eigen::Affine3d pose; // transformation in the world frame
         double roll, pitch, yaw;
+
+        /// If a keyframe, this is used for other frames to track against. Aligned with descs, keypoints, points
+        opengv::points_t worldPoints;
+
+        /// If a keyframe, this contains references to map points
+        std::vector<PointPtr> mapPointRefs;
+        KeyPoints             mapKeyPoints;
+        cv::Mat               mapDescriptors;
+        Eigen::MatrixXd       mapbearings;
 
         /// TODO not used
         double gyroX, gyroY, GyroZ;
@@ -108,337 +121,367 @@ private:
 
 
 
-public:
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
-    Frame() : initialised(false){
-        ROS_INFO("FRA = NEW UNINITIALISED FRAME");
-    }
+    public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+        Frame() : initialised(false){
+            ROS_INFO("FRA = NEW UNINITIALISED FRAME");
+        }
 
-    Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask=cv::Mat()) : initialised(true) {
-        id = ++idCounter;
-        kfId = -1;
+        Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask=cv::Mat()) : initialised(true) {
+            id = ++idCounter;
+            kfId = -1;
 
-        ROS_INFO("FRA > CREATING NEW FRAME [ID: %d]", id);
+            ROS_INFO("FRA > CREATING NEW FRAME [ID: %d]", id);
 
-        timePreprocess = 0;
-        timeExtract    = 0;
-        timeDetect     = 0;
-
-
-        /// SHOULD BE SET SOMEHOW
-        gyroX = gyroY = GyroZ = 0.0;
-        accX  = accY  = accZ  = 0.0;
-
-        detId = -1; //-1 = none, -2 = KLT
-        descId = -1;
-
-        this->mask = mask;
-
-        ros::WallTime t0 = ros::WallTime::now();
-        cv::Mat imgProc = preproc.process(img);
-        image = cameraModel.rectify(imgProc);
-        timePreprocess = (ros::WallTime::now()-t0).toSec();
-
-        pose.setIdentity();
-
-        tf::matrixTFToEigen(imu.getBasis(), imuAttitude);
-        time = imu.stamp_;
-        OVO::tf2RPY(imu, roll, pitch, yaw); /// TODO: RPY mighrt be negative
-
-        /// TODO: estiamte quality of imageu using acceleromter, gyro and blurriness estiamtion
-        estimateImageQuality();
-
-        ROS_INFO("FRA < NEW FRAME CREATED [ID: %d]", id);
-    }
+            timePreprocess = 0;
+            timeExtract    = 0;
+            timeDetect     = 0;
 
 
-    float getQuality() const {
-        return quality;
-    }
+            /// SHOULD BE SET SOMEHOW
+            gyroX = gyroY = GyroZ = 0.0;
+            accX  = accY  = accZ  = 0.0;
 
-    cv::Size getSize(){
-        return image.size();
-    }
+            detId = -1; //-1 = none, -2 = KLT
+            descId = -1;
 
-    const tf::Pose getTFPose() const {
-        //TODO
-        tf::Pose pose;
-        tf::poseEigenToTF(getPose(), pose);
-        return pose;
-    }
+            this->mask = mask;
 
-    const Eigen::Affine3d& getPose() const {
-        return pose;
-    }
+            ros::WallTime t0 = ros::WallTime::now();
+            cv::Mat imgProc = preproc.process(img);
+            image = cameraModel.rectify(imgProc);
+            timePreprocess = (ros::WallTime::now()-t0).toSec();
 
-    void setPose(const opengv::transformation_t& t){
-        pose = t;
-    }
-
-    void setPoseRotationFromImu(){
-        // sets the pose from the imu rotation. This is usually used on the very first keyframe
-        pose.linear() = imuAttitude;
-    }
-
-    bool isInitialised() const{
-        return initialised;
-    }
-
-    void setAsKF(bool first=false){
-        if(first){
-            // reset static variables
-            kfIdCounter = 0;
-            idCounter   = 0;
-            // initial pose is zero translation with IMU rotation
             pose.setIdentity();
-            setPoseRotationFromImu();
-        }
-        kfId = ++kfIdCounter;
-    }
 
-    const opengv::rotation_t& getImuRotation() const {
-        return imuAttitude;
-    }
+            tf::matrixTFToEigen(imu.getBasis(), imuAttitude);
+            time = imu.stamp_;
+            OVO::tf2RPY(imu, roll, pitch, yaw); /// TODO: RPY mighrt be negative
 
-    const sensor_msgs::CameraInfoPtr& getCamInfo() const {
-        /// Fetches the cameraInfo used by ros for the current rectification output
-        return cameraModel.getCamInfo();
-    }
+            /// TODO: estiamte quality of imageu using acceleromter, gyro and blurriness estiamtion
+            estimateImageQuality();
 
-    const cv::Mat& getImage() const{
-        return image;
-    }
-
-    cv::Mat getVisualImage() const{
-        cv::Mat img;
-
-        // Draw keypoints if they exist, also makes img colour
-        cv::drawKeypoints(image, keypoints, img, CV_RGB(0,90,20));
-        OVO::putInt(img, keypoints.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"KP: ");
-
-        // Draw Frame ID
-        OVO::putInt(img, id, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,100,110), true,  "FID:");
-
-        if (kfId>=0){
-            OVO::putInt(img, kfId, cv::Point2f(img.cols-95,img.rows-4*25), CV_RGB(0,100,110), true,  "KID:");
+            ROS_INFO("FRA < NEW FRAME CREATED [ID: %d]", id);
         }
 
-        // Draw RPY
-        drawRPY(img);
-
-        // Draw timing
-        OVO::putInt(img, timePreprocess*1000., cv::Point(10,img.rows-6*25),CV_RGB(200,0,200), false, "P:");
-        if (!keypoints.empty()){
-            OVO::putInt(img, timeDetect*1000., cv::Point(10,img.rows-5*25), CV_RGB(200,0,200), false, "D:");
-        }
-        if (descriptors.rows>0){
-            OVO::putInt(img, timeExtract*1000., cv::Point(10,img.rows-4*25), CV_RGB(200,0,200), false, "E:");
+        /// KF ONLY FUNCTIONS
+        // Gets Desc at specified row
+        const cv::Mat getMapDescriptor(const int rowNr) const {
+            return mapDescriptors.row(rowNr);
         }
 
-        // Draw artificial horizon
-        return img;
-    }
-
-
-    float getRoll() const{
-        /// Gets roll
-        return roll;
-    }
-
-    KeyPoints& getKeypoints(bool dontCompute=false, bool allowKLT=true){
-        /// Gets keypoints. Computes them if required/outdated type unless dontCompute is true. Uses points as kps if possible.
-        if (keypoints.empty()){
-            // We dont have key points
-            if (!points.empty() && allowKLT){
-                // use klt points as keypoints
-                cv::KeyPoint::convert(points, keypoints);
-            } else {
-                // we dont have points either or dont want to use them
-                if (!dontCompute){
-                    // compute  points
-                   computeKeypoints();
-                }
+        // Sets frame as keyframe, prepares it for bundle adjustment
+        void setAsKF(bool first=false){
+            ros::WallTime t0 = ros::WallTime::now();
+            ROS_INFO("FRA > Setting Frame [%d] as keyframe", id);
+            kfId = ++kfIdCounter;
+            if(first){
+                ROS_INFO("FRA = Setting as first ever frame/keyframe, resetting counters");
+                // reset static variables
+                kfIdCounter = 0;
+                idCounter   = 0;
+                id          = 0;
+                // initial pose is zero translation with IMU rotation
+                pose.setIdentity();
+                setPoseRotationFromImu();
             }
-        } else {
-            // we have keypoints
-            if (!dontCompute && getDetId() != detector.getDetectorId()){
-                // we have outdated keypoints - recompute
-                computeKeypoints();
-            }
+
+
+            /// TODO: detect, extract (sift?)
+            double time = (ros::WallTime::now()-t0).toSec();
+            ROS_INFO("FRA < Frame [%d] set as keyframe [%d] in [%.1fms]", id, kfId,time*1000.);
         }
-        return keypoints;
-    }
-
-    bool hasPoints() const {
-        return keypoints.size()>0 || points.size()>0;
-    }
 
 
-    /// TODO: dont shortcut here, rotate points directly
-    const Points2f getRotatedPoints(bool aroundOpticalAxis = true){
-        // simply returns rotates keypoints as points
-        Points2f pts;
-        cv::KeyPoint::convert(getRotatedKeypoints(aroundOpticalAxis), pts);
-        return pts;
-    }
 
-    const Points2f& getPoints(bool dontCompute=true){
-        /// Gets points. Use kps as pts if we dont have pts. IF we dont have pts or kps, only compute them if dontCompute = false.
-        if (points.empty()){
-            // dont have points
+        /// All functions
+        float getQuality() const {
+            return quality;
+        }
+
+        cv::Size getSize(){
+            return image.size();
+        }
+
+        // Convers the internal eigen pose to a TF pose
+        const tf::Pose getTFPose() const {
+            //TODO
+            tf::Pose pose;
+            tf::poseEigenToTF(getPose(), pose);
+            return pose;
+        }
+
+        // returns the eigen pose of this frame in the world frame
+        const Eigen::Affine3d& getPose() const {
+            return pose;
+        }
+
+        // Sets the pose from a 3x4 mat, converting it to an eigen affine3d
+        void setPose(const opengv::transformation_t& t){
+            pose = t;
+        }
+
+        // sets the pose from the imu rotation. This is usually used on the very first keyframe
+        void setPoseRotationFromImu(){
+            pose.linear() = imuAttitude;
+        }
+
+        // Returns true if this frame is not the result of the default constructor
+        bool isInitialised() const{
+            return initialised;
+        }
+
+        // Gets the imu rotation recorded at the time the frame was taken.
+        const opengv::rotation_t& getImuRotation() const {
+            return imuAttitude;
+        }
+
+        // Fetches the cameraInfo used by ros for the current rectification output
+        const sensor_msgs::CameraInfoPtr& getCamInfo() const {
+            return cameraModel.getCamInfo();
+        }
+
+        // returns the original preprocessed image the frame was initialised with. Cannot be changed
+        const cv::Mat& getImage() const{
+            return image;
+        }
+
+        // Creates a new image with visual information displayed on it
+        cv::Mat getVisualImage() const{
+            cv::Mat img;
+
+            // Draw keypoints if they exist, also makes img colour
+            cv::drawKeypoints(image, keypoints, img, CV_RGB(0,90,20));
+            OVO::putInt(img, keypoints.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"KP: ");
+
+            // Draw Frame ID
+            OVO::putInt(img, id, cv::Point2f(img.cols-95,img.rows-4*25), CV_RGB(0,110,180), true,  "FID:");
+
+            // if a kf
+            if (kfId>=0){
+                OVO::putInt(img, kfId, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,110,180), true,  "KID:");
+                OVO::putInt(img, worldPoints.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,180,110), true,  "WPT:"); // numner of 3d points frames can triangulate from
+                OVO::putInt(img, mapPointRefs.size(), cv::Point2f(img.cols-95,img.rows-7*25), CV_RGB(0,180,110), true,  "MPT:");
+            }
+
+            // Draw RPY
+            drawRPY(img);
+
+            // Draw timing
+            OVO::putInt(img, timePreprocess*1000., cv::Point(10,img.rows-6*25),CV_RGB(200,0,200), false, "P:");
             if (!keypoints.empty()){
-                // but have keypoints
-                cv::KeyPoint::convert(keypoints, points);
+                OVO::putInt(img, timeDetect*1000., cv::Point(10,img.rows-5*25), CV_RGB(200,0,200), false, "D:");
+            }
+            if (descriptors.rows>0){
+                OVO::putInt(img, timeExtract*1000., cv::Point(10,img.rows-4*25), CV_RGB(200,0,200), false, "E:");
+            }
+
+            // Draw artificial horizon
+            return img;
+        }
+
+
+        float getRoll() const{
+            /// Gets roll
+            return roll;
+        }
+
+        KeyPoints& getKeypoints(bool dontCompute=false, bool allowKLT=true){
+            /// Gets keypoints. Computes them if required/outdated type unless dontCompute is true. Uses points as kps if possible.
+            if (keypoints.empty()){
+                // We dont have key points
+                if (!points.empty() && allowKLT){
+                    // use klt points as keypoints
+                    cv::KeyPoint::convert(points, keypoints);
+                } else {
+                    // we dont have points either or dont want to use them
+                    if (!dontCompute){
+                        // compute  points
+                       computeKeypoints();
+                    }
+                }
             } else {
-                // dont have keypoints
-                if (!dontCompute){
-                    // compute them
+                // we have keypoints
+                if (!dontCompute && getDetId() != detector.getDetectorId()){
+                    // we have outdated keypoints - recompute
                     computeKeypoints();
-                    cv::KeyPoint::convert(keypoints, points);
                 }
             }
+            return keypoints;
         }
-        return points;
-    }
+
+        bool hasPoints() const {
+            return keypoints.size()>0 || points.size()>0;
+        }
 
 
-    void swapKeypoints(KeyPoints& kps){
-        /// Swap keypoints and remove everything that could have come from previous ones
-        keypointsRotated.clear();
-        points.clear();
-        descriptors = cv::Mat();
-        descId = -1;
-        detId = -2; // unknown type
-        std::swap(keypoints, kps);
-    }
-    void swapPoints(Points2f& pts){
-        /// Swap points and remove everything that could have come from previous ones
-        keypointsRotated.clear();
-        keypoints.clear();
-        descriptors = cv::Mat();
-        descId = -1;
-        detId = -2; // unknown type
-        std::swap(points, pts);
-    }
-    void clearAllPoints(){
+        /// TODO: dont shortcut here, rotate points directly
+        const Points2f getRotatedPoints(bool aroundOpticalAxis = true){
+            // simply returns rotates keypoints as points
+            Points2f pts;
+            cv::KeyPoint::convert(getRotatedKeypoints(aroundOpticalAxis), pts);
+            return pts;
+        }
+
+        const Points2f& getPoints(bool dontCompute=true){
+            /// Gets points. Use kps as pts if we dont have pts. IF we dont have pts or kps, only compute them if dontCompute = false.
+            if (points.empty()){
+                // dont have points
+                if (!keypoints.empty()){
+                    // but have keypoints
+                    cv::KeyPoint::convert(keypoints, points);
+                } else {
+                    // dont have keypoints
+                    if (!dontCompute){
+                        // compute them
+                        computeKeypoints();
+                        cv::KeyPoint::convert(keypoints, points);
+                    }
+                }
+            }
+            return points;
+        }
+
+
+        void swapKeypoints(KeyPoints& kps){
+            /// Swap keypoints and remove everything that could have come from previous ones
             keypointsRotated.clear();
-            keypoints.clear();
             points.clear();
             descriptors = cv::Mat();
             descId = -1;
             detId = -2; // unknown type
-    }
-
-    const Mats& getPyramid(const cv::Size& winSize, const int maxLevel, const bool withDerivatives=true, int pyrBorder=cv::BORDER_REFLECT_101, int derivBorder=cv::BORDER_CONSTANT){
-        /// return image pyramid. Compute if required
-        if (pyramid.empty() || winSize != pyramidWindowSize){
-            cv::buildOpticalFlowPyramid(image, pyramid, winSize, maxLevel, withDerivatives, pyrBorder, derivBorder, true); //not sure about last flag reuseInput
-            pyramidWindowSize = winSize;
+            std::swap(keypoints, kps);
         }
-        return pyramid;
-    }
+        void swapPoints(Points2f& pts){
+            /// Swap points and remove everything that could have come from previous ones
+            keypointsRotated.clear();
+            keypoints.clear();
+            descriptors = cv::Mat();
+            descId = -1;
+            detId = -2; // unknown type
+            std::swap(points, pts);
+        }
+        void clearAllPoints(){
+                keypointsRotated.clear();
+                keypoints.clear();
+                points.clear();
+                descriptors = cv::Mat();
+                descId = -1;
+                detId = -2; // unknown type
+        }
+
+        const Mats& getPyramid(const cv::Size& winSize, const int maxLevel, const bool withDerivatives=true, int pyrBorder=cv::BORDER_REFLECT_101, int derivBorder=cv::BORDER_CONSTANT){
+            /// return image pyramid. Compute if required
+            if (pyramid.empty() || winSize != pyramidWindowSize){
+                cv::buildOpticalFlowPyramid(image, pyramid, winSize, maxLevel, withDerivatives, pyrBorder, derivBorder, true); //not sure about last flag reuseInput
+                pyramidWindowSize = winSize;
+            }
+            return pyramid;
+        }
 
 
 
 
-    const KeyPoints& getRotatedKeypoints(bool aroundOptical=false){
-        /// Gets rotated keypoints. Computes them if required.
-        if (keypointsRotated.empty()){
-            if (!keypoints.empty()){
-                keypointsRotated = cameraModel.rotatePoints(keypoints, -getRoll(), aroundOptical);
-            } else {
-                if (!points.empty()){
-                    cv::KeyPoint::convert(points, keypoints);
+        const KeyPoints& getRotatedKeypoints(bool aroundOptical=false){
+            /// Gets rotated keypoints. Computes them if required.
+            if (keypointsRotated.empty()){
+                if (!keypoints.empty()){
                     keypointsRotated = cameraModel.rotatePoints(keypoints, -getRoll(), aroundOptical);
                 } else {
-                    // compute them?
-                    ROS_WARN("FRA = Asked for rotated keypoints but dont have any points or keypoints to compute them from");
+                    if (!points.empty()){
+                        cv::KeyPoint::convert(points, keypoints);
+                        keypointsRotated = cameraModel.rotatePoints(keypoints, -getRoll(), aroundOptical);
+                    } else {
+                        // compute them?
+                        ROS_WARN("FRA = Asked for rotated keypoints but dont have any points or keypoints to compute them from");
+                    }
                 }
             }
+            return keypointsRotated;
         }
-        return keypointsRotated;
-    }
 
-    const cv::Mat& getDescriptors(){
-        /// Gets descriptors. Computes them if they are empty or the wrong type (determined from the current set extraxtor)
-        if (descriptors.empty() || keypoints.empty() || getDescId() != detector.getExtractorId()){
-            getKeypoints();
-            ros::WallTime t0 = ros::WallTime::now();
-            detector.extract(image, keypoints, descriptors, descId, getRoll() );
-            timeExtract = (ros::WallTime::now()-t0).toSec();
+        const cv::Mat& getDescriptors(){
+            /// Gets descriptors. Computes them if they are empty or the wrong type (determined from the current set extraxtor)
+            if (descriptors.empty() || keypoints.empty() || getDescId() != detector.getExtractorId()){
+                getKeypoints();
+                ros::WallTime t0 = ros::WallTime::now();
+                detector.extract(image, keypoints, descriptors, descId, getRoll() );
+                timeExtract = (ros::WallTime::now()-t0).toSec();
+            }
+            return descriptors;
         }
-        return descriptors;
-    }
 
-    const Eigen::MatrixXd& getBearings(){
-        /// Computes unit bearing vectors projected from the optical center through the (key) points on the image plane
-        if (points.size()>0){
-            cameraModel.bearingVectors(points, bearings);
-        } else if (keypoints.size()>0){
-            cv::KeyPoint::convert(keypoints, points);
-            cameraModel.bearingVectors(points, bearings);
+        const Eigen::MatrixXd& getBearings(){
+            /// Computes unit bearing vectors projected from the optical center through the (key) points on the image plane
+            if (points.size()>0){
+                cameraModel.bearingVectors(points, bearings);
+            } else if (keypoints.size()>0){
+                cv::KeyPoint::convert(keypoints, points);
+                cameraModel.bearingVectors(points, bearings);
+            }
+            return bearings;
+
         }
-        return bearings;
 
-    }
-
-    int getId() const {
-        return id;
-    }
+        int getId() const {
+            return id;
+        }
 
 
 
-    static void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
-        ROS_INFO("FRA > SETTING PARAMS");
-        preproc.setParam(config.doPreprocess,
-                         config.doDeinterlace,
-                         config.doEqualise,
-                         config.doEqualiseColor,
-                         config.kernelSize,
-                         config.sigmaX,
-                         config.sigmaY,
-                         config. brightness,
-                         config.contrast);
-        cameraModel.setParams(config.zoomFactor, config.zoom,
-                           config.PTAMRectify,
-                           config.sameOutInSize,
-                           config.width, config.height,
-                           config.fx, config.fy,
-                           config.cx, config.cy,
-                           config.s);
+        static void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
+            ROS_INFO("FRA > SETTING PARAMS");
+            preproc.setParam(config.doPreprocess,
+                             config.doDeinterlace,
+                             config.doEqualise,
+                             config.doEqualiseColor,
+                             config.kernelSize,
+                             config.sigmaX,
+                             config.sigmaY,
+                             config. brightness,
+                             config.contrast);
+            cameraModel.setParams(config.zoomFactor, config.zoom,
+                               config.PTAMRectify,
+                               config.sameOutInSize,
+                               config.width, config.height,
+                               config.fx, config.fy,
+                               config.cx, config.cy,
+                               config.s);
 
-        detector.setParameter(config, level);
+            detector.setParameter(config, level);
 
-        ROS_INFO("FRA < PARAMS SET");
+            ROS_INFO("FRA < PARAMS SET");
 
-    }
+        }
 
-    int getDescType() const{
-        return detector.getDescriptorType();
-    }
+        int getDescType() const{
+            return detector.getDescriptorType();
+        }
 
-    int getDescId() const {
-        return descId;
-    }
-    int getDetId() const {
-        return detId;
-    }
+        int getDescId() const {
+            return descId;
+        }
+        int getDetId() const {
+            return detId;
+        }
 
 
-    friend std::ostream& operator<< (std::ostream& stream, const Frame& frame) {
-        stream << "[ID:" << std::setw(5) << std::setfill(' ') << frame.id << "]"
-               << "[KF:"  << std::setw(3) << std::setfill(' ') << frame.kfId<< "]"
-               << "[KP:"  << std::setw(4) << std::setfill(' ') << frame.keypoints.size() << "]"
-               << "[ P:"  << std::setw(4) << std::setfill(' ') << frame.points.size() << "]"
-               << "[RP:"  << std::setw(4) << std::setfill(' ') << frame.keypointsRotated.size() << "]"
-               << "[ D:"  << std::setw(4) << std::setfill(' ') << frame.descriptors.rows << "]"
-               << "[BV:"  << std::setw(4) << std::setfill(' ') << frame.bearings.rows() << "]"
-               << "[TP:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timePreprocess << "]"
-               << "[TD:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeDetect << "]"
-               << "[TE:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeExtract << "]";
+        friend std::ostream& operator<< (std::ostream& stream, const Frame& frame) {
+            stream << "[ID:" << std::setw(5) << std::setfill(' ') << frame.id << "]"
+                   << "[KF:"  << std::setw(3) << std::setfill(' ') << frame.kfId<< "]"
+                   << "[KP:"  << std::setw(4) << std::setfill(' ') << frame.keypoints.size() << "]"
+                   << "[ P:"  << std::setw(4) << std::setfill(' ') << frame.points.size() << "]"
+                   << "[RP:"  << std::setw(4) << std::setfill(' ') << frame.keypointsRotated.size() << "]"
+                   << "[ D:"  << std::setw(4) << std::setfill(' ') << frame.descriptors.rows << "]"
+                   << "[BV:"  << std::setw(4) << std::setfill(' ') << frame.bearings.rows() << "]"
+                   << "[TP:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timePreprocess << "]"
+                   << "[TD:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeDetect << "]"
+                   << "[TE:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeExtract << "]";
 
-        return stream;
-    }
+            return stream;
+        }
 };
+
+typedef cv::Ptr<Frame> FramePtr;
 
 #endif // FRAME_HPP

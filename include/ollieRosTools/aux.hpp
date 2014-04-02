@@ -3,18 +3,24 @@
 
 extern bool USEIMU;
 
-#include <opencv2/opencv.hpp>
-#include <tf/tf.h>
-#include <cv_bridge/cv_bridge.h>
-#include <boost/assign.hpp>
-#include <sensor_msgs/image_encodings.h>
+
 #include <string>
+#include <boost/assign.hpp>
+
 #include <Eigen/Core>
 #include <opengv/types.hpp>
+#include <opencv2/opencv.hpp>
+
+#include <tf/tf.h>
+#include <cv_bridge/cv_bridge.h>
+#include <sensor_msgs/image_encodings.h>
 
 
-//#include <ollieRosTools/Frame.hpp> //forward declated
+
+
+//forward declated
 class Frame;
+class OdoPoint;
 
 #define __SHORTFILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
@@ -31,6 +37,7 @@ typedef std::vector< float > Floats;
 typedef std::vector< double > Doubles;
 typedef std::vector< cv::Mat > Mats;
 typedef cv::Ptr<Frame> FramePtr;
+typedef cv::Ptr<OdoPoint> PointPtr;
 
 const float toRad = M_PI/180;
 const float toDeg = 180/M_PI;

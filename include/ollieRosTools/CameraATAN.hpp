@@ -80,6 +80,45 @@ class CameraATAN {
             } else {
                 // Skip, just copy header
                 imgOut = imgIn;
+
+                // draw unrectified grid
+
+//                int step = 25;
+//                int shift = 8;
+//                for (int x=-outWidth*2; x<outWidth*2; x+=step){
+//                    std::vector<cv::Point> contour;
+//                    for (int y=-outHeight*2; y<outHeight*2; y+=step){
+//                        const float ix = (x - infoMsgPtr->K.at(2)) / infoMsgPtr->K.at(0);
+//                        const float iy = (y - infoMsgPtr->K.at(5)) / infoMsgPtr->K.at(4);
+//                        const float r = sqrt(ix*ix + iy*iy);
+//                        const float fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
+//                        const float ox = ifx*fac*ix+icx;
+//                        const float oy = ify*fac*iy+icy;
+//                        contour.push_back(cv::Point(ox*8, oy*8));
+//                    }
+//                    const cv::Point *pts = (const cv::Point*) cv::Mat(contour).data;
+//                    int npts = cv::Mat(contour).rows;
+//                    cv::polylines(imgOut, &pts,&npts, 1, false, CV_RGB(0,255,0),1,CV_AA, 3);
+//                }
+//                for (int y=-outHeight*2; y<outHeight*2; y+=step){
+//                    std::vector<cv::Point> contour;
+//                    for (int x=-outWidth*2; x<outWidth*2; x+=step){
+//                        const float ix = (x - infoMsgPtr->K.at(2)) / infoMsgPtr->K.at(0);
+//                        const float iy = (y - infoMsgPtr->K.at(5)) / infoMsgPtr->K.at(4);
+//                        const float r = sqrt(ix*ix + iy*iy);
+//                        const float fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
+//                        const float ox = ifx*fac*ix+icx;
+//                        const float oy = ify*fac*iy+icy;
+//                        contour.push_back(cv::Point(ox*8,oy*8));
+//                    }
+//                    const cv::Point *pts = (const cv::Point*) cv::Mat(contour).data;
+//                    int npts = cv::Mat(contour).rows;
+//                    cv::polylines(imgOut, &pts,&npts, 1, false, CV_RGB(0,255,0),1, CV_AA, 3);
+
+//                }
+
+
+
                 ROS_INFO("CAM = RECTIFYING TURED OFF, PASS THROUGH");
                 //imgIn.copyTo(imgOut);
             }
@@ -211,6 +250,8 @@ class CameraATAN {
             if (pointsFromCamera && interpolation>=0 ){
                 /// Incoming points are rectified
                 // do nothing
+
+
             } else {
                 Points2f points;
                 cv::KeyPoint::convert(keypoints, points);
@@ -269,10 +310,41 @@ class CameraATAN {
         }
 
 
-        KeyPoints unrectifyPoints(const KeyPoints& keypoints){
-            KeyPoints kps;
+        Matrix<float, Dynamic, 2, RowMajor> unrectifyPoints(const Points2f& points, bool force=false){
+            Points2f pts;
+
+//            const float ix = (x - infoMsgPtr->K.at(2)) / infoMsgPtr->K.at(0);
+//            const float iy = (y - infoMsgPtr->K.at(5)) / infoMsgPtr->K.at(4);
+//            const float r = sqrt(ix*ix + iy*iy);
+//            const float fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
+//            const float ox = ifx*fac*ix+icx;
+//            const float oy = ify*fac*iy+icy;
+//            contour.push_back(cv::Point(ox,oy));
+
+            Matrix<float, Dynamic, 2, RowMajor> f2d;
+            f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+            if (interpolation>=0 && !force){
+                /// Incoming points are rectified
+                f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+            } else {
+                f2d.col(0).array() -= infoMsgPtr->K.at(2);
+                f2d.col(1).array() -= infoMsgPtr->K.at(5);
+                f2d.col(0) /= infoMsgPtr->K.at(0);
+                f2d.col(1) /= infoMsgPtr->K.at(4);
+                const MatrixXf r = f2d.rowwise().norm();
+                const ArrayXf fac = (r* d2t).array().tan() / (fov*r).array();
+                f2d.array().colwise() *= fac;
+                f2d.col(0) *= ifx;
+                f2d.col(1) *= ify;
+                f2d.col(0).array() += icx;
+                f2d.col(1).array() += icy;
+            }
+
+
+
+            pts.resize(pts.size());
             ROS_ERROR("CAM = NOT IMPLEMENTED unrectifyPoints");
-            return kps;
+            return f2d;
         }
 
         void bearingVectors(const KeyPoints& keypoints, MatrixXd& bearings) const{

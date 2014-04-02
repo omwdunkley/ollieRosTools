@@ -1,6 +1,6 @@
 #include <ollieRosTools/Map.hpp>
 
-
+int OdoPoint::pIdCounter = 0;
 
 
 cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, const Ints& idx){
@@ -38,4 +38,8 @@ cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, c
     //cv::addWeighted(img, 1.0, imgOverlay, 0.75, 0, img);
 
     return img;
+}
+
+bool noRef(const PointPtr& p){
+    return !(*(p.refcount)>1);
 }

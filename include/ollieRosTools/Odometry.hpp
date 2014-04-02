@@ -78,6 +78,9 @@ private:
     double baselineCorrected;
     double timeVO;
 
+
+
+
     /// ////////////////////////////////////////////////////////////////////////////////////// PRIVATE METHODS
 
     /// Triangulate points points3d using bearing vectors bv1 and bv2 and the estimated pose between them trans1to2.

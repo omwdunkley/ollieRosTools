@@ -1,13 +1,13 @@
 #ifndef MATCHER_HPP
 #define MATCHER_HPP
 #include <algorithm>    // std::max
-#include <ollieRosTools/VoNode_paramsConfig.h>
+
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/opencv.hpp>
-#include <ollieRosTools/aux.hpp>
-#include <ollieRosTools/Frame.hpp>
-//#include <ollieRosTools/PointMap.hpp>
 
+#include <ollieRosTools/VoNode_paramsConfig.h>
+#include <ollieRosTools/Frame.hpp>
+#include <ollieRosTools/aux.hpp>
 
 
 // Sort matches by response and take nr best

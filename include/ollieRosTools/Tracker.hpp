@@ -1,17 +1,22 @@
 #ifndef TRACKER_HPP
 #define TRACKER_HPP
 
-#include <ollieRosTools/aux.hpp>
-#include <ollieRosTools/Frame.hpp>
-#include <opencv2/opencv.hpp>
+
 #include <deque>
+
+#include <opencv2/opencv.hpp>
 #include <opencv2/video/tracking.hpp>
-#include <ollieRosTools/Matcher.hpp>
+
+#include <eigen_conversions/eigen_msg.h>
+
 #include <visualization_msgs/MarkerArray.h>
 #include <tf/tf.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_datatypes.h>
-#include <eigen_conversions/eigen_msg.h>
+
+#include <ollieRosTools/Frame.hpp>
+#include <ollieRosTools/Matcher.hpp>
+#include <ollieRosTools/aux.hpp>
 
 
 class Tracker{
@@ -81,6 +86,7 @@ class Tracker{
         int klt_flags;
         double klt_eigenThresh;
         bool klt_init; //flag if the klt tracker is intialised wrt the keyframe
+        bool klt_useKFTemplate;
 
         // vo stuff
         //bool voDoIntitialise;
@@ -102,6 +108,7 @@ class Tracker{
             m_pxdistStep = 50;
             timeTrack = 0;
             disparity = 0;
+            klt_useKFTemplate = false;
             //pubMarkers = n.advertise<visualization_msgs::Marker>("/vo/markers", 1);
         }
 
@@ -464,20 +471,35 @@ class Tracker{
                 Points2f  klt_predictedPts;
                 std::vector<unsigned char> klt_status;
                 std::vector<float>         klt_error;
+                const Points2f& prevPts = currFrame->getPoints();
+                const Points2f& kfPts   = keyFrame->getPoints();
 
                 /// Compute matches and new positions
-                cv::calcOpticalFlowPyrLK(currFrame->getPyramid(klt_window, klt_levels),                      // input
-                                         newFrame->getPyramid(klt_window, klt_levels),                       // input
-                                         currFrame->getPoints(),                                             // input
-                                         klt_predictedPts, klt_status, klt_error,                            // output row
-                                         klt_window, klt_levels,  klt_criteria, klt_flags, klt_eigenThresh); // settings
+                if (!klt_useKFTemplate){
+                    /// Use Previous image as template
+                    cv::calcOpticalFlowPyrLK(currFrame->getPyramid(klt_window, klt_levels),                      // input
+                                             newFrame->getPyramid(klt_window, klt_levels),                       // input
+                                             currFrame->getPoints(),                                             // input
+                                             klt_predictedPts, klt_status, klt_error,                            // output row
+                                             klt_window, klt_levels,  klt_criteria, klt_flags, klt_eigenThresh); // settings
+                } else {
+                    /// Use original image as template
+                    // align key frame points with current points
+                    klt_predictedPts = currFrame->getPoints();
+                    Points2f kfPointsMatched;
+                    OVO::vecAlignMatch<Points2f, Points2f>(prevPts, kfPts, klt_predictedPts, kfPointsMatched, KFMatches);
+                    cv::calcOpticalFlowPyrLK(keyFrame->getPyramid(klt_window, klt_levels),                       // input
+                                             newFrame->getPyramid(klt_window, klt_levels),                       // input
+                                             kfPointsMatched,                                                    // input
+                                             klt_predictedPts, klt_status, klt_error,                            // output row
+                                             klt_window, klt_levels,  klt_criteria, cv::OPTFLOW_USE_INITIAL_FLOW, klt_eigenThresh); // settings
+                }
 
                 newKFMatches.reserve(klt_status.size());
                 trackedPts.reserve(klt_status.size());
                 newFMatches.reserve(klt_status.size());
 
-                const Points2f& prevPts = currFrame->getPoints();
-                const Points2f& kfPts   = keyFrame->getPoints();
+
 
                 counter = 0;
                 uint failCounter = -1; // so we can ++failCounter at start at 0
@@ -882,6 +904,7 @@ class Tracker{
             klt_levels      = config.klt_levels;
             klt_flags       = (config.tracker==1||config.tracker==3) ? (cv::OPTFLOW_LK_GET_MIN_EIGENVALS) : 0; //
             klt_eigenThresh = config.klt_eigenThresh;
+            klt_useKFTemplate = config.klt_TemplateKF;
             borderF2KF = cv::Point(config.kp_border, config.kp_border);
             //ROS_INFO("EVF: %d EVT: %f", klt_flags, klt_eigenThresh);
 
