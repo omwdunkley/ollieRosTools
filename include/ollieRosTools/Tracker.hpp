@@ -9,7 +9,7 @@
 
 #include <eigen_conversions/eigen_msg.h>
 
-#include <visualization_msgs/MarkerArray.h>
+
 #include <tf/tf.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_datatypes.h>
@@ -396,7 +396,7 @@ class Tracker{
             ROS_INFO("KLT > INITIALISING");
 
             // Compute initial keypoints
-            const KeyPoints& kf_keypoints = keyFrame->getKeypoints();
+            const Points2f& kf_points = keyFrame->getPoints(false);
 
             // start counting time after detection
             ros::WallTime t0 = ros::WallTime::now();
@@ -406,8 +406,8 @@ class Tracker{
 
             /// build initial 1:1 matching
             KFMatches.clear();
-            KFMatches.reserve(kf_keypoints.size());
-            for (size_t i=0; i<kf_keypoints.size(); i++) {
+            KFMatches.reserve(kf_points.size());
+            for (size_t i=0; i<kf_points.size(); i++) {
                 KFMatches.push_back(cv::DMatch(i,i,0.f));
             }
 
@@ -415,7 +415,7 @@ class Tracker{
             timeTrack = (ros::WallTime::now()-t0).toSec();
 
             klt_init = true;
-            ROS_INFO("KLT < INITIALISED WITH %lu POINTS", kf_keypoints.size());
+            ROS_INFO("KLT < INITIALISED WITH %lu POINTS", kf_points.size());
             return;
         }
 
@@ -441,7 +441,10 @@ class Tracker{
 
             if (!klt_init){
                 initKLT(); // keyframe must be set here
-                return;
+
+                if (newFrame==keyFrame){
+                    return;
+                }
             }
 
 

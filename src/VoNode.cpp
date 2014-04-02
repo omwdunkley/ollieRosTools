@@ -40,6 +40,7 @@ VoNode::VoNode(ros::NodeHandle& _n):
     /// Publish to Topics
     pubCamera  = imTransport.advertiseCamera("/vo/image_raw", 1);
     pubImage   = imTransport.advertise("/vo/debug_image_raw", 1);
+    pubMarker  = n.advertise<visualization_msgs::Marker>("vo/worldPointsMarker", 1);
 
     /// Dynamic Reconfigure
     nodeOn = true;
@@ -138,6 +139,9 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     ROS_INFO_STREAM("NODE < FRAME ["<<frame->getId() << "] PROCESSED [" << std::setprecision(4) << timeAvg*1000. << "ms]");
 
 
+    publishStuff();
+
+
     /// publish debug image
     if (pubCamera.getNumSubscribers()>0 || pubImage.getNumSubscribers()>0){
         sensor_msgs::CameraInfoPtr camInfoPtr = frame->getCamInfo();
@@ -161,6 +165,8 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         pubImage.publish(cvi.toImageMsg());
 
     }
+
+
 
 
 

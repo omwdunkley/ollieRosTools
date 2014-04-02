@@ -45,9 +45,9 @@ public:
 
 class OdoMap {
     private:
-        // list of keyframes. Latest KF at end, oldest first
-        std::deque<FramePtr> keyframes;
-        std::deque<PointPtr> landmarks;
+        // list of keyframes. Latest KF at end, oldest first DEQUEs
+        FramePtrs keyframes;
+        PointPtrs landmarks;
 
         FramePtr currentFrame;
         Tracker tracker;
@@ -65,6 +65,10 @@ class OdoMap {
             maxKFNr = 10;
         }
 
+        const FramePtrs& getKFs() const {
+            return keyframes;
+        }
+
 
         /// Goes through all map points and remove them if they only have one reference (ie this container holding it)
         void removeNonVisiblePoints(){
@@ -78,19 +82,19 @@ class OdoMap {
         cv::Mat getVisualImage(){
             cv::Mat img = tracker.getVisualImage();
             /// THIS IS ONLY VALID RIGHT AFTER INIT
-            if (points.size()>0){
-                Ints qIdx,tIdx;
-                OVO::match2ind(kfMatches, qIdx, tIdx);
-                cv::Mat imgt = getPointsProjectedImage(getLatestKF(), points, tIdx);
-                cv::Mat imgq = getPointsProjectedImage(getCurrentFrame(), points, qIdx);
-                cv::Mat imgPt;
-                cv::hconcat(imgq, imgt, imgPt);
-                cv::addWeighted(img, 0.5, imgPt, 0.9, 0.0, img);
-                cv::imshow("Map", img);
-                cv::waitKey(800);
-                points.clear();
+//            if (points.size()>0){
+//                Ints qIdx,tIdx;
+//                OVO::match2ind(kfMatches, qIdx, tIdx);
+//                cv::Mat imgt = getPointsProjectedImage(getLatestKF(), points, tIdx);
+//                cv::Mat imgq = getPointsProjectedImage(getCurrentFrame(), points, qIdx);
+//                cv::Mat imgPt;
+//                cv::hconcat(imgq, imgt, imgPt);
+//                cv::addWeighted(img, 0.5, imgPt, 0.9, 0.0, img);
+//                cv::imshow("Map", img);
+//                cv::waitKey(800);
+//                points.clear();
 
-            }
+//            }
 
 
 
@@ -131,7 +135,7 @@ class OdoMap {
 
         void addKeyFrame(FramePtr& frame, bool first=false){
             ROS_INFO("MAP > ADDING KF TO MAP");
-            frame->setAsKF();
+            frame->setAsKF(first);
             if (keyframes.size()==0 || first){
                 reset();
                 tracker.initialise(frame);
@@ -157,12 +161,12 @@ class OdoMap {
 
         // Assumes worldPoiints are triangulated from current frame and frame
         /// TODO
-        void initialise(const opengv::points_t worldPoints, const DMatches& voMatches){
-            ROS_INFO("MAP < INITIALISING MAP ");
-            points = worldPoints;
-            kfMatches = voMatches;
-            ROS_INFO("MAP < MAP INITIALISED ");
-        }
+//        void initialise(const opengv::points_t worldPoints, const DMatches& voMatches){
+//            ROS_INFO("MAP < INITIALISING MAP ");
+//            points = worldPoints;
+//            kfMatches = voMatches;
+//            ROS_INFO("MAP < MAP INITIALISED ");
+//        }
 
         void shirnkKFs(){
             if (keyframes.size()>maxKFNr) {
@@ -177,6 +181,7 @@ class OdoMap {
         void removeKF(){
              ROS_INFO("MAP > REMOVING OLDEST KF");
              keyframes.pop_front();
+             removeNonVisiblePoints();
              ROS_INFO("MAP < REMOVED OLDEST KF");
         }
 

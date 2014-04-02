@@ -30,18 +30,8 @@ class Frame{
         cv::Size pyramidWindowSize;
         opengv::rotation_t imuAttitude;
         Eigen::Affine3d pose; // transformation in the world frame
-        double roll, pitch, yaw;
-
-        /// If a keyframe, this is used for other frames to track against. Aligned with descs, keypoints, points
-        opengv::points_t worldPoints;
-
-        /// If a keyframe, this contains references to map points
-        std::vector<PointPtr> mapPointRefs;
-        KeyPoints             mapKeyPoints;
-        cv::Mat               mapDescriptors;
-        Eigen::MatrixXd       mapbearings;
-
-        /// TODO not used
+        double roll, pitch, yaw;        
+        /// TODO not used yet
         double gyroX, gyroY, GyroZ;
         double accX, accY, accZ;
 
@@ -73,6 +63,17 @@ class Frame{
         static Detector detector;
         static PreProc preproc;
 
+        /// KF ONLY ///////////////////////////////////////////////////////////////////////////////////////////////////
+        /// If a keyframe, this is used for other frames to track against. Aligned with descs, keypoints, points, rotated kps, bearing vectors
+        opengv::points_t worldPoints3d;
+        Ints worldPoints3dInliers;
+
+        /// If a keyframe, this contains references to map points
+        std::vector<PointPtr> mapPointRefs;
+        KeyPoints             mapKeyPoints;
+        cv::Mat               mapDescriptors;
+        Eigen::MatrixXd       mapbearings;
+
 
         void drawRPY(cv::Mat &img) const{
             /// Draw an RPY indicator
@@ -93,12 +94,14 @@ class Frame{
         }
 
         void computeKeypoints(){
+            ROS_INFO("FRA > Computing Keypoints");
             keypointsRotated.clear();
             points.clear();
             descriptors = cv::Mat();
             ros::WallTime t0 = ros::WallTime::now();
             detector.detect(image, keypoints, detId, mask);
             timeDetect = (ros::WallTime::now()-t0).toSec();
+            ROS_INFO("FRA < [%lu] Keypoints Comptued [%.1fms]", keypoints.size(), timeDetect);
         }
 
         /// TODO: estiamte image quality. -1 = not estaimted, 0 = bad, 1 = perfect
@@ -170,6 +173,33 @@ class Frame{
             return mapDescriptors.row(rowNr);
         }
 
+        // just for now
+//        void setWorldPoints(const Points2f& pts2d, const opengv::points_t pts3d){
+//            worldPoints3d = pts3d;
+//            worldPoints2d = pts2d;
+//        }
+
+
+        // Sets worldPoints3d and aligns them to all other points by removing non inliers
+        void setWorldPoints(const Ints& inliers, const opengv::points_t pts3d){
+            ROS_INFO("FRA > Removing non inliers from KP/P/Desc/BV/RP");
+            reduceAllPoints(inliers);
+            worldPoints3d = pts3d;
+            ROS_INFO("FRA > Aligned world points with all other things");
+        }
+
+        // same as above but doesnt remove points. Just used for vis of non-kf frames
+        void setWorldPointsInliers(const Ints& inliers, const opengv::points_t pts3d){
+            ROS_INFO("FRA > adding world points for vis");
+            worldPoints3dInliers = inliers;
+            worldPoints3d = pts3d;
+            ROS_INFO("FRA < world points added for vis");
+        }
+
+        const opengv::points_t& getWorldPoints3d() const {
+            return worldPoints3d;
+        }
+
         // Sets frame as keyframe, prepares it for bundle adjustment
         void setAsKF(bool first=false){
             ros::WallTime t0 = ros::WallTime::now();
@@ -209,6 +239,14 @@ class Frame{
             tf::Pose pose;
             tf::poseEigenToTF(getPose(), pose);
             return pose;
+        }
+
+        const tf::StampedTransform getStampedTransform() const {
+            if (kfId<0){
+                return tf::StampedTransform(getTFPose(), ros::Time::now(), "/cf_xyz", "/F");
+            } else {
+                return tf::StampedTransform(getTFPose(), ros::Time::now(), "/cf_xyz", "/KF_"+boost::lexical_cast<std::string>(kfId));
+            }
         }
 
         // returns the eigen pose of this frame in the world frame
@@ -255,13 +293,56 @@ class Frame{
             OVO::putInt(img, keypoints.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"KP: ");
 
             // Draw Frame ID
-            OVO::putInt(img, id, cv::Point2f(img.cols-95,img.rows-4*25), CV_RGB(0,110,180), true,  "FID:");
+            OVO::putInt(img, id, cv::Point2f(img.cols-95,img.rows-4*25), CV_RGB(0,110,255), true,  "FID:");
 
             // if a kf
             if (kfId>=0){
-                OVO::putInt(img, kfId, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,110,180), true,  "KID:");
-                OVO::putInt(img, worldPoints.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,180,110), true,  "WPT:"); // numner of 3d points frames can triangulate from
+                OVO::putInt(img, kfId, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,110,255), true,  "KID:");                
                 OVO::putInt(img, mapPointRefs.size(), cv::Point2f(img.cols-95,img.rows-7*25), CV_RGB(0,180,110), true,  "MPT:");
+            }
+
+
+
+
+            /// draw depth points
+            if (worldPoints3d.size()>0){
+                opengv::points_t pts3d = worldPoints3d;
+                OVO::transformPoints(getPose().inverse(), pts3d);
+                Eigen::VectorXd dists(pts3d.size());
+                for (uint i=0; i<pts3d.size(); ++i){
+                    dists[i] = pts3d[i].norm();
+                }
+
+                float range_max = dists.maxCoeff();
+                float range_min = dists.minCoeff();
+                float range_mean = dists.mean();
+
+                // draw colour coded depth points
+                cv::Mat imgOverlay = cv::Mat::zeros(img.size(), CV_8UC3);
+
+                if (worldPoints3dInliers.size()>0){
+                    // not aligned
+                    for (uint i=0; i<worldPoints3dInliers.size(); ++i){
+                        cv::circle(imgOverlay, points[worldPoints3dInliers[i]], 3, OVO::getColor(range_min, range_max, dists[worldPoints3dInliers[i]]), CV_FILLED, CV_AA);
+                    }
+                    OVO::putInt(img, worldPoints3dInliers.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,180,110), true,  "WPT:"); // numner of 3d points frames can triangulate from
+                } else {
+                    // aligned
+                    for (uint i=0; i<pts3d.size(); ++i){
+                        cv::circle(imgOverlay, points[i], 3, OVO::getColor(range_min, range_max, dists[i]), CV_FILLED, CV_AA);
+                    }
+                    OVO::putInt(img, worldPoints3d.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,180,110), true,  "WPT:"); // numner of 3d points frames can triangulate from
+                }
+                cv::addWeighted(img, 1.0, imgOverlay, 0.75, 0, img);
+
+
+                //OVO::putInt(img, idx.size(), cv::Point(10,3*25), CV_RGB(0,96*2,0),  true, "VO:");
+                OVO::putInt(img, range_min,  cv::Point(10,5*25), OVO::getColor(range_min, range_max, range_min),  false , "MinR:");
+                OVO::putInt(img, range_mean, cv::Point(10,6*25), OVO::getColor(range_min, range_max, range_mean), false , "AvgR:");
+                OVO::putInt(img, range_max,  cv::Point(10,7*25), OVO::getColor(range_min, range_max, range_max),  false , "MaxR:");
+
+
+
             }
 
             // Draw RPY
@@ -304,7 +385,9 @@ class Frame{
                 // we have keypoints
                 if (!dontCompute && getDetId() != detector.getDetectorId()){
                     // we have outdated keypoints - recompute
+                    ROS_INFO("FRA > Keypoints outdated [%d != %d], redetecting", getDetId(), detector.getDetectorId());
                     computeKeypoints();
+                    ROS_INFO("FRA < Keypoints redetected");
                 }
             }
             return keypoints;
@@ -345,29 +428,90 @@ class Frame{
 
         void swapKeypoints(KeyPoints& kps){
             /// Swap keypoints and remove everything that could have come from previous ones
-            keypointsRotated.clear();
-            points.clear();
-            descriptors = cv::Mat();
-            descId = -1;
-            detId = -2; // unknown type
+            clearAllPoints();
             std::swap(keypoints, kps);
         }
         void swapPoints(Points2f& pts){
             /// Swap points and remove everything that could have come from previous ones
+            clearAllPoints();
+            std::swap(points, pts);
+        }
+
+
+        void clearAllPoints(){
+            /// Clears all point types, keeping them in sync
             keypointsRotated.clear();
             keypoints.clear();
+            points.clear();
+            bearings = Eigen::MatrixXd();
+            worldPoints3d.clear();
             descriptors = cv::Mat();
             descId = -1;
             detId = -2; // unknown type
-            std::swap(points, pts);
         }
-        void clearAllPoints(){
-                keypointsRotated.clear();
-                keypoints.clear();
-                points.clear();
-                descriptors = cv::Mat();
-                descId = -1;
-                detId = -2; // unknown type
+
+
+        void reduceAllPoints(const Ints& inliers){
+            /// Same as clear all points but instead of removing all, it keeps the ones at position ind
+            ROS_INFO("FRA > Keeping %lu/%lu inliers from all point types", inliers.size(), std::max(points.size(), keypoints.size()));
+
+            if (bearings.rows()>0){
+                Eigen::MatrixXd bearingsTemp = Eigen::MatrixXd(inliers.size(), 3);
+                for (uint i=0; i<inliers.size(); ++i){
+                    bearingsTemp.row(i) = bearings.row(inliers[i]);
+                }
+                std::swap(bearingsTemp, bearings);
+                ROS_INFO("FRA = Bearing Vectors updated");
+            } else {
+                ROS_INFO("FRA = No Bearing Vectors to update");
+            }
+
+            if (descriptors.rows>0){
+                cv::Mat descriptorsTemp;
+                for (uint i=0; i<inliers.size(); ++i){
+                    descriptorsTemp.push_back(descriptors.row(inliers[i]));
+                }
+                std::swap(descriptorsTemp, descriptors);
+                ROS_INFO("FRA = Descriptors Vectors updated");
+            } else {
+                ROS_INFO("FRA = No Descriptors to update");
+            }
+
+            if (keypoints.size()>0){
+                KeyPoints keypointsTemp;
+                for (uint i=0; i<inliers.size(); ++i){
+                    keypointsTemp.push_back(keypoints[inliers[i]]);
+                }
+                std::swap(keypointsTemp, keypoints);
+                ROS_INFO("FRA = Keypoints updated");
+            } else {
+                ROS_INFO("FRA = No Keypoints to update");
+            }
+
+            if (points.size()>0){
+                 Points2f pointsTemp;
+                for (uint i=0; i<inliers.size(); ++i){
+                    pointsTemp.push_back(points[inliers[i]]);
+                }
+                std::swap(pointsTemp, points);
+                ROS_INFO("FRA = Points 2d updated");
+            } else {
+                ROS_INFO("FRA = No Points 2d to update");
+            }
+
+            if (keypointsRotated.size()>0){
+                KeyPoints keypointsRotatedTemp;
+                for (uint i=0; i<inliers.size(); ++i){
+                    keypointsRotatedTemp.push_back(keypointsRotated[inliers[i]]);
+                }
+                std::swap(keypointsRotatedTemp, keypointsRotated);
+                ROS_INFO("FRA = Rotated keypoints updated");
+            } else {
+                ROS_INFO("FRA = No Rotated keypoints to update");
+            }
+
+            ROS_INFO("FRA < Outliers removed");
+
         }
 
         const Mats& getPyramid(const cv::Size& winSize, const int maxLevel, const bool withDerivatives=true, int pyrBorder=cv::BORDER_REFLECT_101, int derivBorder=cv::BORDER_CONSTANT){
@@ -412,12 +556,19 @@ class Frame{
         }
 
         const Eigen::MatrixXd& getBearings(){
-            /// Computes unit bearing vectors projected from the optical center through the (key) points on the image plane
-            if (points.size()>0){
-                cameraModel.bearingVectors(points, bearings);
-            } else if (keypoints.size()>0){
-                cv::KeyPoint::convert(keypoints, points);
-                cameraModel.bearingVectors(points, bearings);
+            /// Computes unit bearing vectors projected from the optical center through the rectified (key) points on the image plane
+            if (bearings.rows()==0){
+                ROS_INFO("FRA > Computing bearing vectors for frame [%d]", id);
+
+                ROS_INFO_STREAM(*this);
+
+                if (points.size()>0){
+                    cameraModel.bearingVectors(points, bearings);
+                } else if (keypoints.size()>0){
+                    cv::KeyPoint::convert(keypoints, points);
+                    cameraModel.bearingVectors(points, bearings);
+                }
+                ROS_INFO("FRA < Computed [%lu] bearing vectors", points.size());
             }
             return bearings;
 

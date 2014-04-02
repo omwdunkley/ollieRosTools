@@ -9,7 +9,7 @@ cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, c
     cv::Mat img = cv::Mat::zeros(f->getImage().size(), CV_8UC3);
 
     ROS_ASSERT_MSG(idx.size()==worldPts.size(), "WorldPts and Idx must be the same size. WP[i] <-> Feat[idx[i]]");
-    cv::Mat imgOverlay = cv::Mat::zeros(img.size(), CV_8UC3);
+    //cv::Mat imgOverlay = cv::Mat::zeros(img.size(), CV_8UC3);
     const Points2f& fpts  = f->getPoints();
 
     /// TODO: would be better to back project instead of assuming the 2d point is correct

@@ -129,6 +129,34 @@ Eigen::VectorXd OVO::reprojectErrPointsVsBV(
     return scores;
 }
 
+visualization_msgs::Marker OVO::getPointsMarker(const opengv::points_t& worldPoints){
+    visualization_msgs::Marker ms;
+    ms.header.stamp = ros::Time::now();
+    ms.ns = "worldPoints";
+    ms.id = 0;
+    ms.header.frame_id = "/cf_xyz";
+    ms.type = visualization_msgs::Marker::POINTS;
+    ms.action = visualization_msgs::Marker::ADD;
+    ms.scale.x = 0.05;
+    ms.scale.y = 0.05;
+
+    ms.color.a = 1.0;
+    ms.color.r = 1.0;
+    ms.color.g = 1.0;
+    ms.color.b = 1.0;
+
+    //tf::poseTFToMsg(f2->getTFPose(), ms.pose);
+    uint i;
+    for (i=0; i< worldPoints.size(); ++i){
+        geometry_msgs::Point p;
+        tf::pointEigenToMsg(worldPoints[i],p);
+        ms.points.push_back(p);
+    }
+    return ms;
+
+}
+
+
 //Doubles OVO::reprojectErrBvVsBv(
 //        const Eigen::Affine3d& model,
 //        const opengv::points_t& points,

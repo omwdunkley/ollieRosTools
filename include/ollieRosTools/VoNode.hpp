@@ -10,25 +10,27 @@
  ** Includes
  *****************************************************************************/
 
+#include <string>
+#include <map>
+
+
+#include <opencv2/opencv.hpp>
+
+#include <ros/package.h>
+#include <ros/ros.h>
 #include <dynamic_reconfigure/server.h>
 #include <image_geometry/pinhole_camera_model.h>
 #include <image_transport/image_transport.h>
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h>
+#include <sensor_msgs/image_encodings.h>
+
+
 #include <ollieRosTools/VoNode_paramsConfig.h>
 #include <ollieRosTools/aux.hpp>
 #include <ollieRosTools/Frame.hpp>
 //#include <ollieRosTools/Tracker.hpp>
 #include <ollieRosTools/Odometry.hpp>
-#include <opencv2/opencv.hpp>
-#include <ros/package.h>
-#include <ros/ros.h>
-#include <tf/transform_broadcaster.h>
-#include <tf/transform_listener.h>
-
-
-#include <sensor_msgs/image_encodings.h>
-#include <string>
-#include <ollieRosTools/CameraATAN.hpp>
-#include <map>
 /*****************************************************************************
  ** Class
  *****************************************************************************/
@@ -50,6 +52,7 @@ class VoNode{
         image_transport::CameraPublisher pubCamera;
         image_transport::Publisher pubImage;
         image_transport::Subscriber subImage;
+        ros::Publisher pubMarker;
         tf::TransformBroadcaster pubTF;
         tf::TransformListener subTF;
 
@@ -72,6 +75,17 @@ class VoNode{
         int colorId;
         ros::Duration imgDelay;
 
+        /// Display stuff
+        void publishStuff(){
+            FramePtrs kfs = odometry.getKeyFrames();
+            for(uint i=0; i<kfs.size(); ++i){
+                pubTF.sendTransform(kfs[i]->getStampedTransform());
+            }
+            pubTF.sendTransform(odometry.getLastFrame()->getStampedTransform());
+            pubMarker.publish(OVO::getPointsMarker(kfs.back()->getWorldPoints3d()));
+
+        }
+
 
         /// Parameters
         std::string inputTopic;
@@ -84,6 +98,8 @@ class VoNode{
 
         /// REMOVE
         Frame prevFrame;
+
+
 
 
 

@@ -7,8 +7,10 @@
 #include <opengv/sac_problems/relative_pose/CentralRelativePoseSacProblem.hpp>
 #include <opengv/sac_problems/relative_pose/TranslationOnlySacProblem.hpp>
 #include <opengv/relative_pose/methods.hpp>
+#include <opengv/absolute_pose/methods.hpp>
 #include <opengv/triangulation/methods.hpp>
 #include <opengv/relative_pose/CentralRelativeAdapter.hpp>
+#include <opengv/absolute_pose/CentralAbsoluteAdapter.hpp>
 
 #include <ollieRosTools/aux.hpp>
 #include <ollieRosTools/Frame.hpp>
@@ -63,6 +65,10 @@ private:
     double voRelRansacThresh;
     int voRelRansacIter;
     int voRelPoseMethod;    
+    int voAbsPoseMethod;
+    int voAbsRansacIter;
+    double voAbsRansacThresh;
+    bool voAbsNLO;
     float voInitDisparity;   // disparity required to trigger initialisation
     float voKfDisparity;     // disparity required to trigger new KF
     float frameQualityThreshold;
@@ -115,10 +121,12 @@ private:
     /// Attempts to initialise VO between two frames
     /// data associsation through matches
     /// Sets the pose of frame f
-    /// Outputs triangulated world points and the corresponding inlier matches
-    bool initialise(FramePtr& f, FramePtr& kf, const DMatches& matches, opengv::points_t& worldPoints, DMatches& matchesVO){
-        ROS_INFO(" ODO > Initialising");
+    bool initialise(FramePtr& f, FramePtr& kf, const DMatches& matches){
+        ROS_INFO("ODO > Doing VO Initialisation");
         ros::WallTime t0 = ros::WallTime::now();
+
+        opengv::points_t worldPoints;
+        DMatches matchesVO;
 
         /// Get unit features aligned
         opengv::bearingVectors_t bvF;
@@ -126,6 +134,7 @@ private:
         OVO::alignedBV(f->getBearings(), kf->getBearings(), matches, bvF, bvKF);
         opengv::relative_pose::CentralRelativeAdapter adapter(bvKF, bvF);
         Ints inliers;
+        int iterations=-1;
 
         /// Compute relative transformation from KeyFrame KF to Frame F using ransac
         opengv::transformation_t transKFtoF;
@@ -133,8 +142,19 @@ private:
         if (voRelPoseMethod==5){
             /// Use IMU for rotation, compute translation
             // compute relative rotation
+            Eigen::Matrix3d imu2cam;
+            imu2cam << 0, 0, 1,
+                      -1, 0 ,0,
+                       0,-1, 0;
+            adapter.setR12(imu2cam * kf->getImuRotation().transpose() * f->getImuRotation() * imu2cam.transpose());
 
-            adapter.setR12(kf->getImuRotation().transpose() * f->getImuRotation());
+            //adapter.setR12(kf->getImuRotation().transpose() * f->getImuRotation());
+            //adapter.setR12(f->getImuRotation() * kf->getImuRotation().transpose());
+            //adapter.setR12(f->getImuRotation().transpose() * kf->getImuRotation());
+//            adapter.setR12(Eigen::Matrix3d::Identity());
+//            ROS_INFO_STREAM("kf' * f\n" << kf->getImuRotation().transpose() * f->getImuRotation());
+//            ROS_INFO_STREAM("f * kf'\n" << f->getImuRotation() * kf->getImuRotation().transpose());
+//            ROS_INFO_STREAM("f' * kf\n" << f->getImuRotation().transpose() * kf->getImuRotation());
 
             ///DO RANSAC for translation only
             boost::shared_ptr<RP::TranslationOnlySacProblem>relposeproblem_ptr(new RP::TranslationOnlySacProblem(adapter) );
@@ -145,6 +165,7 @@ private:
             ransac.computeModel(1);
 
             // Set as output
+            iterations = ransac.iterations_;
             transKFtoF = ransac.model_coefficients_;
             std::swap(inliers, ransac.inliers_);
         } else {
@@ -162,14 +183,17 @@ private:
             ransac.computeModel(1);
 
             // set output
+            iterations = ransac.iterations_;
             transKFtoF = ransac.model_coefficients_;
             std::swap(inliers, ransac.inliers_);  //Get inliers
         }
 
         if (inliers.size()<10){
             timeVO = (ros::WallTime::now()-t0).toSec();
-            ROS_WARN("ODO = RANSAC failed on Relative Pose Estimation with %lu/%lu inliers [%fms]", inliers.size(), matches.size(),timeVO);
+            ROS_WARN("ODO = RANSAC failed on Relative Pose Estimation with %lu/%lu inliers  [%d iterations] [%fms]", inliers.size(), matches.size(), iterations, timeVO);
             return false;
+        } else {
+            ROS_INFO("ODO = Relative Ransac Done with %lu/%lu inliers [%d iterations]", inliers.size(), matches.size(), iterations);
         }
 
         /// Experimental: NLO
@@ -187,7 +211,7 @@ private:
         /// g2o BUNDLE ADJUST
         /// TODO
 
-        ROS_INFO("   Relative Ransac Done with %lu/%lu inliers", inliers.size(), matches.size());
+
         //printRPYXYZ(poseTF, "Ransac Output: ");
 
         /// Align inliers
@@ -275,12 +299,121 @@ private:
         repjerr = OVO::reprojectErrPointsVsBV(f->getPose(), worldPoints, bvFinlier );
         ROS_INFO("ODO = Min / Avg / Max RePrjErr  F = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
 
+        /// add points to track against to keyframes
+//        Points2f fWPts3d, kfWPts3d;
+//        OVO::vecAlignMatch(f->getPoints(true), kf->getPoints(true), fWPts3d, kfWPts3d ,matchesVO);
+//        // kf should already be added
+//        f->setWorldPoints(fWPts3d, worldPoints);
+//        kf->setWorldPoints(kfWPts3d, worldPoints);
+
+        // remove points / keypoints / descriptors / etc not used
+        Ints indF, indKF;
+        OVO::match2ind(matchesVO, indF, indKF);
+        f->setWorldPoints(indF, worldPoints);
+        kf->setWorldPoints(indKF, worldPoints);
+
+        map.addKeyFrame(f);
 
         timeVO = (ros::WallTime::now()-t0).toSec();
         ROS_INFO("ODO < Initialised [%fms]", timeVO);
 
         return true;
     }
+
+
+
+
+    /// Attempts to estiamte the pose between a frame and a keyframe that has world points within it
+    /// data associsation through matches
+    /// Sets the pose of frame f
+    bool poseEstimate(FramePtr& f, FramePtr& kf, const DMatches& matches){
+        ROS_INFO("ODO > Doing VO Pose Estimate");
+        ros::WallTime t0 = ros::WallTime::now();
+
+        const opengv::points_t& worldPoints = kf->getWorldPoints3d();
+        DMatches matchesVO;
+
+        /// Get unit features aligned
+        opengv::bearingVectors_t bvF;
+        opengv::bearingVectors_t bvKF;
+        OVO::alignedBV(f->getBearings(), kf->getBearings(), matches, bvF, bvKF);
+
+        opengv::absolute_pose::CentralAbsoluteAdapter adapter(bvF, worldPoints);
+        Ints inliers;
+
+
+
+
+
+
+
+
+        if (voAbsPoseMethod==0){
+            ROS_INFO("ODO = Using Relative Rotation Prior");
+            /// Compute relative rotation using current and previous imu data
+            ///TODO: dont we need to apply the relative rotation to the previous pose?
+            //const tf::Transform absRotPrior = map.getKF(0).getImu().inverseTimes(frame.getImu()); //map[0] holds the previous frame (which holds previous imu)
+            // prev pose * imu_pose_differene
+
+            const opengv::rotation_t& imuF = f->getImuRotation();
+            const opengv::rotation_t& imuKF = kf->getImuRotation();
+            const Eigen::Affine3d&    poseKF = kf->getPose();
+            // set absolute rotation
+            Eigen::Matrix3d imu2cam;
+            imu2cam << 0, 0, 1,
+                    -1, 0 ,0,
+                    0,-1, 0;
+            adapter.setR(poseKF * imu2cam * imuKF.transpose() * imuF * imu2cam.transpose());
+        }
+
+
+        /// DO RANSAC
+        boost::shared_ptr<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem>absposeproblem_ptr(
+                    new opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem(adapter,
+                        static_cast<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem::Algorithm>(voAbsPoseMethod)) );
+        opengv::sac::Ransac<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem> ransac;
+        ransac.sac_model_ = absposeproblem_ptr;
+        ransac.threshold_ = voRelRansacThresh;
+        ransac.max_iterations_ = voAbsRansacIter;
+        ransac.computeModel(1);
+
+        // Set as output
+        opengv::transformation_t transWtoF = ransac.model_coefficients_;
+        std::swap(inliers, ransac.inliers_);
+        ROS_INFO("ODO = Absolute Ransac Done with %lu/%lu inliers [%d iterations]", inliers.size(), matches.size(), ransac.iterations_);
+
+
+        if (inliers.size()<10){
+            timeVO = (ros::WallTime::now()-t0).toSec();
+            ROS_WARN("ODO = RANSAC failed on Absolute Pose Estimation with %lu/%lu inliers [%d iterations] [%fms]", inliers.size(), matches.size(),  ransac.iterations_, timeVO);
+            return false;
+        } else {
+            ROS_INFO("ODO = Relative Ransac Done with %lu/%lu inliers [%d iterations]", inliers.size(), matches.size(), ransac.iterations_);
+        }
+
+
+        if (voAbsNLO){
+            ROS_INFO("ODO > Doing NLO on Absolute Pose");
+            adapter.sett(transWtoF.col(3));
+            adapter.setR(transWtoF.block<3,3>(0,0));
+            //Compute the pose of a viewpoint using nonlinear optimization. Using all available correspondences. Works for central and non-central case.
+            //in:  adapter holding bearing vector to world point correspondences, the multi-camera configuration, plus the initial values.
+            //out: Pose of viewpoint (position seen from world frame and orientation from viewpoint to world frame, transforms points from viewpoint to world frame).
+            ROS_INFO_STREAM("ODO = NLO Before:\n  " << transWtoF);
+            transWtoF = opengv::absolute_pose::optimize_nonlinear(adapter, inliers) ;
+            ROS_INFO_STREAM("ODO < NLO Before:\n  " << transWtoF);
+        }
+
+
+        f->setPose(transWtoF);
+        f->setWorldPointsInliers(inliers, worldPoints); // not really needed i guess, but good for vis
+
+
+        timeVO = (ros::WallTime::now()-t0).toSec();
+        ROS_INFO("ODO < Pose Estimated [%fms]", timeVO);
+        return true;
+    }
+
 
 
 
@@ -342,19 +475,18 @@ private:
     void initialiseVO(){
         ROS_INFO("ODO > DOING INITIALISATION");
 
-        opengv::points_t worldPoints;
-        DMatches voMatches;
 
 
 
-        bool okay = initialise(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches(), worldPoints, voMatches );
+
+        bool okay = initialise(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches());
         //addKFVO();
 
         if (okay){
             ROS_INFO("ODO < INITIALISATION SUCCESS");
 
 
-            map.initialise(worldPoints, voMatches);
+            //map.initialise(worldPoints, voMatches);
 
             state = INITIALISED;
         } else {
@@ -379,15 +511,14 @@ private:
     }
 
 
-    /// estiamte pose vs MAP
+    /// estiamte pose vs using worldPoints from latest map KF
     void estimatePoseVO(){
         ros::WallTime t0 = ros::WallTime::now();
-        ROS_INFO("ODO > DOING POSE ESTIMATION");
+        ROS_INFO("ODO > DOING POSE ESTIMATION");        
 
-
+        bool okay = poseEstimate(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches());
 
         timeVO = (ros::WallTime::now()-t0).toSec();
-        bool okay = true;
         if (okay){
             ROS_INFO("ODO < POSE ESTIMATION SUCCESS [%fms]", timeVO);
             state = INITIALISED;
@@ -526,6 +657,13 @@ public:
 
     }
 
+    const FramePtrs& getKeyFrames() const{
+        return map.getKFs();
+    }
+    FramePtr& getLastFrame(){
+        return map.getCurrentFrame();
+    }
+
     void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
         ROS_INFO("ODO > SETTING PARAMS");
 
@@ -539,6 +677,10 @@ public:
         voKfDisparity     = config.vo_kfDisparity;
         voBaselineMethod  = static_cast<BaselineMethod>(config.vo_relBaselineMethod);
         voBaseline        = config.vo_relBaseline;
+        voAbsPoseMethod   = config.vo_absPoseMethod;
+        voAbsRansacIter   = config.vo_absRansacIter;
+        voAbsRansacThresh = 1.0 - cos(atan(config.vo_absRansacThresh*sqrt(2.0)*0.5/720.0));
+        voAbsNLO          = config.vo_absNLO;
 
 
 

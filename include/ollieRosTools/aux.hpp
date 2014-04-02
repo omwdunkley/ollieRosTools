@@ -14,6 +14,8 @@ extern bool USEIMU;
 #include <tf/tf.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
+#include <visualization_msgs/MarkerArray.h>
+#include <eigen_conversions/eigen_msg.h>
 
 
 
@@ -37,7 +39,9 @@ typedef std::vector< float > Floats;
 typedef std::vector< double > Doubles;
 typedef std::vector< cv::Mat > Mats;
 typedef cv::Ptr<Frame> FramePtr;
+typedef std::deque<FramePtr> FramePtrs;
 typedef cv::Ptr<OdoPoint> PointPtr;
+typedef std::deque<PointPtr> PointPtrs;
 
 const float toRad = M_PI/180;
 const float toDeg = 180/M_PI;
@@ -67,6 +71,9 @@ namespace OVO {
             (3, sensor_msgs::image_encodings::YUV422);
 
     cv::Mat getRosImage(const sensor_msgs::ImageConstPtr& msg, int colorId = 0);
+
+    visualization_msgs::Marker getPointsMarker(const opengv::points_t& worldPoints);
+
 
 
     // Draw a number onto an image
