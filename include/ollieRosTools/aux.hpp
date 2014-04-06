@@ -81,6 +81,7 @@ namespace OVO {
 
     // align bearing vectors
     void alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, opengv::bearingVectors_t& bv1, opengv::bearingVectors_t& bv2);
+    void matReduceInd (const Eigen::MatrixXd& bvm1, opengv::bearingVectors_t& bv1, const Ints& ind);
 
     void transformPoints(const Eigen::Affine3d& transform, opengv::points_t& points);
 

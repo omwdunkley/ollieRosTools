@@ -105,6 +105,14 @@ void OVO::alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, c
     }
 }
 
+void OVO::matReduceInd (const Eigen::MatrixXd& bvm1, opengv::bearingVectors_t& bv1, const Ints& ind){
+    bv1.clear();
+    bv1.reserve(ind.size());
+    for(uint i=0; i<ind.size(); ++i){
+        bv1.push_back(bvm1.row(ind[i]));
+    }
+}
+
 void OVO::transformPoints(const Eigen::Affine3d& transform, opengv::points_t& points){
     for (uint i =0; i<points.size(); ++i){
         points[i] = transform * points[i];
@@ -129,6 +137,7 @@ Eigen::VectorXd OVO::reprojectErrPointsVsBV(
     return scores;
 }
 
+/*
 visualization_msgs::Marker OVO::getPointsMarker(const opengv::points_t& worldPoints){
     visualization_msgs::Marker ms;
     ms.header.stamp = ros::Time::now();
@@ -155,7 +164,7 @@ visualization_msgs::Marker OVO::getPointsMarker(const opengv::points_t& worldPoi
     return ms;
 
 }
-
+*/
 
 //Doubles OVO::reprojectErrBvVsBv(
 //        const Eigen::Affine3d& model,

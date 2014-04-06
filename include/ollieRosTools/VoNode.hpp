@@ -82,7 +82,8 @@ class VoNode{
                 pubTF.sendTransform(kfs[i]->getStampedTransform());
             }
             pubTF.sendTransform(odometry.getLastFrame()->getStampedTransform());
-            pubMarker.publish(OVO::getPointsMarker(kfs.back()->getWorldPoints3d()));
+            pubMarker.publish(kfs.back()->getWorldPointsMarker(0,1.2,0.5));
+            pubMarker.publish(odometry.getLastFrame()->getWorldPointsMarker(1,0.8,1.0));
 
         }
 

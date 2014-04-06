@@ -223,6 +223,7 @@ void Matcher::match( FramePtr& fQuery,
                      const cv::Mat& mask, //only input if crosscheck=off and matcher=BruteForce
                      const Ints& maskIdx  //only inpuot if mask=empty. idx of valid descriptor rows
                      ) {
+    ROS_INFO("MAT > Matching Frame [%d/%d] with Frame [%d/%d]", fQuery->getId(), fQuery->getKfId(),fTrain->getId(), fTrain->getKfId() );
 
     matches.clear();
 
@@ -232,17 +233,19 @@ void Matcher::match( FramePtr& fQuery,
 
     DMatchesKNN matchesKNN;
 
-    const cv::Mat d1 = fQuery->getDescriptors();
-    cv::Mat d2 = fTrain->getDescriptors();
+    const cv::Mat dQuery = fQuery->getDescriptors();
+    cv::Mat dTrain = fTrain->getDescriptors();
 
 
 
     ros::WallTime m0 = ros::WallTime::now();
     // Mask not supported, use maskIDx instead
     if (maskIdx.size()>0){
+        ROS_INFO("MAT = Mask on, temporarily removing masked items");
         cv::Mat temp;
-        OVO::matReduceInd(d2, temp, maskIdx);
-        cv::swap(d2,temp);
+        OVO::matReduceInd(dTrain, temp, maskIdx);
+        cv::swap(dTrain,temp);
+        ROS_INFO("MAT = Mask on, temporarily removing masked items, Keeping %d/%d", temp.rows, dTrain.rows);
         //matcher->set("crossCheck", false);
     }
 
@@ -254,25 +257,25 @@ void Matcher::match( FramePtr& fQuery,
 
     // turn off m_doSym flag if we are using brute force matcher, as these do m_sym internally
     bool doSym =(m_doSym && m_type==1 );
-    ROS_WARN_COND(doSym, "FLANN SYMMETRY MATCHER NOT IMPLEMENTED");
+    ROS_WARN_COND(doSym, "MAT = FLANN SYMMETRY MATCHER NOT IMPLEMENTED");
 
     int idx = m_doUnique*8 + doSym*4+ m_doThresh*2+ m_doRatio;
 
     switch(idx){
     case 0 : // - - - - nothing
         // Best match for each kp
-        matcher->match(d1,d2,matches,mask); sorted = true;
+        matcher->match(dQuery,dTrain,matches,mask); sorted = true;
         break;
     case 1 : // - - - R
-        matcher->match(d1,d2,matches,mask); sorted = true;
+        matcher->match(dQuery,dTrain,matches,mask); sorted = true;
         matchFilterRatio(matches, m_ratio, sorted);
         break;
     case 2 : // - - T -
-        matcher->radiusMatch(d1, d2, matchesKNN, m_thresh, mask); sorted = m_doMax; // flag we should sort
+        matcher->radiusMatch(dQuery, dTrain, matchesKNN, m_thresh, mask); sorted = m_doMax; // flag we should sort
         matchKnn2single(matchesKNN, matches, sorted);
         break;
     case 3 : // - - T R
-        matcher->radiusMatch(d1, d2, matchesKNN, m_thresh, mask); sorted = true;
+        matcher->radiusMatch(dQuery, dTrain, matchesKNN, m_thresh, mask); sorted = true;
         matchKnn2single(matchesKNN, matches, sorted);
         matchFilterRatio(matches, m_ratio, sorted);
         break;
@@ -285,21 +288,21 @@ void Matcher::match( FramePtr& fQuery,
     case 7 : // - S T R
         break;
     case 8 : // U - - -
-        matcher->knnMatch(d1,d2,matchesKNN,2,mask); sorted = m_doMax;
+        matcher->knnMatch(dQuery,dTrain,matchesKNN,2,mask); sorted = m_doMax;
         matchFilterUnique(matchesKNN, matches, m_unique, sorted);
         break;
     case 9 : // U - - R
-        matcher->knnMatch(d1,d2,matchesKNN,2,mask); sorted = m_doMax;
+        matcher->knnMatch(dQuery,dTrain,matchesKNN,2,mask); sorted = m_doMax;
         matchFilterUnique(matchesKNN, matches, m_unique, sorted);
         matchFilterRatio(matches, m_ratio, m_doMax);
         break;
     case 10: // U - T -
-        matcher->knnMatch(d1,d2,matchesKNN,2,mask); sorted = m_doMax;
+        matcher->knnMatch(dQuery,dTrain,matchesKNN,2,mask); sorted = m_doMax;
         matchFilterUnique(matchesKNN, matches, m_unique, sorted);
         matchThreshold(matches, m_thresh, m_doMax);
         break;
     case 11: // U - T R
-        matcher->knnMatch(d1,d2,matchesKNN,2,mask);sorted = true;
+        matcher->knnMatch(dQuery,dTrain,matchesKNN,2,mask);sorted = true;
         matchFilterUnique(matchesKNN, matches, m_unique, sorted);
         matchThreshold(matches, m_thresh, sorted);
         matchFilterRatio(matches, m_ratio, sorted);
@@ -317,6 +320,7 @@ void Matcher::match( FramePtr& fQuery,
 
     // IF we masked, restore original indicies in matches
     if (maskIdx.size()>0){
+        ROS_INFO("MAT = Mask on, restoring temporarily removed masked items");
         for (uint m = 0; m < matches.size(); ++m){
             matches[m].trainIdx = maskIdx[matches[m].trainIdx];
         }
@@ -346,6 +350,7 @@ void Matcher::match( FramePtr& fQuery,
 //    }
 
     time = (ros::WallTime::now()-m0).toSec();
+    ROS_INFO("MAT < Matching finished. [%d vs %d = %lu matches]", dQuery.rows, dTrain.rows, matches.size());
 
 }
 
@@ -539,6 +544,9 @@ DMatches disparityFilter(const DMatches& in, FramePtr& fQuery, FramePtr& fTrain,
 //            cv::circle(img, p1,2,CV_RGB(0,60,60),1,CV_AA);
 //            cv::circle(img, p2,2,CV_RGB(60,0,60),1,CV_AA);
         }
+    }
+    if (disparityFilterOn){
+        ROS_INFO("MAT = Keeping %lu/%lu after disparity check [thresh = maxDisparity]", outMatches.size(), in.size());
     }
     return outMatches;
 }

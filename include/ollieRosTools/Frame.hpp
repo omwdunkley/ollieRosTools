@@ -94,14 +94,14 @@ class Frame{
         }
 
         void computeKeypoints(){
-            ROS_INFO("FRA > Computing Keypoints");
+            ROS_INFO("FRA > Computing Keypoints frame [id: %d]", getId());
             keypointsRotated.clear();
             points.clear();
             descriptors = cv::Mat();
             ros::WallTime t0 = ros::WallTime::now();
             detector.detect(image, keypoints, detId, mask);
             timeDetect = (ros::WallTime::now()-t0).toSec();
-            ROS_INFO("FRA < [%lu] Keypoints Comptued [%.1fms]", keypoints.size(), timeDetect);
+            ROS_INFO("FRA < Computed [%lu] Keypoints [%.1fms] for frame [id: %d]", keypoints.size(), timeDetect*1000., getId());
         }
 
         /// TODO: estiamte image quality. -1 = not estaimted, 0 = bad, 1 = perfect
@@ -193,11 +193,52 @@ class Frame{
             ROS_INFO("FRA > adding world points for vis");
             worldPoints3dInliers = inliers;
             worldPoints3d = pts3d;
-            ROS_INFO("FRA < world points added for vis");
+            ROS_INFO("FRA < [%lu] world points and [%lu] inliers added for vis", worldPoints3d.size(), inliers.size());
         }
 
         const opengv::points_t& getWorldPoints3d() const {
             return worldPoints3d;
+        }
+
+
+        visualization_msgs::Marker getWorldPointsMarker(int id=0, float scale=1.0, float brightness = 1.0){
+            visualization_msgs::Marker ms;
+            ms.header.stamp = ros::Time::now();
+            ms.ns = "worldPoints";
+            ms.id = id;
+            ms.header.frame_id = "/cf_xyz";
+            ms.type = visualization_msgs::Marker::POINTS;
+            ms.action = visualization_msgs::Marker::ADD;
+            ms.scale.x = 0.05*scale;
+            ms.scale.y = 0.05*scale;
+
+            if (worldPoints3d.size()>0){
+                opengv::points_t pts3d = worldPoints3d;
+                OVO::transformPoints(getPose().inverse(), pts3d);
+                Eigen::VectorXd dists(pts3d.size());
+                for (uint i=0; i<pts3d.size(); ++i){
+                    dists[i] = pts3d[i].norm();
+                }
+
+                float range_max = dists.maxCoeff();
+                float range_min = dists.minCoeff();
+
+                for (uint i=0; i< worldPoints3d.size(); ++i){
+                    geometry_msgs::Point p;
+                    cv::Scalar rgb = OVO::getColor(range_min, range_max, dists[i]);
+                    rgb *= brightness/255.;
+                    std_msgs::ColorRGBA col;
+                    col.a = 0.7;
+                    col.r = rgb[0];
+                    col.g = rgb[1];
+                    col.b = rgb[2];
+                    ms.colors.push_back(col);
+                    tf::pointEigenToMsg(worldPoints3d[i], p);
+                    ms.points.push_back(p);
+                }
+            }
+            return ms;
+
         }
 
         // Sets frame as keyframe, prepares it for bundle adjustment
@@ -290,7 +331,7 @@ class Frame{
 
             // Draw keypoints if they exist, also makes img colour
             cv::drawKeypoints(image, keypoints, img, CV_RGB(0,90,20));
-            OVO::putInt(img, keypoints.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"KP: ");
+            OVO::putInt(img, keypoints.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"KP:");
 
             // Draw Frame ID
             OVO::putInt(img, id, cv::Point2f(img.cols-95,img.rows-4*25), CV_RGB(0,110,255), true,  "FID:");
@@ -323,11 +364,12 @@ class Frame{
                 if (worldPoints3dInliers.size()>0){
                     // not aligned
                     for (uint i=0; i<worldPoints3dInliers.size(); ++i){
-                        cv::circle(imgOverlay, points[worldPoints3dInliers[i]], 3, OVO::getColor(range_min, range_max, dists[worldPoints3dInliers[i]]), CV_FILLED, CV_AA);
+                        cv::circle(imgOverlay, points[worldPoints3dInliers[i]], 3, OVO::getColor(range_min, range_max, dists[i]), CV_FILLED, CV_AA);
                     }
                     OVO::putInt(img, worldPoints3dInliers.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,180,110), true,  "WPT:"); // numner of 3d points frames can triangulate from
                 } else {
                     // aligned
+                    ROS_ASSERT_MSG(pts3d.size()==points.size(), "2d and 3d points not aligned");
                     for (uint i=0; i<pts3d.size(); ++i){
                         cv::circle(imgOverlay, points[i], 3, OVO::getColor(range_min, range_max, dists[i]), CV_FILLED, CV_AA);
                     }
@@ -453,7 +495,7 @@ class Frame{
 
         void reduceAllPoints(const Ints& inliers){
             /// Same as clear all points but instead of removing all, it keeps the ones at position ind
-            ROS_INFO("FRA > Keeping %lu/%lu inliers from all point types", inliers.size(), std::max(points.size(), keypoints.size()));
+            ROS_INFO("FRA > Keeping %lu/%lu inliers from all point types for frame [id: %d]", inliers.size(), std::max(points.size(), keypoints.size()), getId());
 
             if (bearings.rows()>0){
                 Eigen::MatrixXd bearingsTemp = Eigen::MatrixXd(inliers.size(), 3);
@@ -511,6 +553,7 @@ class Frame{
             }
 
             ROS_INFO("FRA < Outliers removed");
+            ROS_INFO_STREAM("FRA = "<< *this);
 
         }
 
@@ -549,8 +592,10 @@ class Frame{
             if (descriptors.empty() || keypoints.empty() || getDescId() != detector.getExtractorId()){
                 getKeypoints();
                 ros::WallTime t0 = ros::WallTime::now();
-                detector.extract(image, keypoints, descriptors, descId, getRoll() );
+                ROS_INFO("FRA > Computing [%lu] descriptors for frame [id: %d]", keypoints.size(), id);
+                detector.extract(image, keypoints, descriptors, descId, getRoll() );                
                 timeExtract = (ros::WallTime::now()-t0).toSec();
+                ROS_INFO("FRA < Computed [%d] descriptors for frame [id: %d] in [%.1fms]", descriptors.rows, id,timeExtract*1000.);
             }
             return descriptors;
         }
@@ -558,7 +603,7 @@ class Frame{
         const Eigen::MatrixXd& getBearings(){
             /// Computes unit bearing vectors projected from the optical center through the rectified (key) points on the image plane
             if (bearings.rows()==0){
-                ROS_INFO("FRA > Computing bearing vectors for frame [%d]", id);
+                ROS_INFO("FRA > Computing bearing vectors for frame [id: %d]", id);
 
                 ROS_INFO_STREAM(*this);
 
@@ -576,6 +621,9 @@ class Frame{
 
         int getId() const {
             return id;
+        }
+        int getKfId() const {
+            return kfId;
         }
 
 

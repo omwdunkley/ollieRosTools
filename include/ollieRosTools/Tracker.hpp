@@ -112,7 +112,7 @@ class Tracker{
             //pubMarkers = n.advertise<visualization_msgs::Marker>("/vo/markers", 1);
         }
 
-        float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms){
+        float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms) const{
             const uint size = ms.size();
             if (size==0){
                 return 0.f;
@@ -127,26 +127,29 @@ class Tracker{
         }
 
         void initialise(FramePtr& frame){
-            ROS_INFO("FTR > INITIALISING NEW KEYFRAME");
+            ROS_INFO("FTR > INITIALISING NEW KEYFRAME [ID: %d | KID: %d]",frame->getId(), frame->getKfId());
+
             keyFrame=frame;
+            previousFrame = frame;
+            currFrame = frame;
+
             KFMatches.clear();
             FMatches.clear();
             failedCF.clear();
             failedKF.clear();
             failedPF.clear();
-            previousFrame = frame;
-            currFrame = frame;
+
 
             klt_init = false;
             ROS_INFO("FTR < INITIALISED");
         }
 
 
-        DMatches& getF2KFMatches(){
+        const DMatches& getF2KFMatches() const{
             return KFMatches;
         }
 
-        DMatches& getF2FMatches(){
+        const DMatches& getF2FMatches() const{
             return FMatches;
         }
 
@@ -155,9 +158,11 @@ class Tracker{
         /// TODO: Detect bad frames, dont update previous values for next step
         ///       Keyframe update should check matches from KLT. If flow is too big KLT returns mostly false matches
         float track(FramePtr& frame){
-            ROS_INFO("FTR > TRACKING");
-
             ROS_ASSERT_MSG(!keyFrame.empty(), "FTR = Keyframe should not be empty" );
+
+            ROS_INFO("FTR > TRACKING Frame [%d/%d] vs Frame [%d/%d]", frame->getId(), frame->getKfId(),keyFrame->getId(), keyFrame->getKfId() );
+
+
 
 
             /// DO TRACKING
@@ -665,11 +670,27 @@ class Tracker{
 
         // puts matches into class member prevMatches
         void doF2KF(FramePtr& newFrame){
-            std::swap(FMatches, KFMatches); // store previous matches here
+            //std::swap(FMatches, KFMatches); // store previous matches here
             matcher.match(newFrame, keyFrame, KFMatches, timeTrack, m_pxdist);
+
+            cv::Mat img = newFrame->getVisualImage();
+            Points2f fp,kfp;
+            OVO::vecAlignMatch<Points2f>(newFrame->getPoints(true), keyFrame->getPoints(true), fp, kfp, KFMatches);
+            for(uint i=0; i<KFMatches.size(); ++i){
+                cv::line(img, fp[i], kfp[i], CV_RGB(200,200,20),1, CV_AA);
+                cv::circle(img, fp[i], 2,CV_RGB(20,20,200), 1, CV_AA);
+            }
+            cv::imshow("matches", img);
+            cv::waitKey(30);
+
+            if (keyFrame->getKfId()>0){
+                ROS_INFO("ERROR?");
+            }
+
+
             border = cv::Rect(borderF2KF, cv::Point(newFrame->getSize().width, newFrame->getSize().height)-borderF2KF);
 
-            // the first time this function is called we do not have a new frame
+            // the first time this function is called we do not have a new frame EDIT: we now call initalise
 //            if (currFrame.empty()){
 //                currFrame = newFrame;
 //            }

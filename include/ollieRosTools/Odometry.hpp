@@ -57,6 +57,8 @@ private:
     State state;
     // control state set by user
     Control control;
+    // VO matches between last frame and key frame
+    DMatches matchesVO;
 
     /// SETTINGS
     // RELATIVE POSE - used by initialisation
@@ -330,19 +332,29 @@ private:
         ROS_INFO("ODO > Doing VO Pose Estimate");
         ros::WallTime t0 = ros::WallTime::now();
 
-        const opengv::points_t& worldPoints = kf->getWorldPoints3d();
-        DMatches matchesVO;
+        const opengv::points_t& worldPtsKF = kf->getWorldPoints3d();
 
-        /// Get unit features aligned
-        opengv::bearingVectors_t bvF;
-        opengv::bearingVectors_t bvKF;
-        OVO::alignedBV(f->getBearings(), kf->getBearings(), matches, bvF, bvKF);
 
-        opengv::absolute_pose::CentralAbsoluteAdapter adapter(bvF, worldPoints);
+        /// Get bearing vectors from current frame aligned with 3d land marks from keyframe aligned with matches
+
+        Ints bvFindMatched, wpKFindMatched;
+        OVO::match2ind(matches, bvFindMatched, wpKFindMatched);
+
+        // Bearing vectors
+        opengv::bearingVectors_t bvFMatched;
+        OVO::matReduceInd(f->getBearings(), bvFMatched, bvFindMatched);
+
+        // 3d points
+        opengv::points_t worldPtsKFMatched;
+        OVO::vecReduceInd<opengv::points_t>(worldPtsKF, worldPtsKFMatched, wpKFindMatched);
+
+
+
+
+        /// DO ransac stuff
+        // ransac output
+        opengv::absolute_pose::CentralAbsoluteAdapter adapter(bvFMatched, worldPtsKFMatched);
         Ints inliers;
-
-
-
 
 
 
@@ -373,22 +385,27 @@ private:
                         static_cast<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem::Algorithm>(voAbsPoseMethod)) );
         opengv::sac::Ransac<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem> ransac;
         ransac.sac_model_ = absposeproblem_ptr;
-        ransac.threshold_ = voRelRansacThresh;
+        ransac.threshold_ = voAbsRansacThresh;
         ransac.max_iterations_ = voAbsRansacIter;
+
+        ROS_INFO("ODO > Computing RANSAC pose estimate over [%lu matches] with [threshold = %f] ", matches.size(), ransac.threshold_);
         ransac.computeModel(1);
+
 
         // Set as output
         opengv::transformation_t transWtoF = ransac.model_coefficients_;
         std::swap(inliers, ransac.inliers_);
-        ROS_INFO("ODO = Absolute Ransac Done with %lu/%lu inliers [%d iterations]", inliers.size(), matches.size(), ransac.iterations_);
 
 
         if (inliers.size()<10){
             timeVO = (ros::WallTime::now()-t0).toSec();
-            ROS_WARN("ODO = RANSAC failed on Absolute Pose Estimation with %lu/%lu inliers [%d iterations] [%fms]", inliers.size(), matches.size(),  ransac.iterations_, timeVO);
+            ROS_WARN("ODO < RANSAC failed on Absolute Pose Estimation with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(),  ransac.iterations_, timeVO*1000.);
             return false;
         } else {
-            ROS_INFO("ODO = Relative Ransac Done with %lu/%lu inliers [%d iterations]", inliers.size(), matches.size(), ransac.iterations_);
+            double ransacTime = (ros::WallTime::now()-t0).toSec();
+            ROS_INFO("ODO < Absolute Ransac Done with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(), ransac.iterations_, ransacTime*1000.);
+
+
         }
 
 
@@ -404,13 +421,29 @@ private:
             ROS_INFO_STREAM("ODO < NLO Before:\n  " << transWtoF);
         }
 
-
         f->setPose(transWtoF);
-        f->setWorldPointsInliers(inliers, worldPoints); // not really needed i guess, but good for vis
+
+        /// JUST FOR VIS!
+        /// Align inliers
+
+        opengv::bearingVectors_t bvFVO;
+        opengv::points_t worldPtsKFVO;
+
+        OVO::vecReduceInd<opengv::bearingVectors_t>(bvFMatched, bvFVO, inliers);
+        OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
+        OVO::vecReduceInd<opengv::points_t>(worldPtsKFMatched, worldPtsKFVO, inliers);
+
+        const Eigen::VectorXd repjerr = OVO::reprojectErrPointsVsBV(f->getPose(), worldPtsKFVO, bvFVO );
+        ROS_INFO("ODO = Min / Avg / Max RePrjErr  F = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
+
+        Ints FVOInd, KFVOInd;
+        OVO::match2ind(matchesVO, FVOInd, KFVOInd);
+        f->setWorldPointsInliers(FVOInd, worldPtsKFVO); // not really needed i guess, but good for vis
+
 
 
         timeVO = (ros::WallTime::now()-t0).toSec();
-        ROS_INFO("ODO < Pose Estimated [%fms]", timeVO);
+        ROS_INFO("ODO < Pose Estimated [%.1fms]", timeVO);
         return true;
     }
 
@@ -420,6 +453,7 @@ private:
     /// Tracks frame against keyframe
     float track(FramePtr& frame){
         ROS_INFO("ODO > TRACKING");
+        matchesVO.clear();
         const float disparity = map.showFrame(frame);
 
 
@@ -466,6 +500,7 @@ private:
         baselineInitial = -1;
         baselineCorrected = -1;
         map.reset();
+        matchesVO.clear();
         ROS_INFO("ODO < RESET");
     }
 
@@ -474,9 +509,6 @@ private:
     /// Initialises the whole VO pipeline
     void initialiseVO(){
         ROS_INFO("ODO > DOING INITIALISATION");
-
-
-
 
 
         bool okay = initialise(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches());
@@ -526,8 +558,6 @@ private:
             ROS_WARN("ODO < POSE ESTIMATION FAIL [%fms]", timeVO);
             state = LOST;
         }
-
-
 
     }
 
@@ -634,15 +664,30 @@ public:
 
     /// Gets a visual image of the current state
     cv::Mat getVisualImage(){
-        /// TODO
+        /// Get matching image
         cv::Mat image = map.getVisualImage();
 
+        // Overlay baseline
         if (baselineInitial>=0){
-        OVO::putInt(image, baselineInitial, cv::Point(10,9*25), CV_RGB(0,96*2,0), false , "BLD:");
+            OVO::putInt(image, baselineInitial, cv::Point(10,9*25), CV_RGB(0,96*2,0), false , "BLD:");
         }
         if (baselineCorrected>=0){
-        OVO::putInt(image, baselineCorrected, cv::Point(10,10*25), CV_RGB(0,96*2,0), false , "BLC:");
+            OVO::putInt(image, baselineCorrected, cv::Point(10,10*25), CV_RGB(0,96*2,0), false , "BLC:");
         }
+
+        // Draw VO flow
+        // only for drawing!
+        if (matchesVO.size()>0){
+            Points2f drawVoKFPts, drawVoFPts;
+            OVO::vecAlignMatch<Points2f>(map.getCurrentFrame()->getPoints(true), map.getLatestKF()->getPoints(true), drawVoFPts, drawVoKFPts, matchesVO);
+            for (uint i=0; i<drawVoFPts.size(); ++i){
+                cv::line(image, drawVoFPts[i], drawVoKFPts[i], CV_RGB(255,0,255), 1, CV_AA);
+            }
+            OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
+        }
+
+
+
 
 
         // show timings
