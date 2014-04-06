@@ -125,7 +125,7 @@ private:
     /// Sets the pose of frame f
     bool initialise(FramePtr& f, FramePtr& kf, const DMatches& matches){
         ROS_INFO("ODO > Doing VO Initialisation");
-        ros::WallTime t0 = ros::WallTime::now();
+
 
         opengv::points_t worldPoints;
         DMatches matchesVO;
@@ -141,6 +141,7 @@ private:
         /// Compute relative transformation from KeyFrame KF to Frame F using ransac
         opengv::transformation_t transKFtoF;
 
+        ros::WallTime t0 = ros::WallTime::now();
         if (voRelPoseMethod==5){
             /// Use IMU for rotation, compute translation
             // compute relative rotation
@@ -190,12 +191,11 @@ private:
             std::swap(inliers, ransac.inliers_);  //Get inliers
         }
 
-        if (inliers.size()<10){
-            timeVO = (ros::WallTime::now()-t0).toSec();
-            ROS_WARN("ODO = RANSAC failed on Relative Pose Estimation with %lu/%lu inliers  [%d iterations] [%fms]", inliers.size(), matches.size(), iterations, timeVO);
+        if (inliers.size()<10){            
+            ROS_WARN("ODO = RANSAC failed on Relative Pose Estimation with %lu/%lu inliers after [%d iterations] in [%.1fms]", inliers.size(), matches.size(), iterations, (ros::WallTime::now()-t0).toSec()*1000.);
             return false;
         } else {
-            ROS_INFO("ODO = Relative Ransac Done with %lu/%lu inliers [%d iterations]", inliers.size(), matches.size(), iterations);
+            ROS_INFO("ODO = Relative Ransac Done with %lu/%lu inliers [%d iterations]in [%.1fms", inliers.size(), matches.size(), iterations,(ros::WallTime::now()-t0).toSec()*1000.);
         }
 
         /// Experimental: NLO
@@ -316,8 +316,7 @@ private:
 
         map.addKeyFrame(f);
 
-        timeVO = (ros::WallTime::now()-t0).toSec();
-        ROS_INFO("ODO < Initialised [%fms]", timeVO);
+        ROS_INFO("ODO < Initialised");
 
         return true;
     }
@@ -330,7 +329,7 @@ private:
     /// Sets the pose of frame f
     bool poseEstimate(FramePtr& f, FramePtr& kf, const DMatches& matches){
         ROS_INFO("ODO > Doing VO Pose Estimate");
-        ros::WallTime t0 = ros::WallTime::now();
+
 
         const opengv::points_t& worldPtsKF = kf->getWorldPoints3d();
 
@@ -359,7 +358,7 @@ private:
 
 
 
-
+        ros::WallTime t0 = ros::WallTime::now();
         if (voAbsPoseMethod==0){
             ROS_INFO("ODO = Using Relative Rotation Prior");
             /// Compute relative rotation using current and previous imu data
@@ -380,6 +379,7 @@ private:
 
 
         /// DO RANSAC
+
         boost::shared_ptr<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem>absposeproblem_ptr(
                     new opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem(adapter,
                         static_cast<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem::Algorithm>(voAbsPoseMethod)) );
@@ -398,12 +398,10 @@ private:
 
 
         if (inliers.size()<10){
-            timeVO = (ros::WallTime::now()-t0).toSec();
-            ROS_WARN("ODO < RANSAC failed on Absolute Pose Estimation with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(),  ransac.iterations_, timeVO*1000.);
+            ROS_WARN("ODO < RANSAC failed on Absolute Pose Estimation with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(),  ransac.iterations_, (ros::WallTime::now()-t0).toSec()*1000.);
             return false;
         } else {
-            double ransacTime = (ros::WallTime::now()-t0).toSec();
-            ROS_INFO("ODO < Absolute Ransac Done with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(), ransac.iterations_, ransacTime*1000.);
+            ROS_INFO("ODO < Absolute Ransac Done with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(), ransac.iterations_,  (ros::WallTime::now()-t0).toSec()*1000.);
 
 
         }
@@ -442,8 +440,7 @@ private:
 
 
 
-        timeVO = (ros::WallTime::now()-t0).toSec();
-        ROS_INFO("ODO < Pose Estimated [%.1fms]", timeVO);
+        ROS_INFO("ODO < Pose Estimated");
         return true;
     }
 
@@ -499,6 +496,7 @@ private:
         state=WAIT_FIRST_FRAME;
         baselineInitial = -1;
         baselineCorrected = -1;
+        timeVO = -1;
         map.reset();
         matchesVO.clear();
         ROS_INFO("ODO < RESET");
@@ -552,10 +550,10 @@ private:
 
         timeVO = (ros::WallTime::now()-t0).toSec();
         if (okay){
-            ROS_INFO("ODO < POSE ESTIMATION SUCCESS [%fms]", timeVO);
+            ROS_INFO("ODO < POSE ESTIMATION SUCCESS [%fms]", timeVO*1000.);
             state = INITIALISED;
         } else {
-            ROS_WARN("ODO < POSE ESTIMATION FAIL [%fms]", timeVO);
+            ROS_WARN("ODO < POSE ESTIMATION FAIL [%fms]", timeVO*1000.);
             state = LOST;
         }
 
@@ -582,7 +580,7 @@ public:
         keyFrameQualityThreshold = 0.6;
         baselineInitial = -1;
         baselineCorrected = -1;
-        timeVO = 0;
+        timeVO = -1;
 
     }
 
@@ -690,7 +688,14 @@ public:
 
 
 
+
+
         // show timings
+        if (timeVO>0){
+            OVO::putInt(image, timeVO*1000., cv::Point(10,image.rows-2*25), CV_RGB(200,0,200), false, "O:");
+        }
+
+
         // show state
         // show user controls
         // show imu

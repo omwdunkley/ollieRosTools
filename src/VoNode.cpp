@@ -146,7 +146,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     if (pubCamera.getNumSubscribers()>0 || pubImage.getNumSubscribers()>0){
         sensor_msgs::CameraInfoPtr camInfoPtr = frame->getCamInfo();
         cv::Mat drawImg = odometry.getVisualImage();
-        OVO::putInt(drawImg, timeAvg*1000., cv::Point(20,drawImg.rows-1*25), CV_RGB(200,0,200), false, "S:");
+        OVO::putInt(drawImg, timeAvg*1000., cv::Point(10,drawImg.rows-1*25), CV_RGB(200,0,200), false, "s:");
 
 //        if (imageRect.channels() != image.channels()){
 //            cv::cvtColor(imageRect, imageRect,CV_BGR2GRAY);

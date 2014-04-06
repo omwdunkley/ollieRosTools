@@ -673,19 +673,15 @@ class Tracker{
             //std::swap(FMatches, KFMatches); // store previous matches here
             matcher.match(newFrame, keyFrame, KFMatches, timeTrack, m_pxdist);
 
-            cv::Mat img = newFrame->getVisualImage();
-            Points2f fp,kfp;
-            OVO::vecAlignMatch<Points2f>(newFrame->getPoints(true), keyFrame->getPoints(true), fp, kfp, KFMatches);
-            for(uint i=0; i<KFMatches.size(); ++i){
-                cv::line(img, fp[i], kfp[i], CV_RGB(200,200,20),1, CV_AA);
-                cv::circle(img, fp[i], 2,CV_RGB(20,20,200), 1, CV_AA);
-            }
-            cv::imshow("matches", img);
-            cv::waitKey(30);
-
-            if (keyFrame->getKfId()>0){
-                ROS_INFO("ERROR?");
-            }
+//            cv::Mat img = newFrame->getVisualImage();
+//            Points2f fp,kfp;
+//            OVO::vecAlignMatch<Points2f>(newFrame->getPoints(true), keyFrame->getPoints(true), fp, kfp, KFMatches);
+//            for(uint i=0; i<KFMatches.size(); ++i){
+//                cv::line(img, fp[i], kfp[i], CV_RGB(200,200,20),1, CV_AA);
+//                cv::circle(img, fp[i], 2,CV_RGB(20,20,200), 1, CV_AA);
+//            }
+//            cv::imshow("matches", img);
+//            cv::waitKey(30);
 
 
             border = cv::Rect(borderF2KF, cv::Point(newFrame->getSize().width, newFrame->getSize().height)-borderF2KF);
