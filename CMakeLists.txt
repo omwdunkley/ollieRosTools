@@ -1,10 +1,35 @@
 cmake_minimum_required(VERSION 2.4.6)
 include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 
+
+
+LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
+
+
+FIND_PACKAGE(Cholmod)
+FIND_PACKAGE(BLAS)
+FIND_PACKAGE(LAPACK)
+IF(CHOLMOD_FOUND AND BLAS_FOUND AND LAPACK_FOUND)
+  MESSAGE(STATUS "Found CHOLMOD and its dependencies")
+  SET(CHOLMOD_FOUND TRUE)
+ELSE()
+  SET(CHOLMOD_FOUND FALSE)
+ENDIF()
+FIND_PACKAGE(CSparse)
+INCLUDE_DIRECTORIES(${g2o_DIR} )
+
+INCLUDE_DIRECTORIES(${CHOLMOD_INCLUDE_DIR})
+
+
 FIND_PACKAGE(OpenCV REQUIRED)
+
 FIND_PACKAGE(Eigen REQUIRED 3.1.2) #https://launchpad.net/~kalakris/+archive/eigen
 include_directories(${Eigen_INCLUDE_DIRS})
 
+
+#ind_package(libg2o REQUIRED)
+#ET(G2O_LIBS ${libg2o_LIBRARIES} cholmod cxsparse)
+#ADD_DEFINITIONS(-DDO_FEATURE_OPTIMIZATION)
 
 #find_package(OpenMP REQUIRED)
 
@@ -52,6 +77,7 @@ gencfg()
 #rosbuild_gensrv()
 
 
+
 include_directories(
   ${PROJECT_SOURCE_DIR}/thirdparty/agast/include
 )
@@ -65,6 +91,18 @@ include_directories(
 link_directories(
   ${PROJECT_SOURCE_DIR}/thirdparty/akaze-opencv/lib
 )
+
+
+
+
+SET(G2O_LIBS cholmod cxsparse -lg2o_cli -lg2o_core
+-lg2o_csparse_extension -lg2o_ext_freeglut_minimal -lg2o_incremental
+-lg2o_interactive -lg2o_interface -lg2o_opengl_helper -lg2o_parser
+-lg2o_simulator -lg2o_solver_cholmod -lg2o_solver_csparse
+-lg2o_solver_dense -lg2o_solver_pcg -lg2o_solver_slam2d_linear
+-lg2o_solver_structure_only -lg2o_stuff -lg2o_types_data -lg2o_types_icp
+-lg2o_types_sba -lg2o_types_sclam2d -lg2o_types_sim3 -lg2o_types_slam2d
+-lg2o_types_slam3d)
 
 
 
@@ -110,10 +148,14 @@ SET(VO_FILES
 #target_link_libraries(preproc ${LIBRARIES} ${OpenCV_LIBS})
 
 rosbuild_add_executable(vo ${VO_FILES} )
-target_link_libraries(vo ${LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(vo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
 
+SET(BA_FILES
+    src/ba_demo.cpp
+)
 
-
+rosbuild_add_executable(ba_demo ${BA_FILES} )
+target_link_libraries(ba_demo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
 #common commands for building c++ executables and libraries
 #rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
 #target_link_libraries(${PROJECT_NAME} another_library)

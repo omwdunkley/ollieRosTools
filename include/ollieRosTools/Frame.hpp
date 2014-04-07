@@ -28,12 +28,12 @@ class Frame{
         cv::Mat mask;
         Mats pyramid;
         cv::Size pyramidWindowSize;
-        opengv::rotation_t imuAttitude;
-        Eigen::Affine3d pose; // transformation in the world frame
-        double roll, pitch, yaw;        
+        opengv::rotation_t imuAttitudeCam; // IMU rotation in the camera frame
+        Eigen::Affine3d pose; // transformation of the camera in the world frame
+        double roll, pitch, yaw;  //quad frame
         /// TODO not used yet
-        double gyroX, gyroY, GyroZ;
-        double accX, accY, accZ;
+        double gyroX, gyroY, GyroZ; //quad frame
+        double accX, accY, accZ; // quad frame
 
         // Meta
         static int idCounter;
@@ -45,6 +45,7 @@ class Frame{
         double timePreprocess, timeDetect, timeExtract;
         float quality; // <0 means not measured, 0 means bad, 1 means perfect
         static float averageQuality;
+        Eigen::Matrix3d imu2cam;
 
         // Type of descriptor / detector used
         int descId;
@@ -135,6 +136,9 @@ class Frame{
             kfId = -1;
 
             ROS_INFO("FRA > CREATING NEW FRAME [ID: %d]", id);
+            time = imu.stamp_;
+
+            imu2cam << 0, 0, 1, -1, 0 ,0, 0,-1, 0;
 
             timePreprocess = 0;
             timeExtract    = 0;
@@ -155,11 +159,20 @@ class Frame{
             image = cameraModel.rectify(imgProc);
             timePreprocess = (ros::WallTime::now()-t0).toSec();
 
+            /// Deal with IMU and Pose
+            // reset pose
             pose.setIdentity();
-
+            // get imu (convert from TF)
+            Eigen::Matrix3d imuAttitude;
             tf::matrixTFToEigen(imu.getBasis(), imuAttitude);
-            time = imu.stamp_;
-            OVO::tf2RPY(imu, roll, pitch, yaw); /// TODO: RPY mighrt be negative
+
+            // get imu in cam frame
+            imuAttitudeCam = imu2cam*imuAttitude;
+
+            // just for printing
+
+            OVO::tf2RPY(imu, roll, pitch, yaw);
+            roll*=-1.;
 
             /// TODO: estiamte quality of imageu using acceleromter, gyro and blurriness estiamtion
             estimateImageQuality();
@@ -178,6 +191,11 @@ class Frame{
 //            worldPoints3d = pts3d;
 //            worldPoints2d = pts2d;
 //        }
+
+
+        const Eigen::Matrix3d& getImu2Cam(){
+            return imu2cam;
+        }
 
 
         // Sets worldPoints3d and aligns them to all other points by removing non inliers
@@ -206,7 +224,7 @@ class Frame{
             ms.header.stamp = ros::Time::now();
             ms.ns = "worldPoints";
             ms.id = id;
-            ms.header.frame_id = "/cf_xyz";
+            ms.header.frame_id = "/world"; /// TODO: use variable name
             ms.type = visualization_msgs::Marker::POINTS;
             ms.action = visualization_msgs::Marker::ADD;
             ms.scale.x = 0.05*scale;
@@ -296,13 +314,13 @@ class Frame{
         }
 
         // Sets the pose from a 3x4 mat, converting it to an eigen affine3d
-        void setPose(const opengv::transformation_t& t){
+        void setPose(Eigen::Affine3d& t){
             pose = t;
         }
 
         // sets the pose from the imu rotation. This is usually used on the very first keyframe
         void setPoseRotationFromImu(){
-            pose.linear() = imuAttitude;
+            pose.linear() = imuAttitudeCam;
         }
 
         // Returns true if this frame is not the result of the default constructor
@@ -311,8 +329,8 @@ class Frame{
         }
 
         // Gets the imu rotation recorded at the time the frame was taken.
-        const opengv::rotation_t& getImuRotation() const {
-            return imuAttitude;
+        const opengv::rotation_t& getImuRotationCam() const {
+            return imuAttitudeCam;
         }
 
         // Fetches the cameraInfo used by ros for the current rectification output

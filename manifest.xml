@@ -25,11 +25,13 @@
   <depend package="rbrief"/>
   <depend package="joy"/>
   <depend package="rospy"/>
+  <!-- depend package="g2o"/ -->
 
 
   <rosdep name="opencv2"/>
   <rosdep name="eigen"/>
   <rosdep name="python-numpy" />
+  <rosdep name="libg2o" />
 
 </package>
 

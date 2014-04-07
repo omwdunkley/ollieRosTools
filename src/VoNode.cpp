@@ -28,7 +28,7 @@ VoNode::VoNode(ros::NodeHandle& _n):
     /// Set default values
     n.param("image", inputTopic, std::string("/cf/cam/image_raw"));
     n.param("useIMU", USEIMU, true);
-    n.param("imuFrame", imuFrame, std::string("/cf"));
+    n.param("imuFrame", imuFrame, std::string("/cf0"));
     n.param("worldFrame", worldFrame, std::string("/world"));
     // Cam frame is specified from the header in the cam msg
 
@@ -193,8 +193,6 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     }
 
 }
-
-
 
 
 ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){

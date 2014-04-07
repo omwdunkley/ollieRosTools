@@ -1,7 +1,24 @@
 #ifndef ODOMETRY_HPP
 #define ODOMETRY_HPP
-#include <Eigen/Core>
 
+#include <iostream>
+#include <fstream>
+
+#include <Eigen/Core>
+#include <opencv2/core/eigen.hpp>
+
+/*
+#include <g2o/core/sparse_optimizer.h>
+#include <g2o/core/block_solver.h>
+#include <g2o/core/solver.h>
+#include <g2o/core/robust_kernel_impl.h>
+#include <g2o/core/optimization_algorithm_levenberg.h>
+#include <g2o/solvers/cholmod/linear_solver_cholmod.h>
+#include <g2o/solvers/dense/linear_solver_dense.h>
+#include <g2o/types/sba/types_six_dof_expmap.h>
+//#include <g2o/math_groups/se3quat.h>
+#include <g2o/solvers/structure_only/structure_only_solver.h>
+*/
 #include <opengv/sac/Ransac.hpp>
 #include <opengv/sac_problems/absolute_pose/AbsolutePoseSacProblem.hpp>
 #include <opengv/sac_problems/relative_pose/CentralRelativePoseSacProblem.hpp>
@@ -92,14 +109,14 @@ private:
     /// ////////////////////////////////////////////////////////////////////////////////////// PRIVATE METHODS
 
     /// Triangulate points points3d using bearing vectors bv1 and bv2 and the estimated pose between them trans1to2.
-    void triangulate(const opengv::transformation_t& trans1to2, const opengv::bearingVectors_t& bv1, const opengv::bearingVectors_t& bv2, opengv::points_t& points3d) const{
+    void triangulate(const Eigen::Affine3d& trans1to2, const opengv::bearingVectors_t& bv1, const opengv::bearingVectors_t& bv2, opengv::points_t& points3d) const{
         /// The 3D points are expressed in the frame of the first viewpoint.
 
         ROS_INFO("OVO > Triangulating");
 
 
         // Triangulate point pairs of each match
-        opengv::relative_pose::CentralRelativeAdapter adapter(bv1, bv2, trans1to2.col(3), trans1to2.block<3,3>(0,0) );
+        opengv::relative_pose::CentralRelativeAdapter adapter(bv1, bv2, trans1to2.translation(), trans1to2.linear() );
 
         points3d.clear();
         points3d.reserve(bv1.size());
@@ -139,17 +156,14 @@ private:
         int iterations=-1;
 
         /// Compute relative transformation from KeyFrame KF to Frame F using ransac
-        opengv::transformation_t transKFtoF;
+        Eigen::Affine3d transKFtoF;
 
         ros::WallTime t0 = ros::WallTime::now();
         if (voRelPoseMethod==5){
             /// Use IMU for rotation, compute translation
             // compute relative rotation
-            Eigen::Matrix3d imu2cam;
-            imu2cam << 0, 0, 1,
-                      -1, 0 ,0,
-                       0,-1, 0;
-            adapter.setR12(imu2cam * kf->getImuRotation().transpose() * f->getImuRotation() * imu2cam.transpose());
+            const Eigen::Matrix3d& imu2cam = f->getImu2Cam(); /// TODO: getImuRotation cam is actually imu2cam*imuRot
+            adapter.setR12(imu2cam * kf->getImuRotationCam().transpose() * f->getImuRotationCam() * imu2cam.transpose());
 
             //adapter.setR12(kf->getImuRotation().transpose() * f->getImuRotation());
             //adapter.setR12(f->getImuRotation() * kf->getImuRotation().transpose());
@@ -203,11 +217,11 @@ private:
         if (voRelNLO){
             // check order
             ROS_INFO("ODO > Doing NLO on Relative Pose");
-            adapter.sett12(transKFtoF.col(3));
-            adapter.setR12(transKFtoF.block<3,3>(0,0));
-            ROS_INFO_STREAM("ODO = NLO Before:\n  " << transKFtoF);
+            adapter.sett12(transKFtoF.translation());
+            adapter.setR12(transKFtoF.linear());
+            ROS_INFO_STREAM("ODO = NLO Before:\n  " << transKFtoF.matrix());
             transKFtoF = opengv::relative_pose::optimize_nonlinear(adapter, inliers);
-            ROS_INFO_STREAM("ODO < NLO AFTER:\n  " << transKFtoF);
+            ROS_INFO_STREAM("ODO < NLO AFTER:\n  " << transKFtoF.matrix());
         }
 
         /// g2o BUNDLE ADJUST
@@ -224,7 +238,7 @@ private:
         OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
 
         /// Scale Pose
-        baselineInitial = transKFtoF.col(3).norm();
+        baselineInitial = transKFtoF.translation().norm();
 
         /// TRIANGULATE points in the keyframe frame
         ROS_INFO("ODO = Relative Pose baseline [%f]", baselineInitial);
@@ -236,17 +250,17 @@ private:
                 break;
             case FIXED:
                 ROS_INFO("ODO = Baseline scaled [1.0]");
-                transKFtoF.col(3) *= 1.0/baselineInitial;
+                transKFtoF.translation() *= 1.0/baselineInitial;
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
                 break;
             case MANUAL_BASELINE:
                 ROS_INFO("ODO = Baseline selected scaled [%f]", voBaseline);
-                transKFtoF.col(3) *= voBaseline/baselineInitial;
+                transKFtoF.translation() *= voBaseline/baselineInitial;
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
                 break;
             case MANUAL_AVGDEPTH:
                 ROS_INFO("ODO > Scaling Baseline so avg depth is [%f]", voBaseline);
-                transKFtoF.col(3) /= baselineInitial;
+                transKFtoF.translation() /= baselineInitial;
 
                 // Triangulate with baseline = 1
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
@@ -263,19 +277,19 @@ private:
                     worldPoints[i] /= meanDepth/voBaseline;
                 }
                 // modify baseline
-                transKFtoF.col(3) /= meanDepth/voBaseline;
-                ROS_INFO("ODO < Baseline updated to [%f] with mean depth [%f]", transKFtoF.col(3).norm(), voBaseline);
+                transKFtoF.translation()/= meanDepth/voBaseline;
+                ROS_INFO("ODO < Baseline updated to [%f] with mean depth [%f]", transKFtoF.translation().norm(), voBaseline);
                 break;
             case AUTO_MARKER:
                 ROS_ERROR("ODO = NOT IMPLEMENTED: Baseline being scaled using Markers");
-                transKFtoF.col(3) *= 1.0/baselineInitial;
+                transKFtoF.translation()*= 1.0/baselineInitial;
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, worldPoints);
                 break;
 
         }
 
         // just for drawing really
-        baselineCorrected = transKFtoF.col(3).norm();
+        baselineCorrected = transKFtoF.translation().norm();
 
         meanDepth = 0;
         for (uint i=0; i<worldPoints.size(); ++i){
@@ -289,7 +303,10 @@ private:
 
         /// Set pose of F from KF->F to world->F
         //f2->setPose(); //
-        f->setPose(kf->getPose() * transKFtoF);
+        //f->setPose(kf->getPose() * transKFtoF);
+        Eigen::Affine3d transWtoF = kf->getPose() * transKFtoF; // should be this one
+        //Eigen::Affine3d transWtoF = transKFtoF * kf->getPose();
+        f->setPose(transWtoF);
 
         /// put points from KF->Points frame to World->Points frame
         OVO::transformPoints(kf->getPose(), worldPoints);
@@ -317,6 +334,151 @@ private:
         map.addKeyFrame(f);
 
         ROS_INFO("ODO < Initialised");
+
+
+
+
+
+
+        /// Saves current F and KF and Point vectors aligned and poses
+        ROS_INFO("Saving INIT state Frame [%d/%d] and Frame [%d/%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
+
+
+
+        // poses
+        cv::Mat poseF, poseKF;
+        cv::eigen2cv(f->getPose().matrix(),poseF);
+        cv::eigen2cv(kf->getPose().matrix(),poseKF);
+
+        cv::Mat data;
+        for (uint i=0; i<worldPoints.size(); ++i){
+            double r[9] = {bvFinlier[i][0], bvFinlier[i][1], bvFinlier[i][2], bvKFinlier[i][0], bvKFinlier[i][1], bvKFinlier[i][2], worldPoints[i][0], worldPoints[i][1], worldPoints[i][2]};
+            data.push_back(cv::Mat(1, 9, CV_64F, r));
+        }
+
+        std::stringstream ss;
+        ss << "./F" << f->getId() << "_KF" << kf->getId() << "_" << data.rows << "_";
+        std::string filenameBV = ss.str() +"bvp.csv";
+        std::string filenameT = ss.str()+"tf.csv";
+        std::ofstream fileBV(filenameBV.c_str());
+        std::ofstream fileT(filenameT.c_str());
+        if (fileBV.is_open()) {
+            fileBV << format(data,"csv") << std::endl <<std:: endl;
+            fileBV.close();
+            ROS_INFO("Saved file [%s]", filenameBV.c_str());
+        } else {
+            ROS_ERROR("Could not save file [%s]", filenameBV.c_str());
+        }
+
+
+        if (fileT.is_open()) {
+            fileT << format(poseF,"csv") << format(poseKF,"csv") << std::endl <<std:: endl;
+            fileT.close();
+            ROS_INFO("Saved file [%s]", filenameT.c_str());
+        } else {
+            ROS_ERROR("Could not save file [%s]", filenameT.c_str());
+        }
+
+
+
+/*
+
+
+
+        /// TODO
+            // MEMORY CLEANUP
+            // BlockSolver_7_3 (BA SCALE)
+            // check min nr observations, min distance between kfs, etc
+            // setMarginalized ??
+            // set fixed ??
+
+
+
+        // G2O stuff
+        /// Optimiser
+        g2o::SparseOptimizer optimizer;
+        optimizer.setVerbose(true);
+        g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
+        if (DENSE) {
+            linearSolver = new g2o::LinearSolverDense<g2o::BlockSolver_6_3::PoseMatrixType>();
+        } else {
+            linearSolver = new g2o::LinearSolverCholmod<g2o::BlockSolver_6_3::PoseMatrixType>();
+        }
+
+        g2o::BlockSolver_6_3 * solver_ptr = new g2o::BlockSolver_6_3(linearSolver);
+        g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
+        optimizer.setAlgorithm(solver);
+
+
+
+
+        /// add poses
+        g2o::SE3Quat g2o_poseF(f->getPose().linear(),f->getPose().translation());
+        g2o::SE3Quat g2o_poseKF(kf->getPose().linear(),kf->getPose().translation());
+
+        g2o::VertexSE3Expmap * v_se3F = new g2o::VertexSE3Expmap();
+        g2o::VertexSE3Expmap * v_se3KF = new g2o::VertexSE3Expmap();
+
+        v_se3F ->setEstimate(g2o_poseF);
+        v_se3KF->setEstimate(g2o_poseKF);
+
+        v_se3F ->setFixed(true);
+        v_se3KF->setFixed(true);
+
+        v_se3F ->setId(-1);
+        v_se3KF->setId(-2);
+
+        optimizer.addVertex(v_se3F);
+        optimizer.addVertex(v_se3KF);
+
+        /// Add Points
+        for (uint i=0; i<pts.size(); ++i){
+            g2o::VertexSBAPointXYZ * v_p = new g2o::VertexSBAPointXYZ();
+            v_p->setId(i);
+            v_p->setMarginalized(true);
+            v_p->setEstimate(pts[i]);
+
+
+            // check if point is visible
+            /// if visible by 2 or more, add constraint
+            optimizer.addVertex(v_p);
+
+            /// add observations for each kf  // for now we cheat and use bearing vectors as point on image plane
+            g2o::EdgeProjectXYZ2UV * e = new g2o::EdgeProjectXYZ2UV();
+            e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
+            e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertices().find(j)->second));
+            e->setMeasurement(z);
+            e->information() = Matrix2d::Identity();
+            if (ROBUST_KERNEL) {
+                g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
+                e->setRobustKernel(rk);
+            }
+            e->setParameterId(0, 0);
+            optimizer.addEdge(e);
+
+
+
+        }
+
+
+
+
+
+
+
+        // add world points
+        // add
+
+
+
+
+
+
+
+*/
+
+
+
 
         return true;
     }
@@ -366,8 +528,8 @@ private:
             //const tf::Transform absRotPrior = map.getKF(0).getImu().inverseTimes(frame.getImu()); //map[0] holds the previous frame (which holds previous imu)
             // prev pose * imu_pose_differene
 
-            const opengv::rotation_t& imuF = f->getImuRotation();
-            const opengv::rotation_t& imuKF = kf->getImuRotation();
+            const opengv::rotation_t& imuF = f->getImuRotationCam();
+            const opengv::rotation_t& imuKF = kf->getImuRotationCam();
             const Eigen::Affine3d&    poseKF = kf->getPose();
             // set absolute rotation
             Eigen::Matrix3d imu2cam;
@@ -393,7 +555,8 @@ private:
 
 
         // Set as output
-        opengv::transformation_t transWtoF = ransac.model_coefficients_;
+        Eigen::Affine3d transWtoF;
+        transWtoF = ransac.model_coefficients_;
         std::swap(inliers, ransac.inliers_);
 
 
@@ -409,14 +572,14 @@ private:
 
         if (voAbsNLO){
             ROS_INFO("ODO > Doing NLO on Absolute Pose");
-            adapter.sett(transWtoF.col(3));
-            adapter.setR(transWtoF.block<3,3>(0,0));
+            adapter.sett(transWtoF.translation());
+            adapter.setR(transWtoF.linear());
             //Compute the pose of a viewpoint using nonlinear optimization. Using all available correspondences. Works for central and non-central case.
             //in:  adapter holding bearing vector to world point correspondences, the multi-camera configuration, plus the initial values.
             //out: Pose of viewpoint (position seen from world frame and orientation from viewpoint to world frame, transforms points from viewpoint to world frame).
-            ROS_INFO_STREAM("ODO = NLO Before:\n  " << transWtoF);
+            ROS_INFO_STREAM("ODO = NLO Before:\n  " << transWtoF.matrix());
             transWtoF = opengv::absolute_pose::optimize_nonlinear(adapter, inliers) ;
-            ROS_INFO_STREAM("ODO < NLO Before:\n  " << transWtoF);
+            ROS_INFO_STREAM("ODO < NLO Before:\n  " << transWtoF.matrix());
         }
 
         f->setPose(transWtoF);
@@ -437,6 +600,9 @@ private:
         Ints FVOInd, KFVOInd;
         OVO::match2ind(matchesVO, FVOInd, KFVOInd);
         f->setWorldPointsInliers(FVOInd, worldPtsKFVO); // not really needed i guess, but good for vis
+
+
+        saveData();
 
 
 
@@ -583,6 +749,12 @@ public:
         timeVO = -1;
 
     }
+
+
+    void saveData(){
+
+    }
+
 
 
     /// a step in the VO pipeline
@@ -733,7 +905,6 @@ public:
         voAbsNLO          = config.vo_absNLO;
 
 
-
         // User controls
         if (config.vo_doInitialisation){
             control = DO_INIT;
@@ -744,6 +915,11 @@ public:
         } else if (config.vo_doReset){
             control = DO_RESET;
             config.vo_doReset = false;
+        }
+
+        if (config.writeCSV){
+            saveData();
+            config.writeCSV = false;
         }
 
 
