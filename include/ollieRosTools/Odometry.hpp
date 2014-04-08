@@ -17,9 +17,11 @@
 #include <g2o/core/optimization_algorithm_levenberg.h>
 #include <g2o/solvers/cholmod/linear_solver_cholmod.h>
 #include <g2o/solvers/dense/linear_solver_dense.h>
-#include <g2o/types/sba/types_six_dof_expmap.h>
+
 //#include <g2o/math_groups/se3quat.h>
 #include <g2o/solvers/structure_only/structure_only_solver.h>
+
+
 
 
 
@@ -36,6 +38,12 @@
 #include <ollieRosTools/aux.hpp>
 #include <ollieRosTools/Frame.hpp>
 #include <ollieRosTools/Map.hpp>
+
+#include <ollieRosTools/custom_types/edge_pose_landmark_reprojectBV.hpp>
+#include <ollieRosTools/custom_types/vertex_landmarkxyz.hpp>
+#include <ollieRosTools/custom_types/vertex_pose.hpp>
+#include <ollieRosTools/custom_types/register_types.hpp>
+
 
 namespace RP = opengv::sac_problems::relative_pose;
 
@@ -371,66 +379,48 @@ private:
         g2o::SparseOptimizer optimizer;
         optimizer.setVerbose(true);
         g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
-
         if (DENSE) {
-            linearSolver = new g2o::LinearSolverDense<g2o::BlockSolver_6_3::PoseMatrixType>();
+            linearSolver= new g2o::LinearSolverDense<g2o::BlockSolver_6_3::PoseMatrixType>();
         } else {
             linearSolver = new g2o::LinearSolverCholmod<g2o::BlockSolver_6_3::PoseMatrixType>();
         }
+
 
         g2o::BlockSolver_6_3 * solver_ptr = new g2o::BlockSolver_6_3(linearSolver);
         g2o::OptimizationAlgorithmLevenberg* solver = new g2o::OptimizationAlgorithmLevenberg(solver_ptr);
         optimizer.setAlgorithm(solver);
 
 
-        /// camera model
-
-        double focal_length= 1.;
-        Vector2d principal_point(0., 0.);
-
-        g2o::CameraParameters * cam_params = new g2o::CameraParameters (focal_length, principal_point, 0.);
-        cam_params->setId(++id); //0
-
-        if (!optimizer.addParameter(cam_params)) {
-            assert(false);
-        }
-
-
         /// add poses
-        g2o::SE3Quat g2o_poseF ( f->getPose().linear(),  f->getPose().translation());
-        g2o::SE3Quat g2o_poseKF(kf->getPose().linear(), kf->getPose().translation());
+        VertexPose* v_se3KF = new VertexPose();
+        VertexPose* v_se3F  = new VertexPose();
 
-        g2o::VertexSE3Expmap * v_se3F  = new g2o::VertexSE3Expmap();
-        g2o::VertexSE3Expmap * v_se3KF = new g2o::VertexSE3Expmap();
+        v_se3KF->setEstimate(Eigen::Isometry3d(kf->getPose().matrix()));
+        v_se3F->setEstimate(Eigen::Isometry3d(f->getPose().matrix()));
 
-        v_se3F ->setEstimate(g2o_poseF);
-        v_se3KF->setEstimate(g2o_poseKF);
-
-        v_se3F ->setFixed(false);
         v_se3KF->setFixed(true);
+        v_se3F ->setFixed(false);
 
-        //v_se3F->setMarginalized(true); // TODO?
         //v_se3KF->setMarginalized(false);
+        //v_se3F->setMarginalized(true); // TODO?
 
-        v_se3F ->setId(++id); //1
-        v_se3KF->setId(++id); //2
+        v_se3KF->setId(++id);
+        v_se3F ->setId(++id);
 
         bool ok = optimizer.addVertex(v_se3F);
         ok &= optimizer.addVertex(v_se3KF);
         assert(ok);
 
-
-
         /// Add Points
-        std::vector<g2o::VertexSBAPointXYZ*> pointsg2o;
+        std::vector<VertexLandmarkXYZ*> pointsg2o;
         pointsg2o.reserve(worldPoints.size());
         for (uint i=0; i<worldPoints.size(); ++i){
-            g2o::VertexSBAPointXYZ * v_p = new g2o::VertexSBAPointXYZ();
+            VertexLandmarkXYZ * v_p = new VertexLandmarkXYZ();
             pointsg2o.push_back(v_p);
             v_p->setId(++id);
-            v_p->setMarginalized(true);
+            v_p->setMarginalized(true); /// TODO?
+            v_p->setFixed(false);
             v_p->setEstimate(worldPoints[i]);
-
 
             // check if point is visible
             /// if visible by 2 or more, add constraint
@@ -439,41 +429,37 @@ private:
             /// add observations for each kf  // for now we cheat and use bearing vectors as point on image plane
             // loop over keyframes that can see this point, here just two
             /// F
-            g2o::EdgeProjectXYZ2UV * ef = new g2o::EdgeProjectXYZ2UV();
-            ef->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
-            ef->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_se3F));
+            EdgePoseLandmarkReprojectBV * ef = new EdgePoseLandmarkReprojectBV();
+            ef->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_se3F));
+            ef->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
 
-            Eigen::Vector2d px = Eigen::Vector2d(bvFinlier[i][0]/bvFinlier[i][2], bvFinlier[i][1]/bvFinlier[i][2]);
-            Eigen::Vector2d px2 = cam_params->cam_map(g2o_poseF.map(worldPoints[i]));
-            ROS_INFO_STREAM_COND(i%50==0,"\nBV\n:"<<bvFinlier[i]<<"\nBV P:\n"<<px<<"\nPT P:\n"<<px2);
-
-            ef->setMeasurement(px); /// TODO: later this should be a bearing vector
-            ef->information() = Matrix2d::Identity();
+            Eigen::Vector2d pxf = Eigen::Vector2d(bvFinlier[i][0]/bvFinlier[i][2], bvFinlier[i][1]/bvFinlier[i][2]);
+            ef->setMeasurement(pxf);
+            ef->information() = Eigen::Matrix2d::Identity();
             if (ROBUST_KERNEL) {
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 ef->setRobustKernel(rk);
             }
-            ef->setParameterId(0, 0);
             optimizer.addEdge(ef);
 
+
+
             /// KF
-            g2o::EdgeProjectXYZ2UV * ekf = new g2o::EdgeProjectXYZ2UV();
-            ekf->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
-            ekf->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_se3KF));
-            //Vector2d zkf = (bvKFinlier[i]*(1./bvKFinlier[i][2])).head(2);
+            EdgePoseLandmarkReprojectBV * ekf = new EdgePoseLandmarkReprojectBV();
+            ekf->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_se3KF));
+            ekf->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
+
             Eigen::Vector2d pxkf = Eigen::Vector2d(bvKFinlier[i][0]/bvKFinlier[i][2], bvKFinlier[i][1]/bvKFinlier[i][2]);
-            Eigen::Vector2d px2kf = cam_params->cam_map(g2o_poseKF.map(worldPoints[i]));
-            ekf->setMeasurement(pxkf); /// TODO: later this should be a bearing vector
-            ekf->information() = Matrix2d::Identity();
+            ekf->setMeasurement(pxkf);
+            ekf->information() = Eigen::Matrix2d::Identity();
             if (ROBUST_KERNEL) {
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 ekf->setRobustKernel(rk);
             }
-            ekf->setParameterId(0, 0);
             optimizer.addEdge(ekf);
         }
 
-        //optimizer.save((ss.str()+"g2o.g2o)").c_str());
+
 
 
         /// Run optimisation
@@ -491,25 +477,18 @@ private:
             }
             structure_only_ba.calc(points, ITERATIONS);
         }
-        //optimizer.save("test.g2o");
+        optimizer.save("init.g2o");
         ROS_INFO("G2O > Performing full BA:");
 
         ros::WallTime t3 = ros::WallTime::now();
         optimizer.optimize(ITERATIONS);
 
 
-        ROS_INFO("G2O < Done BA [Setup: %.1fms][Opti: %.1fms][Total: %f.1ms]",(t3-t2).toSec()*1000.,(ros::WallTime::now()-t3).toSec()*1000.,(ros::WallTime::now()-t2).toSec()*1000.);
+        ROS_INFO("G2O < Done BA [Setup: %.1fms][Opti: %.1fms][Total: %f.1ms]", (t3-t2).toSec()*1000.,(ros::WallTime::now()-t3).toSec()*1000.,(ros::WallTime::now()-t2).toSec()*1000.);
 
         /// Extract G2O refinement
-        Eigen::Affine3d poseEstimateF;
-        poseEstimateF.translation() = v_se3F->estimate().translation();
-        poseEstimateF.linear()      = v_se3F->estimate().rotation().toRotationMatrix();
-
-        Eigen::Affine3d poseEstimateKF;
-        poseEstimateKF.translation() = v_se3KF->estimate().translation();
-        poseEstimateKF.linear()      = v_se3KF->estimate().rotation().toRotationMatrix();
-
-
+        Eigen::Affine3d poseEstimateF = v_se3F->estimate();
+        Eigen::Affine3d poseEstimateKF = v_se3KF->estimate();
 
         /// Saves current F and KF and Point vectors aligned and poses
         ROS_INFO("Saving INIT state Frame [%d/%d] and Frame [%d/%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
@@ -831,6 +810,7 @@ private:
 public:
     /// ////////////////////////////////////////////////////////////////////////////////////// PUBLIC METHODS
     Odometry(){
+        init_g2o_types();
         voRelRansacIter = 300;
         voRelRansacThresh = 1;
         voRelPoseMethod = 0;

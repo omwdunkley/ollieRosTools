@@ -104,6 +104,8 @@ SET(G2O_LIBS cholmod cxsparse -lg2o_cli -lg2o_core
 -lg2o_types_sba -lg2o_types_sclam2d -lg2o_types_sim3 -lg2o_types_slam2d
 -lg2o_types_slam3d)
 
+####### g2o custom types ###############################
+ADD_SUBDIRECTORY(src/custom_types)
 
 
 
@@ -148,14 +150,19 @@ SET(VO_FILES
 #target_link_libraries(preproc ${LIBRARIES} ${OpenCV_LIBS})
 
 rosbuild_add_executable(vo ${VO_FILES} )
-target_link_libraries(vo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(vo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS} g2o_custom_types)
 
 SET(BA_FILES
     src/ba_demo.cpp
 )
-
 rosbuild_add_executable(ba_demo ${BA_FILES} )
 target_link_libraries(ba_demo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
+
+SET(SBA_FILES
+    src/sba_demo.cpp
+)
+rosbuild_add_executable(sba_demo ${SBA_FILES} )
+target_link_libraries(sba_demo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
 #common commands for building c++ executables and libraries
 #rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
 #target_link_libraries(${PROJECT_NAME} another_library)

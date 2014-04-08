@@ -6,10 +6,13 @@
 #include <ollieRosTools/aux.hpp>
 //#include <ollieRosTools/PreProcNode_paramsConfig.h>
 
+//#include <g2o/types/slam3d/parameter_camera.h>
+
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 #include <Eigen/LU>
+
 #include <opencv2/highgui/highgui.hpp>
 
 /**
@@ -76,7 +79,7 @@ class CameraATAN {
 //                cv::imshow("out",testP);
 //                cv::imshow("in",imgIn);
 //                cv::waitKey(30);
-
+                ROS_INFO("CAM < RECTIFYIED");
             } else {
                 // Skip, just copy header
                 imgOut = imgIn;
@@ -119,10 +122,10 @@ class CameraATAN {
 
 
 
-                ROS_INFO("CAM = RECTIFYING TURED OFF, PASS THROUGH");
+                ROS_INFO("CAM < RECTIFICATION OFF, PASS THROUGH");
                 //imgIn.copyTo(imgOut);
             }
-            ROS_INFO("CAM < RECTIFYIED");
+
             return imgOut;
 
         }
@@ -340,20 +343,24 @@ class CameraATAN {
                 f2d.col(1).array() += icy;
             }
 
-
-
-            pts.resize(pts.size());
+            pts.reserve(pts.size());
             ROS_ERROR("CAM = NOT IMPLEMENTED unrectifyPoints");
             return f2d;
         }
 
-        void bearingVectors(const KeyPoints& keypoints, MatrixXd& bearings) const{
+
+//        g2o::ParameterCamera* getG2OCam() const {
+//            g2o::ParameterCamera * cam_params = new g2o::ParameterCamera();
+//            cam_params->setKcam(1.0,1.0,0.0,0.0);
+//            return cam_params;
+//        }
+        void bearingVectors(const KeyPoints& keypoints, MatrixXd& bearings, MatrixXd& pointsRectified) const{
             Points2f points;
             cv::KeyPoint::convert(keypoints, points);
-            bearingVectors(points, bearings);
+            bearingVectors(points, bearings, pointsRectified);
         }
 
-        void bearingVectors(const Points2f& points, MatrixXd& bearings) const{
+        void bearingVectors(const Points2f& points, MatrixXd& bearings, MatrixXd& pointsRectified) const{
             /// Given 2d points, compute the bearing vecotrs that point from the
             /// optical center in the direction of the features.
             // Note that this class might be rectifying images (in which case we just use the pinhole model)
@@ -419,6 +426,7 @@ class CameraATAN {
 
             }
 
+
             // Make homogenious, transpose 3xN
             const MatrixXf f2dh = f2d.transpose().colwise().homogeneous();
             //std::cout << "TCH:" << std::endl << f2dh << std::endl;
@@ -432,6 +440,8 @@ class CameraATAN {
 
             bearings.transposeInPlace(); // Nx3
             //std::cout << "T:" << std::endl<< bearings << std::endl;
+
+            pointsRectified = f2d.cast<double>();
 
         }
 

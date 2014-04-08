@@ -33,6 +33,10 @@
   <rosdep name="python-numpy" />
   <rosdep name="libg2o" />
 
+  <export>
+      <cpp cflags="-I${prefix}/include -I${prefix}/src" lflags="-L${prefix}/lib "/>
+  </export>
+
 </package>
 
 
