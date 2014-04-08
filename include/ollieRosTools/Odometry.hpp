@@ -5,9 +5,11 @@
 #include <fstream>
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <opencv2/core/eigen.hpp>
 
-/*
+
+#include <Eigen/StdVector>
 #include <g2o/core/sparse_optimizer.h>
 #include <g2o/core/block_solver.h>
 #include <g2o/core/solver.h>
@@ -18,7 +20,9 @@
 #include <g2o/types/sba/types_six_dof_expmap.h>
 //#include <g2o/math_groups/se3quat.h>
 #include <g2o/solvers/structure_only/structure_only_solver.h>
-*/
+
+
+
 #include <opengv/sac/Ransac.hpp>
 #include <opengv/sac_problems/absolute_pose/AbsolutePoseSacProblem.hpp>
 #include <opengv/sac_problems/relative_pose/CentralRelativePoseSacProblem.hpp>
@@ -326,79 +330,48 @@ private:
 //        kf->setWorldPoints(kfWPts3d, worldPoints);
 
         // remove points / keypoints / descriptors / etc not used
-        Ints indF, indKF;
-        OVO::match2ind(matchesVO, indF, indKF);
-        f->setWorldPoints(indF, worldPoints);
-        kf->setWorldPoints(indKF, worldPoints);
-
-        map.addKeyFrame(f);
-
-        ROS_INFO("ODO < Initialised");
 
 
 
 
-
-
-        /// Saves current F and KF and Point vectors aligned and poses
-        ROS_INFO("Saving INIT state Frame [%d/%d] and Frame [%d/%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
-
-
-
-        // poses
-        cv::Mat poseF, poseKF;
-        cv::eigen2cv(f->getPose().matrix(),poseF);
-        cv::eigen2cv(kf->getPose().matrix(),poseKF);
-
-        cv::Mat data;
-        for (uint i=0; i<worldPoints.size(); ++i){
-            double r[9] = {bvFinlier[i][0], bvFinlier[i][1], bvFinlier[i][2], bvKFinlier[i][0], bvKFinlier[i][1], bvKFinlier[i][2], worldPoints[i][0], worldPoints[i][1], worldPoints[i][2]};
-            data.push_back(cv::Mat(1, 9, CV_64F, r));
-        }
-
-        std::stringstream ss;
-        ss << "./F" << f->getId() << "_KF" << kf->getId() << "_" << data.rows << "_";
-        std::string filenameBV = ss.str() +"bvp.csv";
-        std::string filenameT = ss.str()+"tf.csv";
-        std::ofstream fileBV(filenameBV.c_str());
-        std::ofstream fileT(filenameT.c_str());
-        if (fileBV.is_open()) {
-            fileBV << format(data,"csv") << std::endl <<std:: endl;
-            fileBV.close();
-            ROS_INFO("Saved file [%s]", filenameBV.c_str());
-        } else {
-            ROS_ERROR("Could not save file [%s]", filenameBV.c_str());
-        }
-
-
-        if (fileT.is_open()) {
-            fileT << format(poseF,"csv") << format(poseKF,"csv") << std::endl <<std:: endl;
-            fileT.close();
-            ROS_INFO("Saved file [%s]", filenameT.c_str());
-        } else {
-            ROS_ERROR("Could not save file [%s]", filenameT.c_str());
-        }
+//        ROS_WARN("Added noise to worldpts: %s",  __SHORTFILE__);
+//        for (uint i=0; i<worldPoints.size(); ++i){
+//            worldPoints[i]+= opengv::point_t(0.1,0.1,-0.1);
+//        }
+//        Eigen::Affine3d p = f->getPose();
+//        p.translate(Eigen::Vector3d(-0.2, 0.05, 0.1));
+//        f->setPose(p);
 
 
 
-/*
 
 
 
+        ros::WallTime t2 = ros::WallTime::now();
         /// TODO
             // MEMORY CLEANUP
             // BlockSolver_7_3 (BA SCALE)
+            // DENSE?
             // check min nr observations, min distance between kfs, etc
             // setMarginalized ??
             // set fixed ??
+            const bool DENSE = false;
+            const bool ROBUST_KERNEL = false;
+            const bool STRUCTURE_ONLY = false;
+            const int ITERATIONS = 20;
+            // what to do if assertions fail?
 
 
 
         // G2O stuff
         /// Optimiser
+
+        int id = -1;
+
         g2o::SparseOptimizer optimizer;
         optimizer.setVerbose(true);
         g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
+
         if (DENSE) {
             linearSolver = new g2o::LinearSolverDense<g2o::BlockSolver_6_3::PoseMatrixType>();
         } else {
@@ -410,33 +383,53 @@ private:
         optimizer.setAlgorithm(solver);
 
 
+        /// camera model
+
+        double focal_length= 1.;
+        Vector2d principal_point(0., 0.);
+
+        g2o::CameraParameters * cam_params = new g2o::CameraParameters (focal_length, principal_point, 0.);
+        cam_params->setId(++id); //0
+
+        if (!optimizer.addParameter(cam_params)) {
+            assert(false);
+        }
 
 
         /// add poses
-        g2o::SE3Quat g2o_poseF(f->getPose().linear(),f->getPose().translation());
-        g2o::SE3Quat g2o_poseKF(kf->getPose().linear(),kf->getPose().translation());
+        g2o::SE3Quat g2o_poseF ( f->getPose().linear(),  f->getPose().translation());
+        g2o::SE3Quat g2o_poseKF(kf->getPose().linear(), kf->getPose().translation());
 
-        g2o::VertexSE3Expmap * v_se3F = new g2o::VertexSE3Expmap();
+        g2o::VertexSE3Expmap * v_se3F  = new g2o::VertexSE3Expmap();
         g2o::VertexSE3Expmap * v_se3KF = new g2o::VertexSE3Expmap();
 
         v_se3F ->setEstimate(g2o_poseF);
         v_se3KF->setEstimate(g2o_poseKF);
 
-        v_se3F ->setFixed(true);
+        v_se3F ->setFixed(false);
         v_se3KF->setFixed(true);
 
-        v_se3F ->setId(-1);
-        v_se3KF->setId(-2);
+        //v_se3F->setMarginalized(true); // TODO?
+        //v_se3KF->setMarginalized(false);
 
-        optimizer.addVertex(v_se3F);
-        optimizer.addVertex(v_se3KF);
+        v_se3F ->setId(++id); //1
+        v_se3KF->setId(++id); //2
+
+        bool ok = optimizer.addVertex(v_se3F);
+        ok &= optimizer.addVertex(v_se3KF);
+        assert(ok);
+
+
 
         /// Add Points
-        for (uint i=0; i<pts.size(); ++i){
+        std::vector<g2o::VertexSBAPointXYZ*> pointsg2o;
+        pointsg2o.reserve(worldPoints.size());
+        for (uint i=0; i<worldPoints.size(); ++i){
             g2o::VertexSBAPointXYZ * v_p = new g2o::VertexSBAPointXYZ();
-            v_p->setId(i);
+            pointsg2o.push_back(v_p);
+            v_p->setId(++id);
             v_p->setMarginalized(true);
-            v_p->setEstimate(pts[i]);
+            v_p->setEstimate(worldPoints[i]);
 
 
             // check if point is visible
@@ -444,40 +437,145 @@ private:
             optimizer.addVertex(v_p);
 
             /// add observations for each kf  // for now we cheat and use bearing vectors as point on image plane
-            g2o::EdgeProjectXYZ2UV * e = new g2o::EdgeProjectXYZ2UV();
-            e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
-            e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertices().find(j)->second));
-            e->setMeasurement(z);
-            e->information() = Matrix2d::Identity();
+            // loop over keyframes that can see this point, here just two
+            /// F
+            g2o::EdgeProjectXYZ2UV * ef = new g2o::EdgeProjectXYZ2UV();
+            ef->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
+            ef->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_se3F));
+
+            Eigen::Vector2d px = Eigen::Vector2d(bvFinlier[i][0]/bvFinlier[i][2], bvFinlier[i][1]/bvFinlier[i][2]);
+            Eigen::Vector2d px2 = cam_params->cam_map(g2o_poseF.map(worldPoints[i]));
+            ROS_INFO_STREAM_COND(i%50==0,"\nBV\n:"<<bvFinlier[i]<<"\nBV P:\n"<<px<<"\nPT P:\n"<<px2);
+
+            ef->setMeasurement(px); /// TODO: later this should be a bearing vector
+            ef->information() = Matrix2d::Identity();
             if (ROBUST_KERNEL) {
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
-                e->setRobustKernel(rk);
+                ef->setRobustKernel(rk);
             }
-            e->setParameterId(0, 0);
-            optimizer.addEdge(e);
+            ef->setParameterId(0, 0);
+            optimizer.addEdge(ef);
+
+            /// KF
+            g2o::EdgeProjectXYZ2UV * ekf = new g2o::EdgeProjectXYZ2UV();
+            ekf->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
+            ekf->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_se3KF));
+            //Vector2d zkf = (bvKFinlier[i]*(1./bvKFinlier[i][2])).head(2);
+            Eigen::Vector2d pxkf = Eigen::Vector2d(bvKFinlier[i][0]/bvKFinlier[i][2], bvKFinlier[i][1]/bvKFinlier[i][2]);
+            Eigen::Vector2d px2kf = cam_params->cam_map(g2o_poseKF.map(worldPoints[i]));
+            ekf->setMeasurement(pxkf); /// TODO: later this should be a bearing vector
+            ekf->information() = Matrix2d::Identity();
+            if (ROBUST_KERNEL) {
+                g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
+                ekf->setRobustKernel(rk);
+            }
+            ekf->setParameterId(0, 0);
+            optimizer.addEdge(ekf);
+        }
+
+        //optimizer.save((ss.str()+"g2o.g2o)").c_str());
+
+
+        /// Run optimisation
+        optimizer.initializeOptimization();
+        optimizer.setVerbose(true);
+        if (STRUCTURE_ONLY){
+            g2o::StructureOnlySolver<3> structure_only_ba;
+            ROS_INFO("G2O > Performing structure-only BA");
+            g2o::OptimizableGraph::VertexContainer points;
+            for (g2o::OptimizableGraph::VertexIDMap::const_iterator it = optimizer.vertices().begin(); it != optimizer.vertices().end(); ++it) {
+                g2o::OptimizableGraph::Vertex* v = static_cast<g2o::OptimizableGraph::Vertex*>(it->second);
+                if (v->dimension() == 3){
+                    points.push_back(v);
+                }
+            }
+            structure_only_ba.calc(points, ITERATIONS);
+        }
+        //optimizer.save("test.g2o");
+        ROS_INFO("G2O > Performing full BA:");
+
+        ros::WallTime t3 = ros::WallTime::now();
+        optimizer.optimize(ITERATIONS);
+
+
+        ROS_INFO("G2O < Done BA [Setup: %.1fms][Opti: %.1fms][Total: %f.1ms]",(t3-t2).toSec()*1000.,(ros::WallTime::now()-t3).toSec()*1000.,(ros::WallTime::now()-t2).toSec()*1000.);
+
+        /// Extract G2O refinement
+        Eigen::Affine3d poseEstimateF;
+        poseEstimateF.translation() = v_se3F->estimate().translation();
+        poseEstimateF.linear()      = v_se3F->estimate().rotation().toRotationMatrix();
+
+        Eigen::Affine3d poseEstimateKF;
+        poseEstimateKF.translation() = v_se3KF->estimate().translation();
+        poseEstimateKF.linear()      = v_se3KF->estimate().rotation().toRotationMatrix();
 
 
 
+        /// Saves current F and KF and Point vectors aligned and poses
+        ROS_INFO("Saving INIT state Frame [%d/%d] and Frame [%d/%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
+        // poses
+        cv::Mat poseF, poseKF, poseFg2o, poseKFg2o;
+        cv::eigen2cv(f->getPose().matrix(),  poseF);
+        cv::eigen2cv(kf->getPose().matrix(), poseKF);
+        cv::eigen2cv(poseEstimateF.matrix(),  poseFg2o);
+        cv::eigen2cv(poseEstimateKF.matrix(), poseKFg2o);
+
+        cv::Mat data; // BVF BVKF WP WPg2o
+        for (uint i=0; i<worldPoints.size(); ++i){
+            double r[12] = {bvFinlier[i][0],             bvFinlier[i][1],             bvFinlier[i][2],
+                            bvKFinlier[i][0],            bvKFinlier[i][1],            bvKFinlier[i][2],
+                            worldPoints[i][0],           worldPoints[i][1],           worldPoints[i][2],
+                            pointsg2o[i]->estimate()[0], pointsg2o[i]->estimate()[1], pointsg2o[i]->estimate()[2]};
+            data.push_back(cv::Mat(1, 12, CV_64F, r));
+        }
+
+        /// SAVE FILES
+        std::stringstream ss;
+        //ss << "./F" << f->getId() << "_KF" << kf->getId() << "_" << data.rows << "_";
+        ss << "./FvsKF_Init_";
+        std::string filenameBV = ss.str() +"bvp.csv";
+        std::string filenameT = ss.str()+"tf.csv";
+        std::ofstream fileBV(filenameBV.c_str());
+        std::ofstream fileT(filenameT.c_str());
+        if (fileBV.is_open()) {
+            fileBV << format(data,"csv") << std::endl <<std:: endl;
+            fileBV.close();
+            ROS_INFO("Saved file [%s]", filenameBV.c_str());
+        } else {
+            ROS_ERROR("Could not save file [%s]", filenameBV.c_str());
+        }
+        if (fileT.is_open()) {
+            fileT << format(poseF,"csv")
+                  << format(poseKF,"csv")
+                  << format(poseFg2o,"csv")
+                  << format(poseKFg2o,"csv") << std::endl <<std:: endl;
+            fileT.close();
+            ROS_INFO("Saved file [%s]", filenameT.c_str());
+        } else {
+            ROS_ERROR("Could not save file [%s]", filenameT.c_str());
         }
 
 
 
 
 
+        f->setPose(poseEstimateF);
+        kf->setPose(poseEstimateKF); // fixed
+        pointsg2o.reserve(worldPoints.size());
+        for (uint i=0; i<worldPoints.size(); ++i){
+            worldPoints[i] = pointsg2o[i]->estimate();
+        }
 
+        Ints indF, indKF;
+        OVO::match2ind(matchesVO, indF, indKF);
+        f->setWorldPoints(indF, worldPoints);
+        kf->setWorldPoints(indKF, worldPoints);
 
-        // add world points
-        // add
+        map.addKeyFrame(f);
 
+        ROS_INFO("ODO < Initialised");
 
-
-
-
-
-
-*/
-
-
+        optimizer.clear();
 
 
         return true;
