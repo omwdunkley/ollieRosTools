@@ -112,6 +112,7 @@ namespace OVO {
         }
     }
 
+    cv::Mat rotateImage(const cv::Mat& in, const double angleRad, const int interpolation=CV_INTER_LINEAR, const double scale=1.0, const double threshDeg=0.1);
 
 }
 

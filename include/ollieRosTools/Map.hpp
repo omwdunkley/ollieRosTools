@@ -69,6 +69,17 @@ class OdoMap {
             return keyframes;
         }
 
+        FramePtrs getClosestKeyframes(FramePtr){
+            /// Goes through all keyframes and gets the cloest N frames
+
+            /// image descriptor (rotation invarient)
+            /// sbi ncc/ssd  ( rotated)
+            /// estimated angle
+            /// x,y,z < 2m,
+            /// gyro angle, yaw only +- 45 degrees
+            /// optical axis vs optical axis < 45 degrees
+        }
+
 
         /// Goes through all map points and remove them if they only have one reference (ie this container holding it)
         void removeNonVisiblePoints(){

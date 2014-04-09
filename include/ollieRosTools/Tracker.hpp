@@ -868,6 +868,12 @@ class Tracker{
             OVO::putInt(img, timeTrack*1000., cv::Point(10,img.rows-3*25), CV_RGB(200,0,200), false, "T:");
             cv::addWeighted(img, 1.0, imgOverlay, 0.8, 0.0, img);
 
+
+
+            /// TODO: remove
+            float val = currFrame->compareSBI(keyFrame);
+            OVO::putInt(img, val, cv::Point(10,img.rows-7*25),  OVO::getColor(0.f, 1.f,val, true), false, "SBI:");
+
             return img;
         }
 

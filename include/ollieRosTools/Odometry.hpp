@@ -366,7 +366,7 @@ private:
             const bool DENSE = false;
             const bool ROBUST_KERNEL = false;
             const bool STRUCTURE_ONLY = false;
-            const int ITERATIONS = 20;
+            const int ITERATIONS = 3;
             // what to do if assertions fail?
 
 

@@ -5,7 +5,6 @@
 #include <g2o/core/base_binary_edge.h>
 #include <g2o/core/hyper_graph_action.h>
 
-#include <ollieRosTools/custom_types/camera_projection.hpp>
 #include <ollieRosTools/custom_types/vertex_pose.hpp>
 #include <ollieRosTools/custom_types/vertex_landmarkxyz.hpp>
 

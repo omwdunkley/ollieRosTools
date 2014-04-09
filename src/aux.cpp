@@ -119,6 +119,19 @@ void OVO::transformPoints(const Eigen::Affine3d& transform, opengv::points_t& po
     }
 }
 
+cv::Mat OVO::rotateImage(const cv::Mat& in, const double angleRad, const int interpolation, const double scale, const double thresh) {
+    double angleDeg = angleRad * toDeg;
+    cv::Mat out;
+    if (scale!= 1.0 || std::abs(angleDeg)>thresh){
+        cv::Mat rot_mat = cv::getRotationMatrix2D(cv::Point(in.cols/2., in.rows/2.), angleDeg, scale);
+        cv::warpAffine(in, out, rot_mat, in.size(), 0, 0, interpolation);
+    } else {
+        out = in;
+    }
+    return out;
+}
+
+
 Eigen::VectorXd OVO::reprojectErrPointsVsBV(
         const Eigen::Affine3d& model,
         const opengv::points_t& points,

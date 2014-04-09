@@ -26,6 +26,7 @@ class Frame{
     private:
         cv::Mat image;
         cv::Mat mask;
+        cv::Mat sbi;
         Mats pyramid;
         cv::Size pyramidWindowSize;
         opengv::rotation_t imuAttitudeCam; // IMU rotation in the camera frame
@@ -179,7 +180,89 @@ class Frame{
             estimateImageQuality();
 
             ROS_INFO("FRA < NEW FRAME CREATED [ID: %d]", id);
+
+
         }
+
+
+        const cv::Mat& getSBI(){
+            /// Returns a reference to a small blurry image. Computes if if required.
+            if (sbi.empty()){
+                computeSBI();
+            }
+            return sbi;
+        }
+
+        void computeSBI(){
+            /// Computes the sbi
+            ROS_INFO("SBI > Computing SBI [ID: %d]", id);
+            ros::WallTime t0 = ros::WallTime::now();
+
+            double mindimr = std::min(image.cols, image.rows)*0.5;
+
+            cv::Mat sbiroi = cv::Mat(image.clone(), cv::Rect(image.cols/2 - mindimr, image.rows/2 - mindimr, mindimr*2, mindimr*2));
+            sbiroi.convertTo(sbi, CV_32FC1);
+            cv::resize(sbi, sbi, cv::Size(), 0.5, 0.5, CV_INTER_AREA);
+            sbi = OVO::rotateImage(sbi, -getRoll(), CV_INTER_LINEAR, 1.0, 1);
+            cv::resize(sbi, sbi, cv::Size(), 0.5, 0.5, CV_INTER_AREA);
+            //cv::boxFilter(sbi, sbi, -1, cv::Size(5,5));
+            cv::GaussianBlur(sbi, sbi, cv::Size(), 2, 2);
+            sbi = sbi(cv::Rect(sbi.cols/2 - sbi.cols/2*0.707, sbi.rows/2 - sbi.rows/2*0.707, sbi.cols/2*1.414, sbi.rows/2*1.414));
+
+
+            sbi -= cv::mean(sbi);
+            double time = (ros::WallTime::now()-t0).toSec();
+
+            ROS_INFO("SBI < Computed in [%.1fms]" ,time*1000.);
+
+        }
+
+        float compareSBI(FramePtr& f) {
+            ROS_INFO("SBI > Comparing SBI F[%d] vs F[%d]", id, f->getId());
+            ros::WallTime t0 = ros::WallTime::now();
+            cv::Mat result;
+            const cv::Mat s = getSBI();
+            int match_method = CV_TM_CCORR_NORMED; // CV_TM_SQDIFF, CV_TM_SQDIFF_NORMED, CV_TM _CCORR, CV_TM_CCORR_NORMED, CV_TM_CCOEFF, CV_TM_CCOEFF_NORMED
+            cv::matchTemplate(f->getSBI(), s(cv::Rect(s.cols*0.25, s.rows*0.25, s.cols*0.5, s.rows*0.5)), result, match_method);
+            double minVal, maxVal, value;
+            cv::Point minLoc, maxLoc, matchLoc;
+            cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
+            cv::normalize(result, result, 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
+
+            if( match_method  == CV_TM_SQDIFF || match_method == CV_TM_SQDIFF_NORMED ){
+                matchLoc = minLoc;
+                value = minVal;
+            } else {
+                matchLoc = maxLoc;
+                value = maxVal;
+            }
+
+
+            double time = (ros::WallTime::now()-t0).toSec();
+            ROS_INFO("SBI < Similarity: %f [%.1fms]" ,value, time*1000.);
+
+            cv::Mat debug_img = f->getSBI().clone();
+            cv::rectangle(debug_img, matchLoc, cv::Point(matchLoc.x + s.cols/2 , matchLoc.y + s.rows/2), CV_RGB(255,0,0));
+            cv::circle(debug_img, cv::Point(matchLoc.x + s.cols/4 , matchLoc.y + s.rows/4), 3, CV_RGB(255,0,0), 1, CV_AA);
+            cv::hconcat(debug_img, s.clone(), debug_img);
+            cv::rectangle(debug_img, cv::Point(s.cols*1.25, s.rows*0.25), cv::Point(s.cols*7./4. , s.rows*0.75), CV_RGB(255,0,0));
+            cv::normalize(debug_img, debug_img, 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
+            cv::imshow("debug_img", debug_img);
+
+            cv::Mat debug_img2;
+            cv::hconcat(cv::Mat(f->getSBI(), cv::Rect(matchLoc, cv::Point(matchLoc.x + s.cols/2 , matchLoc.y + s.rows/2))) ,
+                        cv::Mat(s,           cv::Rect(cv::Point(s.cols*0.25, s.rows*0.25), cv::Point(s.cols*0.75 , s.rows*0.75))), debug_img2);
+            cv::normalize(debug_img2, debug_img2, 0, 1, cv::NORM_MINMAX, -1, cv::Mat());
+            cv::imshow("debug_img2", debug_img2);
+
+
+
+
+            cv::waitKey(10);
+
+            return value;
+        }
+
 
         /// KF ONLY FUNCTIONS
         // Gets Desc at specified row
