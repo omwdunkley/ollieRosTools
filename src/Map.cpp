@@ -1,6 +1,15 @@
 #include <ollieRosTools/Map.hpp>
 
-int OdoPoint::pIdCounter = 0;
+int Landmark::pIdCounter = 0;
+double Landmark::angleConeThresh = OVO::px2error(4); // default error within +- 4px
+double Landmark::angleFOVThresh  = OVO::px2error(4); // default error within +- 4px
+double Landmark::distThreshRatio = 0.3; // default distance error within +-30% tolerance of original distance allowed
+double Landmark::distThresh      = 0.2; // 20cm tolerance allowed
+
+
+bool noRef(const LandmarkPtr& p){
+    return !(*(p.refcount)>1);
+}
 
 
 cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, const Ints& idx){
@@ -40,6 +49,3 @@ cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, c
     return img;
 }
 
-bool noRef(const PointPtr& p){
-    return !(*(p.refcount)>1);
-}

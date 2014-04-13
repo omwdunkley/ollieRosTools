@@ -22,7 +22,7 @@ extern bool USEIMU;
 
 //forward declated
 class Frame;
-class OdoPoint;
+class Landmark;
 
 #define __SHORTFILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
@@ -52,8 +52,8 @@ typedef std::vector< double > Doubles;
 typedef std::vector< cv::Mat > Mats;
 typedef cv::Ptr<Frame> FramePtr;
 typedef std::deque<FramePtr> FramePtrs;
-typedef cv::Ptr<OdoPoint> PointPtr;
-typedef std::deque<PointPtr> PointPtrs;
+typedef cv::Ptr<Landmark> LandmarkPtr;
+typedef std::deque<LandmarkPtr> LandMarkPtrs;
 
 
 const float toRad = M_PI/180;
@@ -62,6 +62,14 @@ const float toDeg = 180/M_PI;
 
 
 namespace OVO {
+
+    enum BEARING_ERROR {OneMinusAdotB, // 1-A.B
+                    ATAN2,             // ATAN2(||AxB||, A.B)
+                    NormAminusB,       // ||A-B||
+                    SUM_AminusBSqr     // sum((A-B)**2
+                   };
+
+    const BEARING_ERROR DEFAULT_BV_ERROR = OneMinusAdotB;
 
     /// TODO: put this in a look up table
     CvScalar getColor(const float range_min, const float range_max, const float depth, bool reverse = false);
@@ -101,15 +109,16 @@ namespace OVO {
     void transformPoints(const Pose& transform, Points3d& points);
 
     /// points in world frame, model in world frame, bv in model frame
-    Eigen::VectorXd reprojectErrPointsVsBV(
-            const Pose& model,
-            const Points3d& points,
-            const Bearings& bv);
-
+    Eigen::VectorXd reprojectErrPointsVsBV(const Pose& model, const Points3d& points,const Bearings& bv, const BEARING_ERROR method = DEFAULT_BV_ERROR);
     /// Same as above but points are already in frame of bv
-    Eigen::VectorXd reprojectErrPointsVsBV(
-            const Points3d& points,
-            const Bearings& bv);
+    Eigen::VectorXd reprojectErrPointsVsBV(const Points3d& points, const Bearings& bv, const BEARING_ERROR method = DEFAULT_BV_ERROR);
+    /// Computes an error given an angular difference (between two bearing vectors)
+    double angle2error(const double angleDeg, const BEARING_ERROR method = DEFAULT_BV_ERROR );
+    /// Compute the error between bearing vectors
+    double errorBV(const Bearing bv1, const Bearing bv2, const BEARING_ERROR method = DEFAULT_BV_ERROR );
+    /// returns the error given px dist on image plane with focal length f
+    double px2error(const double px, const double horiFovDeg = 110., const double width = 720, const BEARING_ERROR method = DEFAULT_BV_ERROR);
+
 
     template <class T, class T2> void vecAlignMatch (const T& vec1in, const T2& vec2in,
                                                      T& vec1out,      T2& vec2out,

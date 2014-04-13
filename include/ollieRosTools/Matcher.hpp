@@ -25,7 +25,6 @@ void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float simil
 // same as above, but works in place, preserving order and size
 void matchFilterUnique(DMatchesKNN& msknn, const float similarity);
 
-
 // Reduces vector of vectors DMatchesKNN to a single vector DMatches
 void matchKnn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_sorted=false, const size_t maxPerMatch=5);
 
@@ -35,8 +34,10 @@ void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted=fals
 // Remove all matches below threshold.
 void matchThreshold(DMatches& ms, float thresh, bool is_sorted=false);
 
-// Compute average/median distance of a set of matches
+// Compute average distance of a set of matches
 float matchAverageDistance(const DMatches& ms);
+
+// Compute median distance of a set of matches
 float matchMedianDistance(DMatches& ms, const bool is_sorted=false);
 
 // Returns true if match not good enough
@@ -70,14 +71,12 @@ public:
                const Ints& maskIdx=Ints()
             );
 
+    // Match descriptor -> descriptors. Returns best
+    bool match(const cv::Mat& descSingle,
+               const cv::Mat& descMulti,
+               cv::DMatch& m
+            );
 
-    // Match frame-map
-//    void match( FramePtr& frame,
-//                PointMap& map,
-//                DMatchesKNN& matches,
-//                float& disparity,
-//                float& time
-//            );
 
     float getMaxDisp() const{return m_pxdist;}
 
@@ -123,14 +122,5 @@ private:
 };
 
 #endif // MATCHER_HPP
-
-
-// Add matching stuff
-// disparity
-// setParam
-// frame-frame
-// frame-map
-
-
 
 

@@ -121,7 +121,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     }
 
     /// Make Frame
-    cv::Ptr<Frame> frame(new Frame(cvPtr->image, imuStamped));
+    FramePtr frame(new Frame(cvPtr->image, imuStamped));
 
     ROS_INFO("NODE > PROCESSING FRAME [%d]", frame->getId());
 

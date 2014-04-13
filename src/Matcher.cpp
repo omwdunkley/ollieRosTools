@@ -822,8 +822,6 @@ DMatches disparityFilter(const DMatches& in, FramePtr& fQuery, FramePtr& fTrain,
     const KeyPoints& kp1 = fQuery->getRotatedKeypoints();
 
 
-
-
 //    cv::Mat img1 = cv::Mat::zeros(size,CV_8UC3);
 //    cv::Mat img2 = cv::Mat::zeros(size,CV_8UC3);
 //    cv::drawKeypoints(img1,f1.getKPs(),img1,CV_RGB(255,0,0));
@@ -833,7 +831,6 @@ DMatches disparityFilter(const DMatches& in, FramePtr& fQuery, FramePtr& fTrain,
 
 //    cv::imshow("img1",img1);
 //    cv::imshow("img2",img2);
-
 
 
     outMatches.reserve(in.size());
@@ -902,37 +899,45 @@ bool isSorted(const DMatches& ms){
     return true;
 }
 
-float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms){
+float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms, bool median=true ){
 
-    /// AVERAGE
-//            const uint size = ms.size();
-//            if (size==0){
-//                return 0.f;
-//            }
-//            const KeyPoints& p1 = f1->getRotatedKeypoints();
-//            const KeyPoints& p2 = f2->getRotatedKeypoints();
-//            float s = 0;
-//            for (uint i=0; i<ms.size(); ++i){
-//                s+=cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt );
-//            }
-//            return s/size;
+    if (!median){
+        /// AVERAGE
+        ROS_INFO("MAT > Computing [average] rotated disparity of [%lu] matches between Frames [%d|%d] vs [%d|%d]", ms.size(), f1->getId(), f1->getKfId(), f2->getId(), f2->getKfId());
+        const uint size = ms.size();
+        if (size==0){
+            return 0.f;
+        }
+        const KeyPoints& p1 = f1->getRotatedKeypoints();
+        const KeyPoints& p2 = f2->getRotatedKeypoints();
+        float s = 0;
+        for (uint i=0; i<ms.size(); ++i){
+            s+=cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt );
+        }
+        float disparity = s/size;
+        ROS_INFO("MAT < Average disparity = %.1f", disparity );
+        return disparity;
 
-    /// MEDIAN
-    ROS_INFO("FTR = Computing median rotated disparity of [%lu] matches", ms.size());
+    } else {
+        /// MEDIAN
+        ROS_INFO("FTR > Computing [median] rotated disparity of [%lu] matches between Frames [%d|%d] vs [%d|%d]", ms.size(), f1->getId(), f1->getKfId(), f2->getId(), f2->getKfId());
+        if (ms.size()==0){
+            return 0;
+        }
+        const KeyPoints& p1 = f1->getRotatedKeypoints();
+        const KeyPoints& p2 = f2->getRotatedKeypoints();
+        Floats disp;
+        disp.reserve(ms.size());
+        for (uint i=0; i<ms.size(); ++i){
+            disp.push_back(cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt ));
+        }
+        uint middle = disp.size() / 2;
+        nth_element(disp.begin(), disp.begin()+middle, disp.end());
 
-    if (ms.size()==0){
-        return 0;
+        float disparity = disp[middle];
+        ROS_INFO("MAT < Median disparity = %.1f", disparity );
+        return disparity;
     }
-    const KeyPoints& p1 = f1->getRotatedKeypoints();
-    const KeyPoints& p2 = f2->getRotatedKeypoints();
-    Floats disp;
-    disp.reserve(ms.size());
-    for (uint i=0; i<ms.size(); ++i){
-       disp.push_back(cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt ));
-    }
-    uint middle = disp.size() / 2;
-    nth_element(disp.begin(), disp.begin()+middle, disp.end());
-    return disp[middle];
 }
 
 void sortMatches(DMatches& ms){

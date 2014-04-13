@@ -51,11 +51,6 @@ namespace RP = opengv::sac_problems::relative_pose;
 
 
 
-
-
-
-
-
 class Odometry
 {
 
@@ -417,23 +412,23 @@ private:
         std::vector<VertexLandmarkXYZ*> pointsg2o;
         pointsg2o.reserve(worldPoints.size());
         for (uint i=0; i<worldPoints.size(); ++i){
-            VertexLandmarkXYZ * v_p = new VertexLandmarkXYZ();
-            pointsg2o.push_back(v_p);
-            v_p->setId(++id);
-            v_p->setMarginalized(true);
-            v_p->setFixed(false);
-            v_p->setEstimate(worldPoints[i]);
+            VertexLandmarkXYZ * v_lm = new VertexLandmarkXYZ();
+            pointsg2o.push_back(v_lm);
+            v_lm->setId(++id);
+            v_lm->setMarginalized(true);
+            v_lm->setFixed(false);
+            v_lm->setEstimate(worldPoints[i]);
 
             // check if point is visible
             /// if visible by 2 or more, add constraint
-            optimizer.addVertex(v_p);
+            optimizer.addVertex(v_lm);
 
             /// add observations for each kf  // for now we cheat and use bearing vectors as point on image plane
             // loop over keyframes that can see this point, here just two
             /// F
             EdgePoseLandmarkReprojectBV * ef = new EdgePoseLandmarkReprojectBV();
             ef->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_se3F));
-            ef->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
+            ef->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_lm));
 
             Eigen::Vector2d pxf = Eigen::Vector2d(bvFinlier[i][0]/bvFinlier[i][2], bvFinlier[i][1]/bvFinlier[i][2]);
             ef->setMeasurement(pxf);
@@ -449,7 +444,7 @@ private:
             /// KF
             EdgePoseLandmarkReprojectBV * ekf = new EdgePoseLandmarkReprojectBV();
             ekf->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_se3KF));
-            ekf->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
+            ekf->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_lm));
 
             Eigen::Vector2d pxkf = Eigen::Vector2d(bvKFinlier[i][0]/bvKFinlier[i][2], bvKFinlier[i][1]/bvKFinlier[i][2]);
             ekf->setMeasurement(pxkf);
