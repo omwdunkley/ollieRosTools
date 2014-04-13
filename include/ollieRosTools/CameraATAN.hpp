@@ -148,9 +148,10 @@ class CameraATAN {
         }
 
         /// TODO DO this with eigen, and we have some+- mistakes somewhere along the way
-        KeyPoints rotatePoints(const KeyPoints& keypoints, const double angleRad, bool aroundOptical=true) const{
+        KeyPoints rotatePoints(const KeyPoints& keypoints, const double angleRad, bool aroundOptical=true) const{            
             // Copy key points
             KeyPoints keypointsOut = keypoints;
+            ROS_INFO("CAM > Rotating [%lu] Keypoints [%.f] degrees around the [%s] center", keypointsOut.size(), angleRad*toDeg, aroundOptical ? "Optical":"Image");
 
             // Get center
             cv::Point2d center;
@@ -191,6 +192,7 @@ class CameraATAN {
 //            }
 //            cv::imshow("center", img);
 //            cv::waitKey(10);
+            ROS_INFO("CAM < Rotated");
 
             return keypointsOut;
         }

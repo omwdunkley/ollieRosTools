@@ -30,12 +30,13 @@ CvScalar OVO::getColor(const float range_min, const float range_max, float depth
     //    else if (i == 4) color[0] = n, color[1] = 1, color[2] = 0; //B
     //    else if (i == 5) color[0] = 1, color[1] = n, color[2] = 0; //P
     //    else if (i >= 6) color[0] = 1, color[1] = 0, color[2] = n; //M
+    if (i <= 1) color[0] = 1, color[1] = 0, color[2] = n; //M
     if (i == 2) color[0] = n, color[1] = 0, color[2] = 1; //R
     if (i == 3) color[0] = 0, color[1] = n, color[2] = 1; //Y
     if (i >= 4) color[0] = 0, color[1] = 1, color[2] = n; //G
     //if (i >= 5) color[0] = n, color[1] = 1, color[2] = 0; //B
     //if (i <= 1) color[0] = 1, color[1] = n, color[2] = 0; //P
-    if (i <= 1) color[0] = 1, color[1] = 0, color[2] = n; //M
+
 
     color *= 255;
     if (reverse){
@@ -80,6 +81,15 @@ void OVO::matReduceInd (const cv::Mat& matIn, cv::Mat& matOut, const Ints& ind){
         matOut.push_back(matIn.row(ind[i]));
     }
 }
+void OVO::matReduceInd (cv::Mat& matInOut, const Ints& ind){
+    cv::Mat matTemp;
+    matTemp = cv::Mat();
+    matTemp.reserve(ind.size());
+    for(uint i=0;i<ind.size(); ++i){
+        matTemp.push_back(matInOut.row(ind[i]));
+    }
+    std::swap(matTemp, matInOut);
+}
 
 void OVO::match2ind(const DMatches& ms, Ints& query, Ints& train){
     query.clear();
@@ -94,7 +104,7 @@ void OVO::match2ind(const DMatches& ms, Ints& query, Ints& train){
 }
 
 
-void OVO::alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, opengv::bearingVectors_t& bv1, opengv::bearingVectors_t& bv2){
+void OVO::alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, Bearings& bv1, Bearings& bv2){
     bv1.clear();
     bv2.clear();
     bv1.reserve(ms.size());
@@ -105,7 +115,7 @@ void OVO::alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, c
     }
 }
 
-void OVO::matReduceInd (const Eigen::MatrixXd& bvm1, opengv::bearingVectors_t& bv1, const Ints& ind){
+void OVO::matReduceInd (const Eigen::MatrixXd& bvm1, Bearings& bv1, const Ints& ind){
     bv1.clear();
     bv1.reserve(ind.size());
     for(uint i=0; i<ind.size(); ++i){
@@ -133,10 +143,11 @@ cv::Mat OVO::rotateImage(const cv::Mat& in, const double angleRad, const int int
 
 
 Eigen::VectorXd OVO::reprojectErrPointsVsBV(
-        const Eigen::Affine3d& model,
-        const opengv::points_t& points,
-        const opengv::bearingVectors_t& bv){
-
+        const Pose& model,
+        const Points3d& points,
+        const Bearings& bv){
+    /// model -> bearing vectors are in this frame
+    /// points -> world points
 
     Eigen::Affine3d inverseSolution;
     inverseSolution = model.inverse();
@@ -144,11 +155,26 @@ Eigen::VectorXd OVO::reprojectErrPointsVsBV(
     Eigen::VectorXd scores(points.size());
     for(uint i = 0; i < points.size(); ++i){
         opengv::point_t reprojection = inverseSolution * points[i];
-        reprojection /= reprojection.norm();
-        scores[i] = 1.0 - (reprojection.transpose() * bv[i]);
+        reprojection.normalize();
+        scores[i] = 1.0 - reprojection.dot(bv[i]);
     }
     return scores;
 }
+
+Eigen::VectorXd OVO::reprojectErrPointsVsBV(
+        const Points3d& points,
+        const Bearings& bv){
+    /// points -> points in the frame of bv
+
+    Eigen::VectorXd scores(points.size());
+    for(uint i = 0; i < points.size(); ++i){
+        scores[i] = 1.0 - points[i].normalized().dot( bv[i]);
+    }
+    return scores;
+}
+
+
+
 
 /*
 visualization_msgs::Marker OVO::getPointsMarker(const opengv::points_t& worldPoints){
@@ -182,7 +208,7 @@ visualization_msgs::Marker OVO::getPointsMarker(const opengv::points_t& worldPoi
 //Doubles OVO::reprojectErrBvVsBv(
 //        const Eigen::Affine3d& model,
 //        const opengv::points_t& points,
-//        const opengv::bearingVectors_t& bv){
+//        const Bearings& bv){
 ////    const model_t & model,
 ////    const std::vector<int> & indices,
 ////    std::vector<double> & scores) {

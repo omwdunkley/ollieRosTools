@@ -26,22 +26,35 @@ class OdoPoint;
 
 #define __SHORTFILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
+
+// 3d
+typedef opengv::bearingVector_t Bearing;
+typedef opengv::bearingVectors_t Bearings;
+typedef opengv::point_t Point3d;
+typedef opengv::points_t Points3d;
+typedef Eigen::Affine3d Pose;
+
+// 2d
 typedef std::vector< cv::KeyPoint > KeyPoints;
-typedef std::vector< cv::DMatch > DMatches;
-typedef std::vector< DMatches > DMatchesKNN;
-//typedef std::vector< cv::Point3d > Points3d;
 typedef std::vector< cv::Point2d > Points2d;
 typedef std::vector< cv::Point2f > Points2f;
 typedef Points2d Points2;
-typedef std::vector< int > Ints;
+
+// Associations
+typedef std::vector< cv::DMatch > DMatches;
+typedef std::vector< DMatches > DMatchesKNN;
 typedef std::vector< bool > Bools;
+typedef std::vector< int > Ints;
 typedef std::vector< float > Floats;
 typedef std::vector< double > Doubles;
+
+// Containers
 typedef std::vector< cv::Mat > Mats;
 typedef cv::Ptr<Frame> FramePtr;
 typedef std::deque<FramePtr> FramePtrs;
 typedef cv::Ptr<OdoPoint> PointPtr;
 typedef std::deque<PointPtr> PointPtrs;
+
 
 const float toRad = M_PI/180;
 const float toDeg = 180/M_PI;
@@ -60,6 +73,8 @@ namespace OVO {
 
     // Removes rows of Mat if index is not in ind. Can also change the order of elements.
     void matReduceInd (const cv::Mat& matIn, cv::Mat& matOut, const Ints& ind);
+    void matReduceInd (cv::Mat& matInOut, const Ints& ind);
+    void matReduceInd (const Eigen::MatrixXd& bvm1, Bearings& bv1, const Ints& ind);
 
     void match2ind(const DMatches& ms, Ints& query, Ints& train);
 
@@ -72,7 +87,7 @@ namespace OVO {
 
     cv::Mat getRosImage(const sensor_msgs::ImageConstPtr& msg, int colorId = 0);
 
-    visualization_msgs::Marker getPointsMarker(const opengv::points_t& worldPoints);
+    visualization_msgs::Marker getPointsMarker(const Points3d& worldPoints);
 
 
 
@@ -80,15 +95,21 @@ namespace OVO {
     void putInt(cv::Mat& img,  const float nr, const cv::Point& p, const CvScalar& col, const bool round, const std::string& str,const std::string& post="");
 
     // align bearing vectors
-    void alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, opengv::bearingVectors_t& bv1, opengv::bearingVectors_t& bv2);
-    void matReduceInd (const Eigen::MatrixXd& bvm1, opengv::bearingVectors_t& bv1, const Ints& ind);
+    void alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, Bearings& bv1, Bearings& bv2);
 
-    void transformPoints(const Eigen::Affine3d& transform, opengv::points_t& points);
 
+    void transformPoints(const Pose& transform, Points3d& points);
+
+    /// points in world frame, model in world frame, bv in model frame
     Eigen::VectorXd reprojectErrPointsVsBV(
-            const Eigen::Affine3d& model,
-            const opengv::points_t& points,
-            const opengv::bearingVectors_t& bv);
+            const Pose& model,
+            const Points3d& points,
+            const Bearings& bv);
+
+    /// Same as above but points are already in frame of bv
+    Eigen::VectorXd reprojectErrPointsVsBV(
+            const Points3d& points,
+            const Bearings& bv);
 
     template <class T, class T2> void vecAlignMatch (const T& vec1in, const T2& vec2in,
                                                      T& vec1out,      T2& vec2out,
@@ -111,6 +132,16 @@ namespace OVO {
             vecOut.push_back(vecIn[ind[i]]);
         }
     }
+    // same as above but replaces contents
+    template <class T> void vecReduceInd (T& vecInOut, const Ints& ind){
+        T temp;
+        temp.reserve(ind.size());
+        for(uint i=0;i<ind.size(); ++i){
+            temp.push_back(vecInOut[ind[i]]);
+        }
+        std::swap(vecInOut, temp);
+    }
+
 
     cv::Mat rotateImage(const cv::Mat& in, const double angleRad, const int interpolation=CV_INTER_LINEAR, const double scale=1.0, const double threshDeg=0.1);
 

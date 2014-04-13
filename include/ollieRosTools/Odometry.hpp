@@ -89,6 +89,8 @@ private:
     // VO matches between last frame and key frame
     DMatches matchesVO;
 
+    bool nextAddKf;
+
     /// SETTINGS
     // RELATIVE POSE - used by initialisation
     int voTriangulationMethod;
@@ -107,6 +109,10 @@ private:
     BaselineMethod voBaselineMethod;
     double voBaseline;
 
+    bool g2oDense;
+    int g2oIter;
+    bool g2oHuber;
+    bool g2oStructure;
     // ABSOLUTE POSE - used when computing pose vs keyframe
 
 
@@ -121,9 +127,9 @@ private:
     /// ////////////////////////////////////////////////////////////////////////////////////// PRIVATE METHODS
 
     /// Triangulate points points3d using bearing vectors bv1 and bv2 and the estimated pose between them trans1to2.
-    void triangulate(const Eigen::Affine3d& trans1to2, const opengv::bearingVectors_t& bv1, const opengv::bearingVectors_t& bv2, opengv::points_t& points3d) const{
+    void triangulate(const Pose& trans1to2, const Bearings& bv1, const Bearings& bv2, Points3d& points3d) const{
         /// The 3D points are expressed in the frame of the first viewpoint.
-
+        ros::WallTime t0 = ros::WallTime::now();
         ROS_INFO("OVO > Triangulating");
 
 
@@ -144,7 +150,7 @@ private:
                points3d.push_back(opengv::triangulation::triangulate(adapter,i));
             }
         }
-        ROS_INFO("OVO < Triangulated");
+        ROS_INFO("OVO < Triangulated in [%f.1ms]",1000*(ros::WallTime::now()-t0).toSec() );
     }
 
 
@@ -156,19 +162,19 @@ private:
         ROS_INFO("ODO > Doing VO Initialisation");
 
 
-        opengv::points_t worldPoints;
+        Points3d worldPoints;
         DMatches matchesVO;
 
         /// Get unit features aligned
-        opengv::bearingVectors_t bvF;
-        opengv::bearingVectors_t bvKF;
+        Bearings bvF;
+        Bearings bvKF;
         OVO::alignedBV(f->getBearings(), kf->getBearings(), matches, bvF, bvKF);
         opengv::relative_pose::CentralRelativeAdapter adapter(bvKF, bvF);
         Ints inliers;
         int iterations=-1;
 
         /// Compute relative transformation from KeyFrame KF to Frame F using ransac
-        Eigen::Affine3d transKFtoF;
+        Pose transKFtoF;
 
         ros::WallTime t0 = ros::WallTime::now();
         if (voRelPoseMethod==5){
@@ -243,10 +249,10 @@ private:
         //printRPYXYZ(poseTF, "Ransac Output: ");
 
         /// Align inliers
-        opengv::bearingVectors_t bvFinlier;
-        opengv::bearingVectors_t bvKFinlier;
-        OVO::vecReduceInd<opengv::bearingVectors_t>(bvF, bvFinlier, inliers);
-        OVO::vecReduceInd<opengv::bearingVectors_t>(bvKF, bvKFinlier, inliers);
+        Bearings bvFinlier;
+        Bearings bvKFinlier;
+        OVO::vecReduceInd<Bearings>(bvF, bvFinlier, inliers);
+        OVO::vecReduceInd<Bearings>(bvKF, bvKFinlier, inliers);
         OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
 
         /// Scale Pose
@@ -316,8 +322,8 @@ private:
         /// Set pose of F from KF->F to world->F
         //f2->setPose(); //
         //f->setPose(kf->getPose() * transKFtoF);
-        Eigen::Affine3d transWtoF = kf->getPose() * transKFtoF; // should be this one
-        //Eigen::Affine3d transWtoF = transKFtoF * kf->getPose();
+        Pose transWtoF = kf->getPose() * transKFtoF; // should be this one
+        //Pose transWtoF = transKFtoF * kf->getPose();
         f->setPose(transWtoF);
 
         /// put points from KF->Points frame to World->Points frame
@@ -346,7 +352,7 @@ private:
 //        for (uint i=0; i<worldPoints.size(); ++i){
 //            worldPoints[i]+= opengv::point_t(0.1,0.1,-0.1);
 //        }
-//        Eigen::Affine3d p = f->getPose();
+//        Pose p = f->getPose();
 //        p.translate(Eigen::Vector3d(-0.2, 0.05, 0.1));
 //        f->setPose(p);
 
@@ -363,10 +369,6 @@ private:
             // check min nr observations, min distance between kfs, etc
             // setMarginalized ??
             // set fixed ??
-            const bool DENSE = false;
-            const bool ROBUST_KERNEL = false;
-            const bool STRUCTURE_ONLY = false;
-            const int ITERATIONS = 3;
             // what to do if assertions fail?
 
 
@@ -379,7 +381,7 @@ private:
         g2o::SparseOptimizer optimizer;
         optimizer.setVerbose(true);
         g2o::BlockSolver_6_3::LinearSolverType * linearSolver;
-        if (DENSE) {
+        if (g2oDense) {
             linearSolver= new g2o::LinearSolverDense<g2o::BlockSolver_6_3::PoseMatrixType>();
         } else {
             linearSolver = new g2o::LinearSolverCholmod<g2o::BlockSolver_6_3::PoseMatrixType>();
@@ -418,7 +420,7 @@ private:
             VertexLandmarkXYZ * v_p = new VertexLandmarkXYZ();
             pointsg2o.push_back(v_p);
             v_p->setId(++id);
-            v_p->setMarginalized(true); /// TODO?
+            v_p->setMarginalized(true);
             v_p->setFixed(false);
             v_p->setEstimate(worldPoints[i]);
 
@@ -436,7 +438,7 @@ private:
             Eigen::Vector2d pxf = Eigen::Vector2d(bvFinlier[i][0]/bvFinlier[i][2], bvFinlier[i][1]/bvFinlier[i][2]);
             ef->setMeasurement(pxf);
             ef->information() = Eigen::Matrix2d::Identity();
-            if (ROBUST_KERNEL) {
+            if (g2oHuber) {
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 ef->setRobustKernel(rk);
             }
@@ -452,7 +454,7 @@ private:
             Eigen::Vector2d pxkf = Eigen::Vector2d(bvKFinlier[i][0]/bvKFinlier[i][2], bvKFinlier[i][1]/bvKFinlier[i][2]);
             ekf->setMeasurement(pxkf);
             ekf->information() = Eigen::Matrix2d::Identity();
-            if (ROBUST_KERNEL) {
+            if (g2oHuber) {
                 g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                 ekf->setRobustKernel(rk);
             }
@@ -465,7 +467,7 @@ private:
         /// Run optimisation
         optimizer.initializeOptimization();
         optimizer.setVerbose(true);
-        if (STRUCTURE_ONLY){
+        if (g2oStructure){
             g2o::StructureOnlySolver<3> structure_only_ba;
             ROS_INFO("G2O > Performing structure-only BA");
             g2o::OptimizableGraph::VertexContainer points;
@@ -475,20 +477,20 @@ private:
                     points.push_back(v);
                 }
             }
-            structure_only_ba.calc(points, ITERATIONS);
+            structure_only_ba.calc(points, g2oIter);
         }
         optimizer.save("init.g2o");
         ROS_INFO("G2O > Performing full BA:");
 
         ros::WallTime t3 = ros::WallTime::now();
-        optimizer.optimize(ITERATIONS);
+        optimizer.optimize(g2oIter);
 
 
         ROS_INFO("G2O < Done BA [Setup: %.1fms][Opti: %.1fms][Total: %f.1ms]", (t3-t2).toSec()*1000.,(ros::WallTime::now()-t3).toSec()*1000.,(ros::WallTime::now()-t2).toSec()*1000.);
 
         /// Extract G2O refinement
-        Eigen::Affine3d poseEstimateF = v_se3F->estimate();
-        Eigen::Affine3d poseEstimateKF = v_se3KF->estimate();
+        Pose poseEstimateF = v_se3F->estimate();
+        Pose poseEstimateKF = v_se3KF->estimate();
 
         /// Saves current F and KF and Point vectors aligned and poses
         ROS_INFO("Saving INIT state Frame [%d/%d] and Frame [%d/%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
@@ -547,8 +549,8 @@ private:
 
         Ints indF, indKF;
         OVO::match2ind(matchesVO, indF, indKF);
-        f->setWorldPoints(indF, worldPoints);
-        kf->setWorldPoints(indKF, worldPoints);
+        f->setWorldPoints(indF, worldPoints, true);
+        kf->setWorldPoints(indKF, worldPoints, true); //puts it in VO only mode
 
         map.addKeyFrame(f);
 
@@ -563,29 +565,39 @@ private:
 
 
 
+
     /// Attempts to estiamte the pose between a frame and a keyframe that has world points within it
     /// data associsation through matches
     /// Sets the pose of frame f
     bool poseEstimate(FramePtr& f, FramePtr& kf, const DMatches& matches){
-        ROS_INFO("ODO > Doing VO Pose Estimate");
+        ROS_INFO("ODO > Doing VO Pose Estimate Frame [%d|%d] vs KeyFrame [%d|%d] with [%lu] matches", f->getId(), f->getKfId(), kf->getId(), kf->getKfId(), matches.size());
 
+        matchesVO.clear();
 
-        const opengv::points_t& worldPtsKF = kf->getWorldPoints3d();
+        if (matches.size()==0){
+            ROS_ERROR("ODO < CANNOT DO Pose Estiamte without matches");
+            return false;
+        }
 
+        const Points3d& worldPtsKF = kf->getWorldPoints3d();
+        const Eigen::MatrixXd& bvf         = f->getBearings();
+
+        ROS_INFO("ODO = Before Alignment [%lu Matches] [%ld bearings] [%lu world points] [%lu kf vo inliers]", matches.size(), bvf.rows(), worldPtsKF.size(), kf->getVoInliers().size());
 
         /// Get bearing vectors from current frame aligned with 3d land marks from keyframe aligned with matches
+        // Indicies
+        Ints fInd, kfInd;
+        OVO::match2ind(matches, fInd, kfInd);
 
-        Ints bvFindMatched, wpKFindMatched;
-        OVO::match2ind(matches, bvFindMatched, wpKFindMatched);
-
-        // Bearing vectors
-        opengv::bearingVectors_t bvFMatched;
-        OVO::matReduceInd(f->getBearings(), bvFMatched, bvFindMatched);
+        // Bearings
+        Bearings bvFMatched;
+        OVO::matReduceInd(bvf, bvFMatched, fInd);
 
         // 3d points
-        opengv::points_t worldPtsKFMatched;
-        OVO::vecReduceInd<opengv::points_t>(worldPtsKF, worldPtsKFMatched, wpKFindMatched);
+        Points3d worldPtsKFMatched;
+        OVO::vecReduceInd<Points3d>(worldPtsKF, worldPtsKFMatched, kfInd);
 
+        ROS_INFO("ODO = AFTER Alignment [%lu Matches] [%lu bearings] [%lu world points]", matches.size(), bvFMatched.size(), worldPtsKFMatched.size());
 
 
 
@@ -607,7 +619,7 @@ private:
 
             const opengv::rotation_t& imuF = f->getImuRotationCam();
             const opengv::rotation_t& imuKF = kf->getImuRotationCam();
-            const Eigen::Affine3d&    poseKF = kf->getPose();
+            const Pose&    poseKF = kf->getPose();
             // set absolute rotation
             Eigen::Matrix3d imu2cam;
             imu2cam << 0, 0, 1,
@@ -632,7 +644,7 @@ private:
 
 
         // Set as output
-        Eigen::Affine3d transWtoF;
+        Pose transWtoF;
         transWtoF = ransac.model_coefficients_;
         std::swap(inliers, ransac.inliers_);
 
@@ -664,23 +676,19 @@ private:
         /// JUST FOR VIS!
         /// Align inliers
 
-        opengv::bearingVectors_t bvFVO;
-        opengv::points_t worldPtsKFVO;
+        Bearings bvFVO;
+        Points3d worldPtsKFVO;
 
-        OVO::vecReduceInd<opengv::bearingVectors_t>(bvFMatched, bvFVO, inliers);
+        OVO::vecReduceInd<Bearings>(bvFMatched, bvFVO, inliers);
         OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
-        OVO::vecReduceInd<opengv::points_t>(worldPtsKFMatched, worldPtsKFVO, inliers);
+        OVO::vecReduceInd<Points3d>(worldPtsKFMatched, worldPtsKFVO, inliers);
 
         const Eigen::VectorXd repjerr = OVO::reprojectErrPointsVsBV(f->getPose(), worldPtsKFVO, bvFVO );
         ROS_INFO("ODO = Min / Avg / Max RePrjErr  F = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
 
         Ints FVOInd, KFVOInd;
         OVO::match2ind(matchesVO, FVOInd, KFVOInd);
-        f->setWorldPointsInliers(FVOInd, worldPtsKFVO); // not really needed i guess, but good for vis
-
-
-        saveData();
-
+        f->setWorldPoints(FVOInd, worldPtsKFVO, false); // No need for VO only mode
 
 
         ROS_INFO("ODO < Pose Estimated");
@@ -691,10 +699,12 @@ private:
 
 
     /// Tracks frame against keyframe
-    float track(FramePtr& frame){
+    float track(FramePtr& frame, bool reset=false){
+        /// reset is used when one is wanting to create a new keyframe
         ROS_INFO("ODO > TRACKING");
         matchesVO.clear();
-        const float disparity = map.showFrame(frame);
+
+        const float disparity = map.showFrame(frame, reset);
 
 
         ROS_INFO("ODO < TRACKED");
@@ -705,7 +715,6 @@ private:
         } else {
             ROS_INFO("ODO < TRACKING FAILED");
         }
-
 
         return disparity;
     }
@@ -751,16 +760,11 @@ private:
     void initialiseVO(){
         ROS_INFO("ODO > DOING INITIALISATION");
 
-
         bool okay = initialise(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches());
         //addKFVO();
 
         if (okay){
             ROS_INFO("ODO < INITIALISATION SUCCESS");
-
-
-            //map.initialise(worldPoints, voMatches);
-
             state = INITIALISED;
         } else {
             ROS_WARN("ODO < INITIALISATION FAIL");
@@ -772,31 +776,108 @@ private:
 
     /// adds a keyframe to the map
     void addKFVO(){
-        ROS_INFO("ODO > ADDING KEYFRAME");
+        /// Start timer, show messages, check quality
+        ros::WallTime t0 = ros::WallTime::now();
+        FramePtr& f = map.getCurrentFrame();
+        FramePtr& kf = map.getLatestKF();
+        ROS_WARN("ODO > ATTEMPTING TO MAKE FRAME [%d] KEYFRAME", f->getId());
 
+        const float quality = f->getQuality();
+        if (quality < keyFrameQualityThreshold && quality>=0){
+            ROS_WARN("ODO < FAILED TO ADD KEYFRAME, quality too bad [%f]", quality);
+            return;
+        }
+
+//        // only keep points that worked with vo
+//        f->reducePointsToWorldPoints();
+
+        // Triangulate all matches, hopefully adding more points
+
+
+        /// Force redection between both frames from all detections (ie not filtered by vo)
+        const DMatches& ms = map.getF2KFMatches(true);
+        ROS_INFO_STREAM("ODO = FRAME F \n" << *f);
+        ROS_INFO_STREAM("ODO = FRAME KF\n" << *kf);
+
+        // Lets do everything in KF frame
+        // get kf->f transform
+        Pose kf2f = kf->getPose().inverse() * f->getPose();
+
+        ROS_WARN("ODO = Triangulating all [%lu] matches", ms.size());
+        // triangulate points
+        Bearings bv_f, bv_kf;
+        OVO::alignedBV(f->getBearings(), kf->getBearings(), ms, bv_f, bv_kf);
+        Points3d points_tri;
+        triangulate(kf2f, bv_kf, bv_f, points_tri);
+
+        // keep those within reprojection error
+        Ints inliers;
+        inliers = reprojectFilter(bv_kf, points_tri); // points are in kf frame here
+        OVO::vecReduceInd<Points3d>(points_tri, inliers);
+        OVO::vecReduceInd<DMatches>(ms, matchesVO, inliers);
+
+        // Put points in world frame (was in kf frame)
+        OVO::transformPoints(kf->getPose(), points_tri);
+
+        // remove outliers from f
+        Ints fIn, kfIn;
+        OVO::match2ind(matchesVO, fIn, kfIn);
+        f->setWorldPoints(fIn, points_tri, true);
+
+        // add f to map
+        map.addKeyFrame(f);
+
+
+        double time = (ros::WallTime::now()-t0).toSec();
+        timeVO += time;
         bool okay = true;
         if (okay){
-            ROS_INFO("ODO < KEYFRAME ADDED");
+            ROS_INFO("ODO < KEYFRAME ADDED [ID: %d, KF: %d] in [%1.fms]", f->getId(), f->getKfId(), time*1000);
         } else {
-            ROS_WARN("ODO < FAILED TO ADD KEYFRAME");
+            ROS_WARN("ODO < FAILED TO ADD KEYFRAME in [%1.fms]", time*1000.);
         }
+
+    }
+
+    Ints reprojectFilter(const Bearings& bv, const Points3d& pts3dFrame){
+        /// If the angle between bv[i] and pts3dFrame[i] is close enough, return i
+        // bv is the bearing vector of a frame F
+        // pts3dFrame are the points in frame F that the bearing vectors point to. They must be aligned
+        ROS_ASSERT_MSG(bv.size() == pts3dFrame.size(), "Points must be aligned to bearing vectors");
+
+        ROS_INFO("ODO > Projecting [%lu] points and comparing to bearing vectors",pts3dFrame.size());
+        Eigen::VectorXd repjerr = OVO::reprojectErrPointsVsBV(pts3dFrame, bv);
+        Ints inliers;
+        inliers.reserve(pts3dFrame.size());
+        for (uint i=0; i<repjerr.size(); ++i){
+            if (repjerr[i]<voAbsRansacThresh){
+                inliers.push_back(i);
+            }
+        }
+        ROS_WARN_COND(inliers.size()< 15, "ODO = Very few points passed reprojection test");
+        ROS_INFO("ODO < Successfully projected [%lu/%lu] points",inliers.size(), pts3dFrame.size());
+        return inliers;
 
     }
 
 
     /// estiamte pose vs using worldPoints from latest map KF
-    void estimatePoseVO(){
+    void estimatePoseVO(bool newkf=false){
         ros::WallTime t0 = ros::WallTime::now();
         ROS_INFO("ODO > DOING POSE ESTIMATION");        
 
-        bool okay = poseEstimate(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches());
+        bool okay = false;
+
+        // Estiamte pose between current frame and last KF
+        okay = poseEstimate(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches(newkf));
+
 
         timeVO = (ros::WallTime::now()-t0).toSec();
         if (okay){
-            ROS_INFO("ODO < POSE ESTIMATION SUCCESS [%fms]", timeVO*1000.);
+            ROS_INFO("ODO < POSE ESTIMATION SUCCESS [%.1fms]", timeVO*1000.);
             state = INITIALISED;
         } else {
-            ROS_WARN("ODO < POSE ESTIMATION FAIL [%fms]", timeVO*1000.);
+            ROS_WARN("ODO < POSE ESTIMATION FAIL [%.1fms]", timeVO*1000.);
             state = LOST;
         }
 
@@ -816,6 +897,7 @@ public:
         voRelPoseMethod = 0;
         voTriangulationMethod = 1;
         voInitDisparity = 100;
+        nextAddKf = false;
 
         control = DO_NOTHING;
         state   = WAIT_FIRST_FRAME;
@@ -829,11 +911,6 @@ public:
     }
 
 
-    void saveData(){
-
-    }
-
-
 
     /// a step in the VO pipeline
     void update(FramePtr& frame){
@@ -842,7 +919,10 @@ public:
         /// Skip frame immediatly of quality is too bad (should ust be used for extremely bad frames)
         const float quality = frame->getQuality();
         if (quality < frameQualityThreshold && quality>=0){
-            ROS_INFO("ODO < SKIPPING FRAME [%d], Quality too bad [%f]", frame->getId(), quality );
+            ROS_WARN("ODO < SKIPPING FRAME [%d], Quality too bad [%f]", frame->getId(), quality );
+            cv::imshow("FAILED_QUALITY", frame->getVisualImage());
+            cv::waitKey(20);
+            return;
         }
 
         float disparity = 0.f;
@@ -855,11 +935,9 @@ public:
 
 
         if (state==WAIT_FIRST_FRAME) {
-            // first time we receiver a keyframe ever
+            // first time we received a keyframe ever
            setInitialKFVO(frame);
            track(frame);
-
-
 
         } else if (state==WAIT_INIT) {
             // waiting to initialise
@@ -868,33 +946,39 @@ public:
             if (control==DO_ADDKF){
                 control = DO_NOTHING;
                 setInitialKFVO(frame);
-
+                track(frame); // I think?
             } else {
                 /// Wait for keyframe as usual
-
                 disparity = track(frame);
 
                 /// Check if we can initialise
-                if (control==DO_INIT || disparity>voInitDisparity){
+                if (control==DO_INIT || disparity>voInitDisparity){                    
                     control = DO_NOTHING;
                     initialiseVO();
 
                 }
             }
 
-
-
-
         } else if (state==INITIALISED || state==LOST) {
             // initialised, estimate pose vs keyframe
 
-            disparity = track(frame);
 
-            estimatePoseVO();
+            if (nextAddKf){
+                nextAddKf = false;
+                disparity = track(frame, true);
+                estimatePoseVO(true);
+                addKFVO();
+
+            } else {
+                disparity = track(frame);
+                estimatePoseVO();
+            }
+
 
             if (control==DO_ADDKF || disparity>voKfDisparity){
                 control = DO_NOTHING;
-                addKFVO();
+                nextAddKf = true;
+                ROS_WARN("ODO = SETTING NEXT FRAME AS KEYFRAME");
             }
 
 
@@ -902,7 +986,7 @@ public:
         }
 
         if (state==LOST) {
-            ROS_WARN_THROTTLE(0.1, "ODO = LOST");
+            ROS_WARN("ODO = LOST");
         }
 
         ROS_INFO("ODO < PROCESSED FRAME [%d]", frame->getId());
@@ -982,6 +1066,12 @@ public:
         voAbsRansacThresh = 1.0 - cos(atan(config.vo_absRansacThresh*sqrt(2.0)*0.5/720.0));
         voAbsNLO          = config.vo_absNLO;
 
+        g2oDense = config.g2o_dense;
+        g2oIter = config.g2o_iterations;
+        g2oHuber = config.g2o_huber;
+        g2oStructure = config.g2o_structureOnly;
+
+
 
         // User controls
         if (config.vo_doInitialisation){
@@ -996,7 +1086,7 @@ public:
         }
 
         if (config.writeCSV){
-            saveData();
+            ROS_ERROR("NOT IMPLEMENTED WRITE CSV FUNCTIONALITY - NON CRITICAL");
             config.writeCSV = false;
         }
 

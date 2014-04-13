@@ -10,9 +10,8 @@
 #include <ollieRosTools/aux.hpp>
 
 
-// Sort matches by response and take nr best
-// NOTE: Usually you wont need this as the matchers sort the output by distance
-void matchClip(DMatches& ms, const uint max_nr, bool is_sorted=true);
+// Doesnt sort, just takes the first max_nr. Idealy sorted by matching distance
+void matchClip(DMatches& ms, const uint max_nr);
 
 // Return the smallest and largest distance along with the total nr of matches
 void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total);
@@ -23,8 +22,12 @@ DMatches disparityFilter(const DMatches& in, FramePtr& f1, FramePtr& f2, const f
 // Filter out matches that are not unique. Specifically unqiue = dist1/dist2 > similarity
 void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float similarity, const bool keep_sorted = false);
 
+// same as above, but works in place, preserving order and size
+void matchFilterUnique(DMatchesKNN& msknn, const float similarity);
+
+
 // Reduces vector of vectors DMatchesKNN to a single vector DMatches
-void matchKnn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_sorted=false);
+void matchKnn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_sorted=false, const size_t maxPerMatch=5);
 
 // remove matches that are ratio * worse than the best
 void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted=false);
@@ -41,6 +44,9 @@ bool matchBad(const cv::DMatch& match, const float thresh);
 
 // Returns true if match good enough
 bool matchGood(const cv::DMatch& match, const float thresh);
+
+// Returns true if the matches are sorted by distance, ascending order
+bool isSorted(const DMatches& ms);
 
 
 class Matcher
@@ -76,7 +82,7 @@ public:
 private:
     cv::Ptr<cv::DescriptorMatcher> matcher;
     ollieRosTools::VoNode_paramsConfig config_pre;
-    void updateMatcher(const int type, const bool update=false);
+    void updateMatcher(const int type, const int size, const bool update=false);
 
     int m_type;
     int m_norm;
@@ -95,7 +101,10 @@ private:
     bool m_doSym;
     bool m_doPxdist;
 
+    bool orb34; // remember if we are using orb or not...
+
     int descType;
+    int descSize;
 
 };
 

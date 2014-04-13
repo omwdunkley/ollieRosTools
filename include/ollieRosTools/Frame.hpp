@@ -49,8 +49,8 @@ class Frame{
         Eigen::Matrix3d imu2cam;
 
         // Type of descriptor / detector used
-        int descId;
-        int detId;
+        int descriptorId;
+        int detectorId;
 
 
         // Features - ALL OF THESE SHOULD ALWAYS BE ALIGNED!
@@ -61,6 +61,17 @@ class Frame{
         Eigen::MatrixXd bearings;
         Eigen::MatrixXd pointsRect; // rectified points, align with all of the above
 
+
+        bool voMode;
+        Ints VOinliers;
+        KeyPoints VOkeypointsImg;
+        KeyPoints VOkeypointsRotated; // TODO: should be eigen
+        Points2f VOpointsImg; // points and keypoints.pt should match. These are the detected points in the potentially unrectified image
+        cv::Mat VOdescriptors;
+        Eigen::MatrixXd VObearings;
+        Eigen::MatrixXd VOpointsRect; // rectified points, align with all of the above
+
+
         //
         static CameraATAN cameraModel;
         static Detector detector;
@@ -68,8 +79,8 @@ class Frame{
 
         /// KF ONLY ///////////////////////////////////////////////////////////////////////////////////////////////////
         /// If a keyframe, this is used for other frames to track against. Aligned with descs, keypoints, points, rotated kps, bearing vectors
+        /// also used for regular frames, just to visualise depth
         opengv::points_t worldPoints3d;
-        Ints worldPoints3dInliers;
 
         /// If a keyframe, this contains references to map points
         std::vector<PointPtr> mapPointRefs;
@@ -97,14 +108,13 @@ class Frame{
         }
 
         void computeKeypoints(){
+            ROS_ASSERT_MSG(!voMode, "FRA = Computing keypoints in non vo mode does not make sense");
             ROS_INFO("FRA > Computing Keypoints frame [id: %d]", getId());
-            keypointsRotated.clear();
-            pointsImg.clear();
-            descriptors = cv::Mat();
+            clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
-            detector.detect(image, keypointsImg, detId, mask);
+            detector.detect(image, keypointsImg, detectorId, mask);
             timeDetect = (ros::WallTime::now()-t0).toSec();
-            ROS_INFO("FRA < Computed [%lu] Keypoints [%.1fms] for frame [id: %d]", keypointsImg.size(), timeDetect*1000., getId());
+            ROS_INFO("FRA < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
         }
 
         /// TODO: estiamte image quality. -1 = not estaimted, 0 = bad, 1 = perfect
@@ -137,6 +147,7 @@ class Frame{
             id = ++idCounter;
             kfId = -1;
 
+
             ROS_INFO("FRA > CREATING NEW FRAME [ID: %d]", id);
             time = imu.stamp_;
 
@@ -146,13 +157,14 @@ class Frame{
             timeExtract    = 0;
             timeDetect     = 0;
 
+            voMode = false;
 
             /// SHOULD BE SET SOMEHOW
             gyroX = gyroY = GyroZ = 0.0;
             accX  = accY  = accZ  = 0.0;
 
-            detId = -1; //-1 = none, -2 = KLT
-            descId = -1;
+            detectorId = -1; //-1 = none, -2 = KLT
+            descriptorId = -1;
 
             this->mask = mask;
 
@@ -270,37 +282,6 @@ class Frame{
             return mapDescriptors.row(rowNr);
         }
 
-        // just for now
-//        void setWorldPoints(const Points2f& pts2d, const opengv::points_t pts3d){
-//            worldPoints3d = pts3d;
-//            worldPoints2d = pts2d;
-//        }
-
-
-        const Eigen::Matrix3d& getImu2Cam(){
-            return imu2cam;
-        }
-
-
-        // Sets worldPoints3d and aligns them to all other points by removing non inliers
-        void setWorldPoints(const Ints& inliers, const opengv::points_t pts3d){
-            ROS_INFO("FRA > Removing non inliers from KP/P/Desc/BV/RP");
-            reduceAllPoints(inliers);
-            worldPoints3d = pts3d;
-            ROS_INFO("FRA > Aligned world points with all other things");
-        }
-
-        // same as above but doesnt remove points. Just used for vis of non-kf frames
-        void setWorldPointsInliers(const Ints& inliers, const opengv::points_t pts3d){
-            ROS_INFO("FRA > adding world points for vis");
-            worldPoints3dInliers = inliers;
-            worldPoints3d = pts3d;
-            ROS_INFO("FRA < [%lu] world points and [%lu] inliers added for vis", worldPoints3d.size(), inliers.size());
-        }
-
-        const opengv::points_t& getWorldPoints3d() const {
-            return worldPoints3d;
-        }
 
 
         visualization_msgs::Marker getWorldPointsMarker(int id=0, float scale=1.0, float brightness = 1.0){
@@ -315,15 +296,30 @@ class Frame{
             ms.scale.y = 0.05*scale;
 
             if (worldPoints3d.size()>0){
+                /// HEre we could use the distance from the camera, or the distance in z direction
+                // put points in local frame
                 opengv::points_t pts3d = worldPoints3d;
                 OVO::transformPoints(getPose().inverse(), pts3d);
                 Eigen::VectorXd dists(pts3d.size());
+
+                /// distance from camera
                 for (uint i=0; i<pts3d.size(); ++i){
                     dists[i] = pts3d[i].norm();
                 }
 
-                float range_max = dists.maxCoeff();
-                float range_min = dists.minCoeff();
+//                /// depth from camera
+//                for (uint i=0; i<pts3d.size(); ++i){
+//                    dists[i] = pts3d[i][2];
+//                }
+
+                /// Set min, max depth and scale colours accordingly
+                float range_max = 6; //dists.maxCoeff();
+                float range_min = 1; //dists.minCoeff();
+
+//                /// Compute min, max depth and scale colours accordingly
+//                float range_max = dists.maxCoeff();
+//                float range_min = dists.minCoeff();
+
 
                 for (uint i=0; i< worldPoints3d.size(); ++i){
                     geometry_msgs::Point p;
@@ -393,7 +389,7 @@ class Frame{
         }
 
         // returns the eigen pose of this frame in the world frame
-        const Eigen::Affine3d& getPose() const {
+        const Pose& getPose() const {
             return pose;
         }
 
@@ -463,20 +459,18 @@ class Frame{
                 // draw colour coded depth points
                 cv::Mat imgOverlay = cv::Mat::zeros(img.size(), CV_8UC3);
 
-                if (worldPoints3dInliers.size()>0){
-                    // not aligned
-                    for (uint i=0; i<worldPoints3dInliers.size(); ++i){
-                        cv::circle(imgOverlay, pointsImg[worldPoints3dInliers[i]], 3, OVO::getColor(range_min, range_max, dists[i]), CV_FILLED, CV_AA);
-                    }
-                    OVO::putInt(img, worldPoints3dInliers.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,180,110), true,  "WPT:"); // numner of 3d points frames can triangulate from
-                } else {
-                    // aligned
-                    ROS_ASSERT_MSG(pts3d.size()==pointsImg.size(), "2d and 3d points not aligned");
+                // aliged
+                if (voMode){
                     for (uint i=0; i<pts3d.size(); ++i){
                         cv::circle(imgOverlay, pointsImg[i], 3, OVO::getColor(range_min, range_max, dists[i]), CV_FILLED, CV_AA);
                     }
-                    OVO::putInt(img, worldPoints3d.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,180,110), true,  "WPT:"); // numner of 3d points frames can triangulate from
+                } else {
+                    for (uint i=0; i<pts3d.size(); ++i){
+                        cv::circle(imgOverlay, pointsImg[VOinliers[i]], 3, OVO::getColor(range_min, range_max, dists[i]), CV_FILLED, CV_AA);
+                    }
                 }
+                OVO::putInt(img, pts3d.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,180,110), true,  "WPT:"); // numner of 3d points frames can triangulate from
+
                 cv::addWeighted(img, 1.0, imgOverlay, 0.75, 0, img);
 
 
@@ -511,9 +505,18 @@ class Frame{
             return roll;
         }
 
-        KeyPoints& getKeypoints(bool dontCompute=false, bool allowKLT=true){
+        bool hasPoints() const {
+            return keypointsImg.size()>0 || pointsImg.size()>0;
+        }
+
+
+        KeyPoints& getKeypoints(bool dontCompute=false, bool allowKLT=true, bool forceCompute = false){
             /// Gets keypoints. Computes them if required/outdated type unless dontCompute is true. Uses points as kps if possible.
-            if (keypointsImg.empty()){
+            ROS_ASSERT(!(forceCompute&&dontCompute));
+
+            if (forceCompute){
+                computeKeypoints();
+            } else if (keypointsImg.empty()){
                 // We dont have key points
                 if (!pointsImg.empty() && allowKLT){
                     // use klt points as keypoints
@@ -522,24 +525,19 @@ class Frame{
                     // we dont have points either or dont want to use them
                     if (!dontCompute){
                         // compute  points
-                       computeKeypoints();
+                        computeKeypoints();
                     }
                 }
-            } else {
-                // we have keypoints
-                if (!dontCompute && getDetId() != detector.getDetectorId()){
-                    // we have outdated keypoints - recompute
-                    ROS_INFO("FRA > Keypoints outdated [%d != %d], redetecting", getDetId(), detector.getDetectorId());
-                    computeKeypoints();
-                    ROS_INFO("FRA < Keypoints redetected");
-                }
+            } else if (!dontCompute && getDetId() != detector.getDetectorId()){
+                // we have outdated keypoints - recompute
+                ROS_INFO("FRA > Keypoints outdated [%d != %d], redetecting", getDetId(), detector.getDetectorId());
+                computeKeypoints();
+                ROS_INFO("FRA < Keypoints redetected");
             }
+
             return keypointsImg;
         }
 
-        bool hasPoints() const {
-            return keypointsImg.size()>0 || pointsImg.size()>0;
-        }
 
 
         /// TODO: dont shortcut here, rotate points directly
@@ -552,112 +550,211 @@ class Frame{
 
         const Points2f& getPoints(bool dontCompute=true){
             /// Gets points. Use kps as pts if we dont have pts. IF we dont have pts or kps, only compute them if dontCompute = false.
-            if (pointsImg.empty()){
-                // dont have points
-                if (!keypointsImg.empty()){
-                    // but have keypoints
+            if (!pointsImg.empty()){
+                // have points, do nothing
+            } else  if (!keypointsImg.empty()){
+                // but have keypoints
+                cv::KeyPoint::convert(keypointsImg, pointsImg);
+            } else if (voMode){
+                if (!VOpointsImg.empty()){
+                    // use points from non vo
+                    OVO::vecReduceInd(VOpointsImg, pointsImg, VOinliers);
+                } else if (!keypointsImg.empty()){
+                    // but have keypoints from vo
+                    OVO::vecReduceInd(VOkeypointsImg, keypointsImg, VOinliers);
                     cv::KeyPoint::convert(keypointsImg, pointsImg);
-                } else {
-                    // dont have keypoints
-                    if (!dontCompute){
-                        // compute them
-                        computeKeypoints();
-                        cv::KeyPoint::convert(keypointsImg, pointsImg);
-                    }
                 }
+            } else if (!dontCompute){
+                // compute them
+                ROS_ASSERT_MSG(!voMode, "FRA = IT does not make sense to compute KPS in VoMode: %s", __SHORTFILE__);
+                computeKeypoints();
+                cv::KeyPoint::convert(keypointsImg, pointsImg);
             }
+
             return pointsImg;
         }
 
 
-        void swapKeypoints(KeyPoints& kps){
+        void swapKeypoints(KeyPoints& kps, bool updateOnly = false){
             /// Swap keypoints and remove everything that could have come from previous ones
-            clearAllPoints();
-            std::swap(keypointsImg, kps);
+            // IF updateOnly is set, we just "update" the keypoints.
+            if (updateOnly){
+                // update points only
+                ROS_ASSERT(kps.size()==keypointsImg.size());
+                std::swap(keypointsImg, kps);
+                // might still need to update the pts too
+                if (pointsImg.size()>0){
+                    cv::KeyPoint::convert(keypointsImg, pointsImg);
+                }
+            } else {
+                // replace points
+                clearAllPoints();
+                std::swap(keypointsImg, kps);
+            }
         }
-        void swapPoints(Points2f& pts){
+
+        void swapPoints(Points2f& pts, bool updateOnly = false){
             /// Swap points and remove everything that could have come from previous ones
-            clearAllPoints();
-            std::swap(pointsImg, pts);
+            if (updateOnly){
+                // update points only
+                ROS_ASSERT(pts.size()==pointsImg.size());
+                std::swap(pointsImg, pts);
+                // might still need to update the kpts too
+                if (pointsImg.size()>0){
+                    cv::KeyPoint::convert(pointsImg, keypointsImg);
+                }
+            } else {
+                // replace points
+                clearAllPoints();
+                std::swap(pointsImg, pts);
+            }
+
         }
 
 
         void clearAllPoints(){
             /// Clears all point types, keeping them in sync
+            ROS_INFO("FRA = Clearing all Points [%d | %d]", getId(), getKfId());
             keypointsRotated.clear();
             keypointsImg.clear();
             pointsImg.clear();
             bearings = Eigen::MatrixXd();
             worldPoints3d.clear();
+            VOinliers.clear();
             descriptors = cv::Mat();
-            descId = -1;
-            detId = -2; // unknown type
+
+            if(voMode){
+                ROS_WARN("FRA = Reset frame while in VO MODE; returning out of VO Mode");
+                setModeVoOnly(false);
+                clearAllPoints(); // reset the rest too
+            }
+            //descId = -1;
+            //detId = -2; // unknown type
+        }
+
+        const Eigen::Matrix3d& getImu2Cam(){
+            return imu2cam;
         }
 
 
-        void reduceAllPoints(const Ints& inliers){
+
+
+
+
+        // Sets worldPoints3d and aligns them to all other points by removing non inliers
+        /// TODO : not supported ot call this function mutliple times.
+        void setWorldPoints(const Ints& inliers, const opengv::points_t pts3d, bool setVoMode=true){
+            ROS_ASSERT_MSG(VOinliers.size()==0, "Not supported to setWorldPoints multiple times: %s", __SHORTFILE__);
+            ROS_INFO("FRA > Removing non inliers from KP/P/Desc/BV/RP");
+            worldPoints3d = pts3d;
+            setVoPoints(inliers, setVoMode);
+            VOinliers = inliers;
+            ROS_INFO("FRA < Added world points");
+
+        }
+
+        const opengv::points_t& getWorldPoints3d() const {
+            return worldPoints3d;
+        }
+
+        void setModeVoOnly(bool voInliersOnly = true){
+            /// if this is set, all the getter functions only return points, matches, etc aligned with vo inliers
+            ROS_ASSERT_MSG(worldPoints3d.size()>0 || !voInliersOnly, "Cannot set to Vo Only Mode if there are no vo inliers: %s", __SHORTFILE__);
+
+            if (voMode != voInliersOnly){
+                std::swap(VObearings, bearings);
+                std::swap(VOdescriptors, descriptors);
+                std::swap(VOpointsRect, pointsRect);
+                std::swap(VOkeypointsImg, keypointsImg);
+                std::swap(VOkeypointsRotated, keypointsRotated);
+                std::swap(VOpointsImg, pointsImg);
+                voMode = voInliersOnly;
+                ROS_INFO("FRA = FRAME [%d|%d]: VO MODE NOW %s", getId(), getKfId(), voMode ? "ON" : "OFF");
+            }
+        }
+
+        bool getVoMode() const {
+            return voMode;
+        }
+
+
+
+//        void reducePointsToWorldPoints(){
+//            /// required world points and worldPoints3dInliers to be set already.
+//            /// Alignts the rest
+//            ROS_INFO("FRA > Alinging world points with all point types for frame [id: %d]", getId());
+//            reduceAllPoints(worldPoints3dInliers);
+//        }
+
+        void setVoPoints(const Ints& inliers, bool setVoMode = true){
             /// Same as clear all points but instead of removing all, it keeps the ones at position ind
             ROS_INFO("FRA > Keeping %lu/%lu inliers from all point types for frame [id: %d]", inliers.size(), std::max(pointsImg.size(), keypointsImg.size()), getId());
 
+            ROS_ASSERT_MSG(VOinliers.size()==0, "FRA = Should not be able to update VoPoints twice: %s", __SHORTFILE__);
+
+            ROS_INFO_STREAM("FRA = FRAME STATE BEFORE:\n"<< *this);
+
             if (bearings.rows()>0){
-                Eigen::MatrixXd bearingsTemp = Eigen::MatrixXd(inliers.size(), 3);
+                VObearings = Eigen::MatrixXd(inliers.size(), 3);
                 for (uint i=0; i<inliers.size(); ++i){
-                    bearingsTemp.row(i) = bearings.row(inliers[i]);
+                    VObearings.row(i) = bearings.row(inliers[i]);
                 }
-                std::swap(bearingsTemp, bearings);
                 ROS_INFO("FRA = Bearing Vectors updated");
             } else {
                 ROS_INFO("FRA = No Bearing Vectors to update");
             }
 
             if (descriptors.rows>0){
-                cv::Mat descriptorsTemp;
-                for (uint i=0; i<inliers.size(); ++i){
-                    descriptorsTemp.push_back(descriptors.row(inliers[i]));
-                }
-                std::swap(descriptorsTemp, descriptors);
+                OVO::matReduceInd(descriptors, VOdescriptors, inliers);
                 ROS_INFO("FRA = Descriptors Vectors updated");
             } else {
                 ROS_INFO("FRA = No Descriptors to update");
             }
 
             if (keypointsImg.size()>0){
-                KeyPoints keypointsTemp;
-                for (uint i=0; i<inliers.size(); ++i){
-                    keypointsTemp.push_back(keypointsImg[inliers[i]]);
-                }
-                std::swap(keypointsTemp, keypointsImg);
+                OVO::vecReduceInd<KeyPoints>(keypointsImg, VOkeypointsImg, inliers);
                 ROS_INFO("FRA = Keypoints updated");
             } else {
                 ROS_INFO("FRA = No Keypoints to update");
             }
 
             if (pointsImg.size()>0){
-                 Points2f pointsTemp;
-                for (uint i=0; i<inliers.size(); ++i){
-                    pointsTemp.push_back(pointsImg[inliers[i]]);
-                }
-                std::swap(pointsTemp, pointsImg);
+                OVO::vecReduceInd<Points2f>(pointsImg, VOpointsImg, inliers);
                 ROS_INFO("FRA = Points 2d updated");
             } else {
                 ROS_INFO("FRA = No Points 2d to update");
             }
 
             if (keypointsRotated.size()>0){
-                KeyPoints keypointsRotatedTemp;
-                for (uint i=0; i<inliers.size(); ++i){
-                    keypointsRotatedTemp.push_back(keypointsRotated[inliers[i]]);
-                }
-                std::swap(keypointsRotatedTemp, keypointsRotated);
+                OVO::vecReduceInd<KeyPoints>(keypointsRotated, VOkeypointsRotated, inliers);
                 ROS_INFO("FRA = Rotated keypoints updated");
             } else {
                 ROS_INFO("FRA = No Rotated keypoints to update");
             }
+            if (pointsRect.size()>0){
+                VOpointsRect = Eigen::MatrixXd(inliers.size(), 2);
+                for (uint i=0; i<inliers.size(); ++i){
+                    VOpointsRect.row(i) = pointsRect.row(inliers[i]);
+                }
+                ROS_INFO("FRA = Rectified Points updated");
+            } else {
+                ROS_INFO("FRA = No Rectified Points to update");
+            }
+
 
             ROS_INFO("FRA < Outliers removed");
-            ROS_INFO_STREAM("FRA = "<< *this);
+
+            ROS_INFO_STREAM("FRA = FRAME STATE AFTER:\n"<< *this);
+
+            if (setVoMode){
+                setModeVoOnly(true);
+                ROS_INFO_STREAM("FRA = FRAME STATE AFTER SWITCH:\n"<< *this);
+            }
+
+
 
         }
+
 
         const Mats& getPyramid(const cv::Size& winSize, const int maxLevel, const bool withDerivatives=true, int pyrBorder=cv::BORDER_REFLECT_101, int derivBorder=cv::BORDER_CONSTANT){
             /// return image pyramid. Compute if required
@@ -673,49 +770,173 @@ class Frame{
 
         const KeyPoints& getRotatedKeypoints(bool aroundOptical=false){
             /// Gets rotated keypoints. Computes them if required.
-            if (keypointsRotated.empty()){
-                if (!keypointsImg.empty()){
-                    keypointsRotated = cameraModel.rotatePoints(keypointsImg, -getRoll(), aroundOptical);
+            ROS_INFO("FRA = Getting rotated keypoints [Frame %d]", getId());
+            if (!keypointsRotated.empty()){
+                // we already have some
+            } else {
+                if (voMode) {
+                    if (!VOkeypointsRotated.empty()){
+                        // we have some in non VO mode
+                        OVO::vecReduceInd(VOkeypointsRotated, keypointsRotated, VOinliers);
+                    } else if (!VOkeypointsImg.empty()){
+                        // we didnt have rotated ones but we have some key points, compute the rotated ones from there
+                        VOkeypointsRotated = cameraModel.rotatePoints(VOkeypointsImg, -getRoll(), aroundOptical);
+                        OVO::vecReduceInd(VOkeypointsRotated, keypointsRotated, VOinliers);
+                    } else if (!VOpointsImg.empty()){
+                        // we didnt have keypoints, but we had points, compute rotated keypoints from there
+                        cv::KeyPoint::convert(VOpointsImg, VOkeypointsImg);
+                        VOkeypointsRotated = cameraModel.rotatePoints(VOkeypointsImg, -getRoll(), aroundOptical);
+                        OVO::vecReduceInd(VOkeypointsImg, keypointsImg, VOinliers);
+                        OVO::vecReduceInd(VOkeypointsRotated, keypointsRotated, VOinliers);
+                    }
                 } else {
-                    if (!pointsImg.empty()){
+                    if (!keypointsImg.empty()){
+                        // we didnt have rotated ones but we have some key points, compute the rotated ones from there
+                        keypointsRotated = cameraModel.rotatePoints(keypointsImg, -getRoll(), aroundOptical);
+                    } else if (!pointsImg.empty()){
+                        // we didnt have keypoints, but we had points, compute rotated keypoints from there
                         cv::KeyPoint::convert(pointsImg, keypointsImg);
                         keypointsRotated = cameraModel.rotatePoints(keypointsImg, -getRoll(), aroundOptical);
-                    } else {
-                        // compute them?
-                        ROS_WARN("FRA = Asked for rotated keypoints but dont have any points or keypoints to compute them from");
                     }
                 }
             }
+
+            ROS_WARN_COND(keypointsRotated.size()==0, "FRA = Asked for rotated keypoints but dont have any points or keypoints to compute them from");
+
+
             return keypointsRotated;
         }
 
+
+//        const KeyPoints& getRotatedKeypoints(bool aroundOptical=false){
+//            /// Gets rotated keypoints. Computes them if required.
+//            ROS_INFO("FRA = Getting rotated keypoints [Frame %d]", getId());
+//            if (!keypointsRotated.empty()){
+//                // we already have some
+//            } else if (!keypointsImg.empty()){
+//                // we didnt have rotated ones but we have some key points, compute the rotated ones from there
+//                keypointsRotated = cameraModel.rotatePoints(keypointsImg, -getRoll(), aroundOptical);
+//            } else if (!pointsImg.empty()){
+//                // we didnt have keypoints, but we had points, compute rotated keypoints from there
+//                cv::KeyPoint::convert(pointsImg, keypointsImg);
+//                keypointsRotated = cameraModel.rotatePoints(keypointsImg, -getRoll(), aroundOptical);
+//            } else if (voMode){
+//                // we didnt have any at all. Maybe we are in VO mode and have some in non VO mode taht we can use
+//                // get the from the non vo mode ones if possible
+//                if(!VOkeypointsRotated.empty()){
+//                    // we have some rotated kps, get inliers
+//                    OVO::vecReduceInd(VOkeypointsRotated, keypointsRotated, VOinliers);
+//                } else if (!VOkeypointsImg.empty()) {
+//                    // we didnt have rotated ones, but we have kps
+//                    OVO::vecReduceInd(VOkeypointsImg, keypointsImg, VOinliers);
+//                    keypointsRotated = cameraModel.rotatePoints(keypointsImg, -getRoll(), aroundOptical);
+//                } else if (!VOpointsImg.empty()) {
+//                    // we didnt have kps, but we have points))
+//                    OVO::vecReduceInd(VOpointsImg, pointsImg, VOinliers);
+//                    cv::KeyPoint::convert(pointsImg, keypointsImg);
+//                    keypointsRotated = cameraModel.rotatePoints(keypointsImg, -getRoll(), aroundOptical);
+//                } else {
+//                    ROS_WARN("FRA = Asked for rotated keypoints but dont have any points or keypoints to compute them from");
+//                }
+//            }
+//            return keypointsRotated;
+//        }
+
         const cv::Mat& getDescriptors(){
             /// Gets descriptors. Computes them if they are empty or the wrong type (determined from the current set extraxtor)
-            if (descriptors.empty() || keypointsImg.empty() || getDescId() != detector.getExtractorId()){
-                getKeypoints();
-                ros::WallTime t0 = ros::WallTime::now();
-                ROS_INFO("FRA > Computing [%lu] descriptors for frame [id: %d]", keypointsImg.size(), id);
-                detector.extract(image, keypointsImg, descriptors, descId, getRoll() );
-                timeExtract = (ros::WallTime::now()-t0).toSec();
-                ROS_INFO("FRA < Computed [%d] descriptors for frame [id: %d] in [%.1fms]", descriptors.rows, id,timeExtract*1000.);
+            if (descriptors.empty()) {
+                // we have no descriptors
+                if (!VOdescriptors.empty() && voMode){
+                    // We have some in non vo mode, select inliers
+                    OVO::matReduceInd(VOdescriptors, descriptors, VOinliers);
+                } else {//  if ( keypointsImg.empty() || getDescId() != detector.getExtractorId()){
+                    if (voMode){
+                        ROS_WARN("FRA = Computing descriptors in VO mode. First doing all, then selecting inliers");
+                        setModeVoOnly(false);
+                        extractDescriptors();
+                        OVO::matReduceInd(descriptors, VOdescriptors, VOinliers);
+                        setModeVoOnly(true);
+                    } else {
+                        extractDescriptors();
+                    }
+                }
+            } else {
+                // we have descriptrs
+                if (getDescriptorId() != detector.getExtractorId() ){
+                    // we switched the type
+                    ROS_WARN("FRA = Descriptor type changed [%d vs %d], recomputing descriptors for frame [%d]", getDescriptorId(), detector.getExtractorId(), getId());
+                    extractDescriptors();
+                }
             }
             return descriptors;
+        }
+
+        void extractDescriptors(){
+            getKeypoints(); // computes keypoints if required
+            ros::WallTime t0 = ros::WallTime::now();
+            ROS_INFO("FRA > Computing [%lu] descriptors for frame [id: %d]", keypointsImg.size(), id);
+            uint kpsize = keypointsImg.size();
+            detector.extract(image, keypointsImg, descriptors, descriptorId, getRoll() );
+            // detector might actually remove/add keypoints. IN this case it is important to realign existing data
+            if (kpsize!=0 && kpsize != keypointsImg.size()){
+                ROS_INFO("FRA = Detecting changed kp size, resetting data aligned with these");
+                ROS_ASSERT_MSG(!voMode && worldPoints3d.size()==0 && VOdescriptors.rows==0, "FRA = Data probably misaligned");
+                cv::Mat d;
+                KeyPoints kps;
+                std::swap(keypointsImg, kps);
+                std::swap(descriptors, d);
+                clearAllPoints();
+                std::swap(keypointsImg, kps);
+                std::swap(descriptors, d);
+                detectorId = detector.getDetectorId();
+                descriptorId = detector.getExtractorId();
+            }
+
+            timeExtract = (ros::WallTime::now()-t0).toSec();
+            ROS_INFO("FRA < Computed [%d] descriptors for frame [id: %d] in [%.1fms]", descriptors.rows, id,timeExtract*1000.);
+        }
+
+        const Ints& getVoInliers() const {
+            return VOinliers;
         }
 
         const Eigen::MatrixXd& getBearings(){
             /// Computes unit bearing vectors projected from the optical center through the rectified (key) points on the image plane
             if (bearings.rows()==0){
-                ROS_INFO("FRA > Computing bearing vectors and rectified points for frame [id: %d]", id);
+                if (voMode && VObearings.rows()>0){
+                    // we are in vo mode and have vectors in non vo mode, select inliers and be done
+                    bearings = Eigen::MatrixXd(VOinliers.size(), 3);
+                    for (uint i=0; i<VOinliers.size(); ++i){
+                        bearings.row(i) = VObearings.row(VOinliers[i]);
+                    }
+                } else {
+                    if (voMode){
+                        ROS_WARN("FRA = Computing bearings vectos in VO mode. First doing all, then selecting inliers");
+                        setModeVoOnly(false);
+                        if (pointsImg.size()>0){
+                            cameraModel.bearingVectors(pointsImg, bearings, pointsRect);
+                        } else if (keypointsImg.size()>0){
+                            cv::KeyPoint::convert(keypointsImg, pointsImg);
+                            cameraModel.bearingVectors(pointsImg, bearings, pointsRect);
+                        }
+                        ROS_INFO("FRA < Computed [%lu] bearing vectors and rectified points", pointsImg.size());
 
-                ROS_INFO_STREAM(*this);
-
-                if (pointsImg.size()>0){
-                    cameraModel.bearingVectors(pointsImg, bearings, pointsRect);
-                } else if (keypointsImg.size()>0){
-                    cv::KeyPoint::convert(keypointsImg, pointsImg);
-                    cameraModel.bearingVectors(pointsImg, bearings, pointsRect);
+                        VObearings = Eigen::MatrixXd(VOinliers.size(), 3);
+                        for (uint i=0; i<VOinliers.size(); ++i){
+                            VObearings.row(i) = bearings.row(VOinliers[i]);
+                        }
+                        setModeVoOnly(true);
+                    } else {
+                        ROS_INFO("FRA > Computing bearing vectors and rectified points for frame [id: %d]", id);
+                        if (pointsImg.size()>0){
+                            cameraModel.bearingVectors(pointsImg, bearings, pointsRect);
+                        } else if (keypointsImg.size()>0){
+                            cv::KeyPoint::convert(keypointsImg, pointsImg);
+                            cameraModel.bearingVectors(pointsImg, bearings, pointsRect);
+                        }
+                        ROS_INFO("FRA < Computed [%lu] bearing vectors and rectified points", pointsImg.size());
+                    }
                 }
-                ROS_INFO("FRA < Computed [%lu] bearing vectors and rectified points", pointsImg.size());
             }
             return bearings;
 
@@ -766,23 +987,39 @@ class Frame{
         int getDescType() const{
             return detector.getDescriptorType();
         }
+        int getDescSize() const{
+            return detector.getDescriptorSize();
+        }
 
-        int getDescId() const {
-            return descId;
+        int getDescriptorId() const {
+            return descriptorId;
         }
         int getDetId() const {
-            return detId;
+            return detectorId;
         }
 
 
         friend std::ostream& operator<< (std::ostream& stream, const Frame& frame) {
             stream << "[ID:" << std::setw(5) << std::setfill(' ') << frame.id << "]"
+                   << "[VO:" << (frame.voMode ? " ON ]": " OFF]")
                    << "[KF:"  << std::setw(3) << std::setfill(' ') << frame.kfId<< "]"
                    << "[KP:"  << std::setw(4) << std::setfill(' ') << frame.keypointsImg.size() << "]"
                    << "[ P:"  << std::setw(4) << std::setfill(' ') << frame.pointsImg.size() << "]"
                    << "[RP:"  << std::setw(4) << std::setfill(' ') << frame.keypointsRotated.size() << "]"
                    << "[ D:"  << std::setw(4) << std::setfill(' ') << frame.descriptors.rows << "]"
                    << "[BV:"  << std::setw(4) << std::setfill(' ') << frame.bearings.rows() << "]"
+                   << "[TP:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timePreprocess << "]"
+                   << "[TD:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeDetect << "]"
+                   << "[TE:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeExtract << "]";
+
+            stream << "\n[ID:" << std::setw(5) << std::setfill(' ') << frame.id << "]"
+                   << "[ALTERNA]"
+                   << "[KF:"  << std::setw(3) << std::setfill(' ') << frame.kfId<< "]"
+                   << "[KP:"  << std::setw(4) << std::setfill(' ') << frame.VOkeypointsImg.size() << "]"
+                   << "[ P:"  << std::setw(4) << std::setfill(' ') << frame.VOpointsImg.size() << "]"
+                   << "[RP:"  << std::setw(4) << std::setfill(' ') << frame.VOkeypointsRotated.size() << "]"
+                   << "[ D:"  << std::setw(4) << std::setfill(' ') << frame.VOdescriptors.rows << "]"
+                   << "[BV:"  << std::setw(4) << std::setfill(' ') << frame.VObearings.rows() << "]"
                    << "[TP:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timePreprocess << "]"
                    << "[TD:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeDetect << "]"
                    << "[TE:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeExtract << "]";

@@ -82,7 +82,7 @@ cv::Mat PreProc::process(const cv::Mat& in) const {
         out = deinterlace(in, doDeinterlace);
         break;
     default:// Leave as is
-        out = in;
+        out = in.clone();
         break;
     }
 

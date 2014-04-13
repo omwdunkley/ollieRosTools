@@ -57,6 +57,7 @@ private:
     int extractorNr;
 
     double kp_thresh;
+    int kp_grid;
     uint kp_max;
     int kp_octaves;
     int kp_octaveLayers;

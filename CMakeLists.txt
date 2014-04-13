@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 2.4.6)
 include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 
 
-
+#LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/home/ollie/Dropbox/Code/ROS/ollieRosTools/thirdparty/eigen/cmake)
 LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 
 
@@ -23,7 +23,7 @@ INCLUDE_DIRECTORIES(${CHOLMOD_INCLUDE_DIR})
 
 FIND_PACKAGE(OpenCV REQUIRED)
 
-FIND_PACKAGE(Eigen REQUIRED 3.1.2) #https://launchpad.net/~kalakris/+archive/eigen
+FIND_PACKAGE(Eigen REQUIRED 3.2.1) #https://launchpad.net/~kalakris/+archive/eigen
 include_directories(${Eigen_INCLUDE_DIRS})
 
 
@@ -41,11 +41,11 @@ rosbuild_add_boost_directories()
 #set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Ofast   -Wall -Wextra -msse2 -msse3 -msse4 -march=native -ffast-math")
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Ofast  -Wall -Wextra -msse2 -msse3 -msse4 -march=native -ffast-math")
 
-#set(ROS_BUILD_TYPE RelWithDebInfo)
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -msse2 -msse3 -msse4 -march=native -g") #-Wdouble-promotion
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Wall -Wextra -msse2 -msse3 -msse4 -march=native -g") #-Wdouble-promotion
+set(ROS_BUILD_TYPE RelWithDebInfo)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -msse2 -msse3 -msse4 -march=native -g") #-Wdouble-promotion
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Wall -Wextra -msse2 -msse3 -msse4 -march=native -g") #-Wdouble-promotion
 
-set(ROS_BUILD_TYPE Debug)
+#set(ROS_BUILD_TYPE Debug)
 #set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -Wdouble-promotion -g")
 #set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}  -Wall -Wextra -Wdouble-promotion -g")
 

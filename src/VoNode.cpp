@@ -131,12 +131,12 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
 
     /// Compute running average of processing time
-    timeAvg = timeAvg*timeAlpha + (1.0 - timeAlpha)*(ros::WallTime::now()-time_s0).toSec();
+    double time = (ros::WallTime::now()-time_s0).toSec();
+    timeAvg = (timeAvg*timeAlpha) + (1.0 - timeAlpha)*time;
 
 
 
-
-    ROS_INFO_STREAM("NODE < FRAME ["<<frame->getId() << "] PROCESSED [" << std::setprecision(4) << timeAvg*1000. << "ms]");
+    ROS_INFO("NOD < FRAME [%d|%d] PROCESSED [%.1fms, Avg: %.1fms]", frame->getId(), frame->getKfId(), time*1000., timeAvg*1000.);
 
 
     publishStuff();
@@ -146,7 +146,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     if (pubCamera.getNumSubscribers()>0 || pubImage.getNumSubscribers()>0){
         sensor_msgs::CameraInfoPtr camInfoPtr = frame->getCamInfo();
         cv::Mat drawImg = odometry.getVisualImage();
-        OVO::putInt(drawImg, timeAvg*1000., cv::Point(10,drawImg.rows-1*25), CV_RGB(200,0,200), false, "s:");
+        OVO::putInt(drawImg, time*1000., cv::Point(10,drawImg.rows-1*25), CV_RGB(200,0,200), false, "s:");
 
 //        if (imageRect.channels() != image.channels()){
 //            cv::cvtColor(imageRect, imageRect,CV_BGR2GRAY);
@@ -174,23 +174,23 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
 
 
-    if (repeatOn!=configLast.repeatInput){
-        if (configLast.repeatInput){
-            subImage.shutdown();
-            ROS_INFO("NODE = Repeat on");
-        } else {
-            ROS_INFO("NODE = Repeat off");
-            subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
-        }
-        repeatOn = configLast.repeatInput;
-    }
+//    if (repeatOn!=configLast.repeatInput){
+//        if (configLast.repeatInput){
+//            subImage.shutdown();
+//            ROS_INFO("NODE = Repeat on");
+//        } else {
+//            ROS_INFO("NODE = Repeat off");
+//            subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
+//        }
+//        repeatOn = configLast.repeatInput;
+//    }
 
 
-    if (repeatOn){
-        ROS_INFO_THROTTLE(1,"NODE = Repeating Input");
-        ros::spinOnce(); // check for changes in dynamic reconfigure
-        incomingImage(msg);
-    }
+//    if (repeatOn){
+//        ROS_INFO_THROTTLE(1,"NODE = Repeating Input");
+//        ros::spinOnce(); // check for changes in dynamic reconfigure
+//        incomingImage(msg);
+//    }
 
 }
 
@@ -199,18 +199,18 @@ ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_p
     ROS_INFO("NODE > SETTING PARAM");
 
     /// Turn node on and off when settings change
-    if (nodeOn!=config.nodeOn){
-        nodeOn = config.nodeOn;
-        if (nodeOn){
-            // Node was just turned on
-            subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
-            ROS_INFO("NODE = Node On");
-        } else {
-            // Node was just turned off
-            subImage.shutdown();
-            ROS_INFO("NODE = Node Off");
-        }
-    }
+//    if (nodeOn!=config.nodeOn){
+//        nodeOn = config.nodeOn;
+//        if (nodeOn){
+//            // Node was just turned on
+//            subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
+//            ROS_INFO("NODE = Node On");
+//        } else {
+//            // Node was just turned off
+//            subImage.shutdown();
+//            ROS_INFO("NODE = Node Off");
+//        }
+//    }
 
 
     // maxKp == 0 means dont cap size

@@ -99,6 +99,7 @@ Detector::Detector(){
     kp_border = 0;
     detectorNr = 6; // orb
     extractorNr = 6; // orb
+    kp_grid = 0;
 
 }
 
@@ -259,9 +260,6 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
 
 
 
-
-
-
 //int nfeatures = 500, int noctaves = DEFAULT_OCTAVE_MAX, int nlevels = DEFAULT_NSUBLEVELS,
 //        float detectorThreshold = thresh,
 //        int diffusivityType = DEFAULT_DIFFUSIVITY_TYPE,
@@ -269,8 +267,6 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
 //        int ldbSize = DEFAULT_LDB_DESCRIPTOR_SIZE,
 //        int ldbChannels = DEFAULT_LDB_CHANNELS,
 //        bool verbosity = DEFAULT_VERBOSITY
-
-
     case 30 : algo  = new cv::AKAZE(kp_max ? kp_max : 2000, std::max(1, kp_octaves), std::max(1, kp_octaveLayers),
                                     thresh, DEFAULT_DIFFUSIVITY_TYPE,
                                     DEFAULT_DESCRIPTOR, DEFAULT_LDB_DESCRIPTOR_SIZE,
@@ -379,10 +375,27 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
 
     case -1: break; // off
     default:
-        ROS_ERROR("ALGORITHM WITH ID <%d> DOES NOT EXIST", id);
+        ROS_ERROR("DET = ALGORITHM WITH ID <%d> DOES NOT EXIST", id);
         // should never happen
         break;
     }
+
+
+
+
+    // Grid adpated??
+    switch(kp_grid){
+        case 0: break; // None
+        case 1: algo = new::cv::GridAdaptedFeatureDetector(algo, kp_max ? kp_max : 2000, 2,2); break;
+        case 2: algo = new::cv::GridAdaptedFeatureDetector(algo, kp_max ? kp_max : 2000, 2,3); break;
+        case 3: algo = new::cv::GridAdaptedFeatureDetector(algo, kp_max ? kp_max : 2000, 3,3); break;
+        case 4: algo = new::cv::GridAdaptedFeatureDetector(algo, kp_max ? kp_max : 2000, 3,4); break;
+        case 5: algo = new::cv::GridAdaptedFeatureDetector(algo, kp_max ? kp_max : 2000, 4,4); break;
+        case 6: algo = new::cv::GridAdaptedFeatureDetector(algo, kp_max ? kp_max : 2000, 4,5); break;
+        case 7: algo = new::cv::GridAdaptedFeatureDetector(algo, kp_max ? kp_max : 2000, 5,5); break;
+        default: ROS_ERROR("DET = GRID ADAPTED [%d] unknown", kp_grid);
+    }
+
     return algo;
 }
 
@@ -501,12 +514,22 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
     }
 
 
+    if (extractorNr != config.extractor && config.extractor>=30 && config.extractor<=65 && config.extractor!=config.detector ){
+        ROS_WARN("Changing detector - must align with extractor for AKAZE features");
+        config.detector = config.extractor;
+    } else  if (detectorNr != config.detector && config.extractor>=30 && config.extractor<=65  && config.extractor!=config.detector){
+        config.extractor = config.detector;
+        ROS_WARN("Changing extractor - must align with detector for AKAZE features");
+
+    }
+
     // IF something detector related changed, create new one
     if (detectorNr != config.detector ||
         static_cast<int>(kp_max) != config.kp_max ||
         kp_octaves != config.kp_octaves ||
         kp_octaveLayers != config.kp_octaveLayers ||
         kp_thresh != thresh ||
+        kp_grid != config.kp_grid ||
         cv_detector == 0
         ) {
         ROS_INFO("DET = CREATING NEW DETECTOR");
@@ -537,7 +560,10 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
 
     //////////////////////////////////////////////////////////////// EXTRACTOR
 
-    if(extractorNr != config.extractor || cv_extractor == 0){
+
+    if (detectorNr==extractorNr){
+        cv_extractor = cv_detector;
+    } else  if (extractorNr != config.extractor || cv_extractor == 0){
         ROS_INFO("DET = CREATING NEW EXTRACTOR");
         extractorNr = config.extractor;
         cv_extractor = getAlgo(extractorNr, thresh);

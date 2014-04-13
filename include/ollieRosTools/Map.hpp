@@ -78,6 +78,7 @@ class OdoMap {
             /// x,y,z < 2m,
             /// gyro angle, yaw only +- 45 degrees
             /// optical axis vs optical axis < 45 degrees
+            ROS_ERROR("MAP = NOT IMPLEMENTED GET CLOSEST KEYFRAMES: %s", __SHORTFILE__);
         }
 
 
@@ -129,9 +130,9 @@ class OdoMap {
 
 
         /// Show the frame to the map, track against latest KF, return disparity
-        float showFrame(FramePtr& frame){
+        float showFrame(FramePtr& frame, bool reset = false){
             currentFrame = frame;
-            const float disparity = tracker.track(currentFrame);
+            const float disparity = tracker.track(currentFrame, reset);
             return disparity;
         }
 
@@ -140,11 +141,12 @@ class OdoMap {
             return currentFrame;
         }
 
-        const DMatches& getF2KFMatches(){
-            return tracker.getF2KFMatches();
+        const DMatches& getF2KFMatches(const bool forceVoModeOff = false){
+                return tracker.getF2KFMatches(forceVoModeOff);
         }
 
-        void addKeyFrame(FramePtr& frame, bool first=false){
+
+        void addKeyFrame(FramePtr& frame, const bool first=false){
             ROS_INFO("MAP > ADDING KF TO MAP");
             frame->setAsKF(first);
             if (keyframes.size()==0 || first){

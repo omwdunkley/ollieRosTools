@@ -33,8 +33,12 @@ class Tracker{
 
         // Matches currFrame vs keyframe
         DMatches KFMatches;
+        DMatches KFMatchesVo; // might contain a subset of the ones from above;
         // Matches currFrame vs prevframe
         DMatches  FMatches;
+
+        // True if the tracks are from a keyframe with vomode on
+        bool trackedVoMode;
 
 
         // time used for matching / KLTing
@@ -88,6 +92,9 @@ class Tracker{
         bool klt_init; //flag if the klt tracker is intialised wrt the keyframe
         bool klt_useKFTemplate;
 
+        bool klt_refine; // used to refine descriptor matches. Similar to corner refinement
+
+
         // vo stuff
         //bool voDoIntitialise;
 
@@ -109,29 +116,53 @@ class Tracker{
             timeTrack = 0;
             disparity = 0;
             klt_useKFTemplate = false;
+            trackedVoMode = false;
             //pubMarkers = n.advertise<visualization_msgs::Marker>("/vo/markers", 1);
         }
 
+        bool getTrackedVoMode() const {
+            return trackedVoMode;
+        }
+
         float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms) const{
-            const uint size = ms.size();
-            if (size==0){
-                return 0.f;
+
+            /// AVERAGE
+//            const uint size = ms.size();
+//            if (size==0){
+//                return 0.f;
+//            }
+//            const KeyPoints& p1 = f1->getRotatedKeypoints();
+//            const KeyPoints& p2 = f2->getRotatedKeypoints();
+//            float s = 0;
+//            for (uint i=0; i<ms.size(); ++i){
+//                s+=cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt );
+//            }
+//            return s/size;
+
+            /// MEDIAN
+            ROS_INFO("FTR = Computing median rotated disparity of [%lu] matches", ms.size());
+
+            if (ms.size()==0){
+                return 0;
             }
             const KeyPoints& p1 = f1->getRotatedKeypoints();
             const KeyPoints& p2 = f2->getRotatedKeypoints();
-            float s = 0;
+            Floats disp;
+            disp.reserve(ms.size());
             for (uint i=0; i<ms.size(); ++i){
-                s+=cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt );
+               disp.push_back(cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt ));
             }
-            return s/size;
+            uint middle = disp.size() / 2;
+            nth_element(disp.begin(), disp.begin()+middle, disp.end());
+            return disp[middle];
         }
 
         void initialise(FramePtr& frame){
             ROS_INFO("FTR > INITIALISING NEW KEYFRAME [ID: %d | KID: %d]",frame->getId(), frame->getKfId());
 
-            keyFrame=frame;
+            keyFrame      = frame;
             previousFrame = frame;
-            currFrame = frame;
+            currFrame     = frame;
 
             KFMatches.clear();
             FMatches.clear();
@@ -145,8 +176,56 @@ class Tracker{
         }
 
 
-        const DMatches& getF2KFMatches() const{
-            return KFMatches;
+        const DMatches& getF2KFMatches(bool forceVoModeOff = false){
+            // only return matches that have corresponding 3d points in the frame.
+            // Usually matching is done with VoMode on, then only those matches are matched in the first place.
+            // However, when making a new keyframe, we match all. In this case we need to filter out matches that dont have
+            // corresponding 3d points.
+
+            if (forceVoModeOff && !getTrackedVoMode()){
+
+
+
+                // inlier matches sorted by distance
+                // other matches sorted by distance too -> exploirt in association lookup
+                const Ints& inliers = keyFrame->getVoInliers();
+                KFMatchesVo.clear();
+                // assuming sorted
+                //                    uint j=0;
+                //                    for (uint i=0; i<inliers.size(); ++i){
+                //                        for (; j<KFMatches.size(); ++j){
+                //                            if (inliers[i]==KFMatches[j].trainIdx){
+                //                                KFMatchesVo.push_back(KFMatches[j]);
+                //                                if (inliers.size()==KFMatchesVo.size()){
+                //                                    return KFMatchesVo;
+                //                                }
+                //                                break;
+                //                            }
+                //                        }
+                //                    }
+
+                // brute force
+                ROS_WARN("FTR = Reduing [%lu] F2KF matches to [%lu] VO inliers", KFMatches.size(), inliers.size());
+
+
+                for (uint j=0; j<KFMatches.size(); ++j){
+                    for (uint i=0; i<inliers.size(); ++i){
+                        if (inliers[i]==KFMatches[j].trainIdx){
+                            KFMatchesVo.push_back(KFMatches[j]);
+                        }
+                    }
+                }
+
+                cv::Mat draw;
+                cv:: drawMatches(currFrame->getVisualImage(), currFrame->getKeypoints(), keyFrame->getVisualImage(), keyFrame->getKeypoints(), KFMatchesVo, draw, CV_RGB(0,255,0));
+                cv::imshow("test", draw);
+                cv::waitKey(0);
+
+
+                return KFMatchesVo;
+            } else {
+                return KFMatches;
+            }
         }
 
         const DMatches& getF2FMatches() const{
@@ -154,34 +233,117 @@ class Tracker{
         }
 
 
+/*        void kltAddPoints(){
+            /// This function should attempt to add more points between the keyframe and current frame by using a detector and matcher
+
+            if (method == KLT){
+                ROS_ERROR("KLT > NOT IMPLEMENTED kltAddPoints() %s", __SHORTFILE__ );
+                FramePtr& f = currFrame;
+                FramePtr& kf = keyFrame;
+
+
+                // access all points and descriptors
+                f->setModeVoOnly(false);
+                kf->setModeVoOnly(false);
+
+
+
+
+                // detect
+                // remove ones too close to other points
+                // match
+                // add matches
+                // add points to currFrame/prevframe
+
+
+
+                //            bool needDetectAdditionalPoints = static_cast<int>(trackedPts.size()) < m_minNumberOfPoints;
+                //            if (needDetectAdditionalPoints){
+                //                KeyPoints m_nextKeypoints = frame->getKeypoints();
+
+                //                // If we need to detect new points, dont allow any close to existing ones
+                //                //cv::imshow("mask", m_mask); cv::waitKey(30);
+                //                cv::KeyPointsFilter::runByPixelsMask(m_nextKeypoints, klt_mask);
+                //                //cv::KeyPointsFilter::removeDuplicated(m_nextKeypoints); //already done inside getKeypoints()
+
+                //                // Draw potential new ones
+                //                cv::drawKeypoints(outputImage, m_nextKeypoints, outputImage, CV_RGB(0,0,200), cv::DrawMatchesFlags::DEFAULT);
+
+                //                // Compute how many points we want to add
+                //                int pointsToDetect = m_maxNumberOfPoints - static_cast<int>(trackedPts.size());
+
+                //                // Keep the ones with strongest responses
+                //                if (static_cast<int>(m_nextKeypoints.size()) > pointsToDetect) {
+                //                    cv::KeyPointsFilter::retainBest(m_nextKeypoints, pointsToDetect);
+                //                }
+
+                //                ROS_INFO_STREAM("Detected additional " << m_nextKeypoints.size() << " points");
+
+                //                for (size_t i=0; i<m_nextKeypoints.size(); i++) {
+                //                    trackedPts.push_back(m_nextKeypoints[i].pt);
+                //                    cv::circle(outputImage, m_nextKeypoints[i].pt, 5, cv::Scalar(255,0,255), 1, CV_AA);
+                //                }
+
+
+                //                // make flash around when border when redetecting
+                //                cv::Mat mask(frame->getImage().size(), CV_8U);
+                //                mask = cv::Scalar::all(255);
+                //                mask(cv::Rect(cv::Point(11+8,11), cv::Point(klt_nextImg.cols-11-10, klt_nextImg.rows-11))) = cv::Scalar::all(0);
+                //                cv::subtract(cv::Scalar::all(255),outputImage, outputImage, mask);
+                //                //cv::subtract(cv::Scalar::all(255),outputFrame, outputFrame);
+                //                OVO::putInt(outputImage, trackedPts.size(), cv::Point(20,50), CV_RGB(255,0,0), true, "F: ");
+                //            } else {
+
+
+                //            OVO::putInt(outputImage, trackedPts.size(), cv::Point(20,50), CV_RGB(0,255,0), true, "F: ");
+                            //}
+
+            }
+
+        }
+*/
+
 
         /// TODO: Detect bad frames, dont update previous values for next step
         ///       Keyframe update should check matches from KLT. If flow is too big KLT returns mostly false matches
-        float track(FramePtr& frame){
+        float track(FramePtr& frame, bool reset = false){
             ROS_ASSERT_MSG(!keyFrame.empty(), "FTR = Keyframe should not be empty" );
 
             ROS_INFO("FTR > TRACKING Frame [%d/%d] vs Frame [%d/%d]", frame->getId(), frame->getKfId(),keyFrame->getId(), keyFrame->getKfId() );
+            if (reset) {
+                ROS_WARN("FTR - RESETTING -> USING ALL POINTS");
+                frame->setModeVoOnly(false);
+                keyFrame->setModeVoOnly(false);
+                trackedVoMode = false;
 
-
-
-
-            /// DO TRACKING
-            switch(method){
-                case KLT: // track against previous frame using klt
-                    doKLT(frame);
-                    break;
-                case F2F: // track against previous frame
-                    //doF2F(FramePtr& frame, DMatches& matches, float& disparity, double& time, bool isKeyFrame=false)                    
-                    ROS_ERROR("FTR = Not implemented F2F tracking");
-                    doF2F(frame);
-                    break;
-                case F2KF: // always tracking against keyframe
+                if (method == KLT){
+                    ROS_WARN("FTR = Redeceting KF - F correspondances and resetting KLT tracker");
+                    frame->clearAllPoints();
                     doF2KF(frame);
-                    break;
-                default: // Dont do anything                    
-                    currFrame = frame;
-                    ROS_ERROR("FTR = Unknown Tracker Type <%d>", method);
-                    break;
+                    klt_init = false;
+                } else {
+                    doF2KF(frame);
+                }
+            } else {
+
+                /// DO TRACKING
+                switch(method){
+                    case KLT: // track against previous frame using klt
+                        doKLT(frame);
+                        break;
+                    case F2F: // track against previous frame
+                        //doF2F(FramePtr& frame, DMatches& matches, float& disparity, double& time, bool isKeyFrame=false)
+                        ROS_ERROR("FTR = Not implemented F2F tracking");
+                        doF2F(frame);
+                        break;
+                    case F2KF: // always tracking against keyframe
+                        doF2KF(frame);
+                        break;
+                    default: // Dont do anything
+                        currFrame = frame;
+                        ROS_ERROR("FTR = Unknown Tracker Type <%d>", method);
+                        break;
+                }
             }
 
 
@@ -245,6 +407,7 @@ class Tracker{
 //            return outputImage;
             */
 
+            trackedVoMode = keyFrame->getVoMode();
             disparity = rotatedDisparity(currFrame, keyFrame, KFMatches);
             ROS_INFO("FTR < TRACKED [Disparity: %.1f]", disparity);
             return disparity;
@@ -395,6 +558,8 @@ class Tracker{
 
         }
 */
+
+
 
 
         void initKLT(){
@@ -673,6 +838,51 @@ class Tracker{
             //std::swap(FMatches, KFMatches); // store previous matches here
             matcher.match(newFrame, keyFrame, KFMatches, timeTrack, m_pxdist);
 
+            /// do klt refinement
+
+            if (klt_refine && KFMatches.size()>0){
+                ROS_INFO("FTR > Doing KLT refinement over [%lu] matches. Window size [%d]", KFMatches.size(), klt_window.x);
+                ros::WallTime t0 = ros::WallTime::now();
+
+                /// extract matched points
+                KeyPoints nfKPts = newFrame->getKeypoints();
+                KeyPoints mNfKps;
+                Points2f kfPointsMatched;
+                OVO::vecAlignMatch<KeyPoints, Points2f>(nfKPts, keyFrame->getPoints(), mNfKps, kfPointsMatched, KFMatches);
+
+                Points2f klt_predictedPts;
+                cv::KeyPoint::convert(mNfKps, klt_predictedPts);
+
+                std::vector<unsigned char> klt_status;
+                std::vector<float>         klt_error;
+
+                cv::calcOpticalFlowPyrLK(keyFrame->getPyramid(klt_window, klt_levels),                       // input
+                                         newFrame->getPyramid(klt_window, klt_levels),                       // input
+                                         kfPointsMatched,                                                    // input
+                                         klt_predictedPts, klt_status, klt_error,                            // output row
+                                         klt_window, klt_levels,  klt_criteria, cv::OPTFLOW_USE_INITIAL_FLOW, klt_eigenThresh); // settings
+
+                // update KeyPoints
+                int ok   = 0;
+                for (size_t i=0; i<klt_status.size(); ++i){
+                    if (klt_status[i]){
+                        nfKPts[KFMatches[i].queryIdx].pt = klt_predictedPts[i];
+                        ++ok;
+                    }
+                }
+
+
+                // update frame
+                newFrame->swapKeypoints(nfKPts, true);
+
+                timeTrack += (ros::WallTime::now()-t0).toSec();
+                ROS_INFO("FTR > Finished doing KLT refinement. [%d / %lu] successful", ok, KFMatches.size());
+
+
+            }
+
+
+
 //            cv::Mat img = newFrame->getVisualImage();
 //            Points2f fp,kfp;
 //            OVO::vecAlignMatch<Points2f>(newFrame->getPoints(true), keyFrame->getPoints(true), fp, kfp, KFMatches);
@@ -871,8 +1081,8 @@ class Tracker{
 
 
             /// TODO: remove
-            float val = currFrame->compareSBI(keyFrame);
-            OVO::putInt(img, val, cv::Point(10,img.rows-7*25),  OVO::getColor(0.f, 1.f,val, true), false, "SBI:");
+//            float val = currFrame->compareSBI(keyFrame);
+//            OVO::putInt(img, val, cv::Point(10,img.rows-7*25),  OVO::getColor(0.f, 1.f,val, true), false, "SBI:");
 
             return img;
         }
@@ -930,6 +1140,8 @@ class Tracker{
             klt_levels      = config.klt_levels;
             klt_flags       = (config.tracker==1||config.tracker==3) ? (cv::OPTFLOW_LK_GET_MIN_EIGENVALS) : 0; //
             klt_eigenThresh = config.klt_eigenThresh;
+            klt_refine      = config.match_subpix;
+            ROS_WARN_COND(klt_refine && config.kp_subpix, "Not recommended to set match_subpix and kp_subpix at the same time");
             klt_useKFTemplate = config.klt_TemplateKF;
             borderF2KF = cv::Point(config.kp_border, config.kp_border);
             //ROS_INFO("EVF: %d EVT: %f", klt_flags, klt_eigenThresh);
