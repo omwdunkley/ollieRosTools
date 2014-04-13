@@ -50,7 +50,7 @@ class OdoMap {
         PointPtrs landmarks;
 
         FramePtr currentFrame;
-        Tracker tracker;
+        //Tracker tracker;
         uint maxKFNr;
 
         // will need to be changed later

@@ -48,6 +48,8 @@ bool matchGood(const cv::DMatch& match, const float thresh);
 // Returns true if the matches are sorted by distance, ascending order
 bool isSorted(const DMatches& ms);
 
+float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms);
+
 
 class Matcher
 {
@@ -91,7 +93,7 @@ private:
     float m_thresh; // 0 = no threshold
     float m_ratio; //1 = off
     int m_max; // 0 = unlimited
-    float m_pxdist;
+    float m_pxdist; // maximum disparity allowed between matching points between current frame and keyframe
 
 
     bool m_doUnique;
@@ -105,6 +107,18 @@ private:
 
     int descType;
     int descSize;
+
+    // Used by KLT specifically
+    cv::Point klt_window;
+    int klt_levels;
+    cv::TermCriteria klt_criteria;
+    int klt_flags;
+    double klt_eigenThresh;
+    bool klt_refine; // used to refine descriptor matches. Similar to corner refinement
+
+
+
+
 
 };
 

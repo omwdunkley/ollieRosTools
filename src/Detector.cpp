@@ -162,7 +162,8 @@ void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const 
         if (!mask.empty() ){
             kp_filter.runByPixelsMask(kps_out, mask);
         }
-        if (kp_border){
+        if (kp_border){            
+            border = cv::Rect(cv::Point(kp_border, kp_border), cv::Point(img.cols, img.rows)-cv::Point(kp_border, kp_border));
             kp_filter.runByImageBorder(kps_out, img.size(), kp_border);
         }
 
@@ -407,6 +408,7 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
 
     //////////////////////////////////////////////////////////////// DETECTOR
     kp_border = config.kp_border;
+
     kp_subPix = config.kp_subpix;
     kp_removeDouble = config.kp_removeDouble;
     kp_imuRotate = config.kp_imuRotate;

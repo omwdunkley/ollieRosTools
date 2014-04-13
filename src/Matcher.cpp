@@ -11,23 +11,15 @@ Matcher::Matcher(){
     descType=-1;
     descSize=-1;
     updateMatcher(CV_8U,205);
+
+    klt_window = cv::Size(15*2+1,15*2+1);
+    klt_criteria = cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 30, 0.01);
+    klt_levels = 3;
+    klt_flags = 0; // cv::OPTFLOW_LK_GET_MIN_EIGENVALS
+    klt_eigenThresh=0.0001;
+    m_pxdist = 300;
 }
 
-
-
-
-
-
-bool isSorted(const DMatches& ms){
-    // returns true if the distances are sorted by size, lowest first
-    ROS_INFO("Checking if matches are sorted");
-    for (uint i=1; i<ms.size(); ++i){
-        if (ms[i-1].distance > ms[i].distance){
-            return false;
-        }
-    }
-    return true;
-}
 
 
 
@@ -191,6 +183,16 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
 
     }
 
+    m_pxdist        = config.match_px;
+    m_pxdistStep    = config.match_stepPx;
+    klt_window      = cv::Size(config.klt_window*2+1, config.klt_window*2+1);
+    klt_criteria    = cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, config.klt_iter, config.klt_eps);
+    klt_levels      = config.klt_levels;
+    klt_flags       = config.klt_minEigVal ? (cv::OPTFLOW_LK_GET_MIN_EIGENVALS) : 0;
+    klt_eigenThresh = config.klt_thresh;
+    klt_refine      = config.match_subpix;
+    ROS_WARN_COND(klt_refine && config.kp_subpix, "Not recommended to set match_subpix and kp_subpix at the same time");
+
     ROS_INFO("MAT < PARAM SET");
 
 }
@@ -314,7 +316,7 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
 
 
 //
-void symmetryTest(const DMatchesKNN& ms1,const DMatchesKNN& ms2, DMatches& msSym) {
+void matchSymmetryTest(const DMatchesKNN& ms1,const DMatchesKNN& ms2, DMatches& msSym) {
     ROS_INFO("MAT > Symmetrical Check [%lu vs %lu]", ms1.size(), ms2.size());
     msSym.clear();
     int size = std::min(ms1.size(), ms2.size());
@@ -359,9 +361,7 @@ void symmetryTest(const DMatchesKNN& ms1,const DMatchesKNN& ms2, DMatches& msSym
 }
 
 
-void sortMatches(DMatches& ms){
-    std::sort(ms.begin(), ms.end());
-}
+
 
 // Does the matching and match filtering.
 // Note that the distance member of each Dmatch will hold the disparity of the match in pixels
@@ -526,7 +526,7 @@ void Matcher::match( FramePtr& fQuery,
         matcher->knnMatch(dTrain,dQuery,t2q, 2);
         matchFilterUnique(q2t, m_unique);
         matchFilterUnique(t2q, m_unique);
-        symmetryTest(q2t, t2q, matches);
+        matchSymmetryTest(q2t, t2q, matches);
         break;
     case 13: // U S - R
         ROS_ERROR("MAT = CASE [%d] NOT IMPLEMENTED!", idx);
@@ -573,12 +573,40 @@ void Matcher::match( FramePtr& fQuery,
         }
 
 
-        //    // use median distance if sorted, as we can jsut take the middle element. Else compute average
-        //    if (sorted){
-        //        disparity = matchMedianDistance(matches, sorted);
-        //    } else {
-        //        disparity = matchAverageDistance(matches);
-        //    }
+        if (klt_refine && matches.size()>0){
+            ROS_INFO("MAT > Doing KLT refinement over [%lu] matches. Window size [%d]", matches.size(), klt_window.x);
+            ros::WallTime t1 = ros::WallTime::now();
+
+            /// extract matched points
+            KeyPoints nfKPts = fQuery->getKeypoints();
+            KeyPoints mNfKps;
+            Points2f kfPointsMatched;
+            OVO::vecAlignMatch<KeyPoints, Points2f>(nfKPts, fTrain->getPoints(), mNfKps, kfPointsMatched, matches);
+
+            Points2f klt_predictedPts;
+            cv::KeyPoint::convert(mNfKps, klt_predictedPts);
+
+            std::vector<unsigned char> klt_status;
+            std::vector<float>         klt_error;
+
+            cv::calcOpticalFlowPyrLK(fTrain->getPyramid(klt_window, klt_levels),                       // input
+                                     fQuery->getPyramid(klt_window, klt_levels),                       // input
+                                     kfPointsMatched,                                                    // input
+                                     klt_predictedPts, klt_status, klt_error,                            // output row
+                                     klt_window, klt_levels,  klt_criteria, cv::OPTFLOW_USE_INITIAL_FLOW, klt_eigenThresh); // settings
+
+            // update KeyPoints
+            int ok   = 0;
+            for (size_t i=0; i<klt_status.size(); ++i){
+                if (klt_status[i]){
+                    nfKPts[matches[i].queryIdx].pt = klt_predictedPts[i];
+                    ++ok;
+                }
+            }
+            fQuery->swapKeypoints(nfKPts);
+            ROS_INFO("FTR > Finished doing KLT refinement. [%d / %lu] successful in [%.1fms]", ok, matches.size(),1000* (ros::WallTime::now()-t1).toSec());
+        }
+
 
         time = (ros::WallTime::now()-m0).toSec();
         float ratio = static_cast<float>(matches.size()) / std::min(dQuery.rows, dTrain.rows);
@@ -862,3 +890,51 @@ void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total){
 
 
 
+
+bool isSorted(const DMatches& ms){
+    // returns true if the distances are sorted by size, lowest first
+    ROS_INFO("Checking if matches are sorted");
+    for (uint i=1; i<ms.size(); ++i){
+        if (ms[i-1].distance > ms[i].distance){
+            return false;
+        }
+    }
+    return true;
+}
+
+float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms){
+
+    /// AVERAGE
+//            const uint size = ms.size();
+//            if (size==0){
+//                return 0.f;
+//            }
+//            const KeyPoints& p1 = f1->getRotatedKeypoints();
+//            const KeyPoints& p2 = f2->getRotatedKeypoints();
+//            float s = 0;
+//            for (uint i=0; i<ms.size(); ++i){
+//                s+=cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt );
+//            }
+//            return s/size;
+
+    /// MEDIAN
+    ROS_INFO("FTR = Computing median rotated disparity of [%lu] matches", ms.size());
+
+    if (ms.size()==0){
+        return 0;
+    }
+    const KeyPoints& p1 = f1->getRotatedKeypoints();
+    const KeyPoints& p2 = f2->getRotatedKeypoints();
+    Floats disp;
+    disp.reserve(ms.size());
+    for (uint i=0; i<ms.size(); ++i){
+       disp.push_back(cv::norm( p1[ms[i].queryIdx].pt - p2[ms[i].trainIdx].pt ));
+    }
+    uint middle = disp.size() / 2;
+    nth_element(disp.begin(), disp.begin()+middle, disp.end());
+    return disp[middle];
+}
+
+void sortMatches(DMatches& ms){
+    std::sort(ms.begin(), ms.end());
+}
