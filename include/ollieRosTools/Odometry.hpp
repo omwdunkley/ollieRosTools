@@ -43,6 +43,7 @@
 #include <ollieRosTools/custom_types/vertex_landmarkxyz.hpp>
 #include <ollieRosTools/custom_types/vertex_pose.hpp>
 #include <ollieRosTools/custom_types/register_types.hpp>
+#include <ollieRosTools/custom_types/edge_pose_pose.hpp>
 
 
 namespace RP = opengv::sac_problems::relative_pose;
@@ -318,6 +319,8 @@ private:
 
 
 
+        // add noise
+        transKFtoF.translate(Point3d(1.2,0.2,0.2));
 
         /// Set pose of F from KF->F to world->F
         //f2->setPose(); //
@@ -335,6 +338,8 @@ private:
         ROS_INFO("ODO = Min / Avg / Max RePrjErr KF = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
         repjerr = OVO::reprojectErrPointsVsBV(f->getPose(), worldPoints, bvFinlier );
         ROS_INFO("ODO = Min / Avg / Max RePrjErr  F = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
+
+
 
         /// add points to track against to keyframes
 //        Points2f fWPts3d, kfWPts3d;
@@ -409,8 +414,15 @@ private:
         v_se3KF->setId(++id);
         v_se3F ->setId(++id);
 
+//        EdgePosePose *e = new EdgePosePose();
+//        e->vertices()[0] = v_se3KF;
+//        e->vertices()[1] = v_se3F;
+//        e->setMeasurement(Eigen::Isometry3d(transKFtoF.matrix()));
+//        e->information() = Eigen::Matrix<double, 6, 6>::Identity();
+
         bool ok = optimizer.addVertex(v_se3F);
         ok &= optimizer.addVertex(v_se3KF);
+        ok &= optimizer.addEdge(e);
         assert(ok);
 
         /// Add Points
@@ -491,6 +503,8 @@ private:
         /// Extract G2O refinement
         Pose poseEstimateF = v_se3F->estimate();
         Pose poseEstimateKF = v_se3KF->estimate();
+
+
 
         /// Saves current F and KF and Point vectors aligned and poses
         ROS_INFO("Saving INIT state Frame [%d/%d] and Frame [%d/%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
