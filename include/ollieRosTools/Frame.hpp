@@ -8,6 +8,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <Eigen/Eigen>
+#include <Eigen/Geometry>
 
 #include <ros/ros.h>
 #include <tf/tf.h>
@@ -47,6 +48,7 @@ class Frame{
         float quality; // <0 means not measured, 0 means bad, 1 means perfect
         static float averageQuality;
         Eigen::Matrix3d imu2cam;
+        bool hasPoseEstimate;
 
         // Type of descriptor / detector used
         int descriptorId;
@@ -57,6 +59,7 @@ class Frame{
         KeyPoints keypointsImg;
         KeyPoints keypointsRotated; // TODO: should be eigen
         cv::Mat descriptors;
+        cv::Mat descriptorsCachedVo;
         Eigen::MatrixXd bearings;
         Eigen::MatrixXd pointsRect; // rectified points, align with all of the above
 
@@ -66,7 +69,7 @@ class Frame{
         static PreProc preproc;
 
         /// If a keyframe, this contains references to map points
-        std::vector<LandmarkPtr> mapPointRefs;
+        std::map<uint, LandmarkPtr> landmarkRefs;
 
         /// cached?
 //        KeyPoints             mapKeyPoints;
@@ -176,9 +179,27 @@ class Frame{
             /// TODO: estiamte quality of imageu using acceleromter, gyro and blurriness estiamtion
             estimateImageQuality();
 
+            hasPoseEstimate = false;
+
             ROS_INFO("FRA < NEW FRAME CREATED [ID: %d]", id);
 
 
+        }
+
+        void addLandMarkRef(const uint id, LandmarkPtr lm){
+            ROS_ASSERT(id<keypointsImg.size());
+            std::pair<std::map<int,LandmarkPtr>::iterator,bool> ret;
+            ret = landmarkRefs.insert(std::make_pair(id, lm));
+            ROS_ASSERT_MSG(ret.second, "FRA = Landmark [%d] insertion failed, Landmark [%d] already under positiong [%d]!",lm->getId(), ret.first->second->getId(), id);
+        }
+
+        void removeLandMarkRef(const int id){
+            size_t removed = landmarkRefs.erase(id);
+            ROS_ASSERT(removed>0);
+        }
+
+        bool PoseEstimated() const{
+            return hasPoseEstimate;
         }
 
         void swapKeypoints(KeyPoints& kps, bool updateOnly = false){
@@ -338,7 +359,7 @@ class Frame{
                 id          = 0;
                 // initial pose is zero translation with IMU rotation
                 pose.setIdentity();
-                setPoseRotationFromImu();
+                setPoseRotationFromImu(true);
             } else {
                 ROS_INFO("FRA > Setting Frame [%d] as keyframe", id);
             }
@@ -387,6 +408,13 @@ class Frame{
             return pose;
         }
 
+        // Prepares the keyframe for removal
+        void prepareRemoval(){
+            ROS_WARN("Frame [%d|%d] Preparing for removal", getId(), getKfId());
+            clearAllPoints();
+
+        }
+
         // gets the optical axis in the world frame
         const Eigen::Vector3d getOpticalAxisBearing() const {
             return pose.linear()*Eigen::Vector3d(0., 0., 1.);
@@ -400,11 +428,17 @@ class Frame{
         // Sets the pose from a 3x4 mat, converting it to an eigen affine3d
         void setPose(Eigen::Affine3d& t){
             pose = t;
+            hasPoseEstimate = true;
         }
 
         // sets the pose from the imu rotation. This is usually used on the very first keyframe
-        void setPoseRotationFromImu(){
+        void setPoseRotationFromImu(bool inverse = false){
             pose.linear() = imuAttitudeCam;
+            if (inverse){
+                pose.linear().transposeInPlace();
+            }
+
+            hasPoseEstimate = true;
         }
 
         // Returns true if this frame is not the result of the default constructor
@@ -522,6 +556,7 @@ class Frame{
             keypointsImg.clear();
             bearings = Eigen::MatrixXd();
             descriptors = cv::Mat();
+            landmarkRefs.clear();
             //descId = -1;
             //detId = -2; // unknown type
         }
@@ -563,7 +598,7 @@ class Frame{
         }
 
         // Gets descriptors. Computes them if they are empty or the wrong type (determined from the current set extraxtor)
-        const cv::Mat& getDescriptors(){            
+        const cv::Mat& getDescriptors(bool withLMOnly=false){
             if (descriptors.empty()) {
                 // we have no descriptors
                 extractDescriptors();
@@ -575,6 +610,16 @@ class Frame{
                     extractDescriptors();
                 }
             }
+
+            if (withLMOnly){
+                ROS_ASSERT(landmarkRefs.size()>0);
+
+
+
+
+
+            }
+
             return descriptors;
         }
 
@@ -706,6 +751,7 @@ class Frame{
                    << "[ D:"  << std::setw(4) << std::setfill(' ') << frame.descriptors.rows << "]"
                    << "[BV:"  << std::setw(4) << std::setfill(' ') << frame.bearings.rows() << "]"
                    << "[RE:"  << std::setw(4) << std::setfill(' ') << frame.pointsRect.rows() << "]"
+                   << "[LM:"  << std::setw(4) << std::setfill(' ') << frame.landmarkRefs.size() << "]"
                    << "[TP:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timePreprocess << "]"
                    << "[TD:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeDetect << "]"
                    << "[TE:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeExtract << "]";

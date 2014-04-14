@@ -184,10 +184,10 @@ double OVO::errorBV(const Bearing bv1, const Bearing bv2, const BEARING_ERROR me
     const Bearing bva = bv1.normalised();
     const Bearing bvb = bv2.normalised();
     switch(method){
-        case OneMinusAdotB:  return 1.0 - bva.dot(bvb);
-        case ATAN2:          return atan2(bva.cross(bvb), bva.dot(bvb));
-        case NormAminusB:    return (bva-bvb).norm();
-        case SUM_AminusBSqr: return ((bva-bvb).array().pow(2)).sum();
+        case BVERR_OneMinusAdotB:  return 1.0 - bva.dot(bvb);
+        case BVERR_ATAN2:          return atan2(bva.cross(bvb), bva.dot(bvb));
+        case BVERR_NormAminusB:    return (bva-bvb).norm();
+        case BVERR_SUM_AminusBSqr: return ((bva-bvb).array().pow(2)).sum();
     }
 }
 

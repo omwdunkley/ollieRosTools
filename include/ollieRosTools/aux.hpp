@@ -63,13 +63,13 @@ const float toDeg = 180/M_PI;
 
 namespace OVO {
 
-    enum BEARING_ERROR {OneMinusAdotB, // 1-A.B
-                    ATAN2,             // ATAN2(||AxB||, A.B)
-                    NormAminusB,       // ||A-B||
-                    SUM_AminusBSqr     // sum((A-B)**2
+    enum BEARING_ERROR {BVERR_OneMinusAdotB, // 1-A.B
+                    BVERR_ATAN2,             // ATAN2(||AxB||, A.B)
+                    BVERR_NormAminusB,       // ||A-B||
+                    BVERR_SUM_AminusBSqr     // sum((A-B)**2
                    };
 
-    const BEARING_ERROR DEFAULT_BV_ERROR = OneMinusAdotB;
+    const BEARING_ERROR DEFAULT_BV_ERROR = BVERR_OneMinusAdotB;
 
     /// TODO: put this in a look up table
     CvScalar getColor(const float range_min, const float range_max, const float depth, bool reverse = false);

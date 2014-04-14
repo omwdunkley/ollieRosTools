@@ -37,9 +37,6 @@
 
 
 class VoNode{
-
-
-
 	public:
         VoNode(ros::NodeHandle& _n);
         ~VoNode();
@@ -64,7 +61,6 @@ class VoNode{
         /// Members
         float timeAlpha;
         ros::Time lastTime; // Keep track of time to detect loops in bag files
-        //Tracker tracker;
         Odometry odometry;
 
 
@@ -77,20 +73,20 @@ class VoNode{
 
         /// Display stuff
         void publishStuff(){
-            FramePtrs kfs = odometry.getKeyFrames();
-            for(uint i=0; i<kfs.size(); ++i){
-                pubTF.sendTransform(kfs[i]->getStampedTransform());
-            }
-            pubTF.sendTransform(odometry.getLastFrame()->getStampedTransform());
-            pubMarker.publish(kfs.back()->getWorldPointsMarker(0,1.2,0.5));
-            pubMarker.publish(odometry.getLastFrame()->getWorldPointsMarker(1,0.8,1.0));
-
+            /// TODO
+//            FramePtrs kfs = odometry.getKeyFrames();
+//            for(uint i=0; i<kfs.size(); ++i){
+//                pubTF.sendTransform(kfs[i]->getStampedTransform());
+//            }
+//            pubTF.sendTransform(odometry.getLastFrame()->getStampedTransform());
+//            pubMarker.publish(kfs.back()->getWorldPointsMarker(0,1.2,0.5));
+//            pubMarker.publish(odometry.getLastFrame()->getWorldPointsMarker(1,0.8,1.0));
+            ROS_ERROR("NOT IMPLEMENTED VoNode.publishStuff()");
         }
 
 
         /// Parameters
         std::string inputTopic;
-        //bool useIMU;
         std::string imuFrame;
         std::string worldFrame;
 
