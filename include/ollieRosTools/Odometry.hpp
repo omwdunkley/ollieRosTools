@@ -502,7 +502,7 @@ private:
     bool initialiseVO(){
         ROS_INFO("ODO > DOING INITIALISATION");
 
-        bool okay = initialise(map.getCurrentFrame());
+         bool okay; // = initialise(map.getCurrentFrame());
         //addKFVO();
 
         if (okay){
@@ -618,7 +618,7 @@ private:
         bool okay = false;
 
         // Estiamte pose between current frame and last KF
-        okay = poseEstimate(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches(newkf));
+        //okay = poseEstimate(map.getCurrentFrame(), map.getLatestKF(), map.getF2KFMatches(newkf));
 
 
         timeVO = (ros::WallTime::now()-t0).toSec();
@@ -686,7 +686,7 @@ public:
         if (state==WAIT_FIRST_FRAME) {
             // first time we received a keyframe ever
            setInitialKFVO(frame);
-           track(frame);
+           //track(frame);
 
         } else if (state==WAIT_INIT) {
             // waiting to initialise
@@ -695,10 +695,10 @@ public:
             if (control==DO_ADDKF){
                 control = DO_NOTHING;
                 setInitialKFVO(frame);
-                track(frame); // I think?
+                //track(frame); // I think?
             } else {
                 /// Wait for keyframe as usual
-                disparity = track(frame);
+                //disparity = track(frame);
 
                 /// Check if we can initialise
                 if (control==DO_INIT || disparity>voInitDisparity){                    
@@ -714,12 +714,12 @@ public:
 
             if (nextAddKf){
                 nextAddKf = false;
-                disparity = track(frame, true);
+                //disparity = track(frame, true);
                 estimatePoseVO(true);
                 addKFVO();
 
             } else {
-                disparity = track(frame);
+                //disparity = track(frame);
                 estimatePoseVO();
             }
 
@@ -758,20 +758,17 @@ public:
 
         // Draw VO flow
         // only for drawing!
+
         if (matchesVO.size()>0){
+            /*
             Points2f drawVoKFPts, drawVoFPts;
             OVO::vecAlignMatch<Points2f>(map.getCurrentFrame()->getPoints(true), map.getLatestKF()->getPoints(true), drawVoFPts, drawVoKFPts, matchesVO);
             for (uint i=0; i<drawVoFPts.size(); ++i){
                 cv::line(image, drawVoFPts[i], drawVoKFPts[i], CV_RGB(255,0,255), 1, CV_AA);
             }
+            */
             OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
         }
-
-
-
-
-
-
 
         // show timings
         if (timeVO>0){

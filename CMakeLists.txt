@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 2.4.6)
 include($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+set(CMAKE_VERBOSE_MAKEFILE TRUE)
 
 
 #LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/home/ollie/Dropbox/Code/ROS/ollieRosTools/thirdparty/eigen/cmake)
@@ -57,7 +58,6 @@ endif()
 
 
 rosbuild_init()
-set(CMAKE_VERBOSE_MAKEFILE TRUE)
 
 #set the default path for built executables to the "bin" directory
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
@@ -105,7 +105,7 @@ SET(G2O_LIBS cholmod cxsparse -lg2o_cli -lg2o_core
 -lg2o_types_slam3d)
 
 ####### g2o custom types ###############################
-ADD_SUBDIRECTORY(src/custom_types)
+#ADD_SUBDIRECTORY(src/custom_types)
 
 
 
@@ -131,18 +131,20 @@ SET(PREPROC_FILES
     src/CameraATAN.cpp
 )
 
-SET(VO_FILES
+SET(VO_FILES    
+    src/Frame.cpp
+    src/Landmark.cpp
+    src/aux.cpp
     src/mainVO.cpp
     src/PreProc.cpp
-    src/VoNode.cpp
-    src/aux.cpp
+    src/VoNode.cpp    
     src/CameraATAN.cpp
     src/Frame.cpp
     src/Detector.cpp
     src/Tracker.cpp
     src/Matcher.cpp
     src/Odometry.cpp
-    src/Map.cpp
+    src/Map.cpp        
 )
 
 
@@ -155,14 +157,14 @@ target_link_libraries(vo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS} g2o_custom_type
 SET(BA_FILES
     src/ba_demo.cpp
 )
-rosbuild_add_executable(ba_demo ${BA_FILES} )
-target_link_libraries(ba_demo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
+#rosbuild_add_executable(ba_demo ${BA_FILES} )
+#target_link_libraries(ba_demo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
 
 SET(SBA_FILES
     src/sba_demo.cpp
 )
-rosbuild_add_executable(sba_demo ${SBA_FILES} )
-target_link_libraries(sba_demo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
+#rosbuild_add_executable(sba_demo ${SBA_FILES} )
+#target_link_libraries(sba_demo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
 #common commands for building c++ executables and libraries
 #rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
 #target_link_libraries(${PROJECT_NAME} another_library)

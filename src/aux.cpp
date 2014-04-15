@@ -181,11 +181,11 @@ double OVO::angle2error(const double angleDeg, const BEARING_ERROR method ){
 
 // Compute the error between bearing vectors
 double OVO::errorBV(const Bearing bv1, const Bearing bv2, const BEARING_ERROR method ){
-    const Bearing bva = bv1.normalised();
-    const Bearing bvb = bv2.normalised();
+    const Bearing bva = bv1.normalized();
+    const Bearing bvb = bv2.normalized();
     switch(method){
         case BVERR_OneMinusAdotB:  return 1.0 - bva.dot(bvb);
-        case BVERR_ATAN2:          return atan2(bva.cross(bvb), bva.dot(bvb));
+        case BVERR_ATAN2:          return atan2((bva.cross(bvb).norm()), bva.dot(bvb));
         case BVERR_NormAminusB:    return (bva-bvb).norm();
         case BVERR_SUM_AminusBSqr: return ((bva-bvb).array().pow(2)).sum();
     }

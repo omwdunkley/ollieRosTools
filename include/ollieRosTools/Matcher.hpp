@@ -7,6 +7,7 @@
 
 #include <ollieRosTools/VoNode_paramsConfig.h>
 #include <ollieRosTools/Frame.hpp>
+#include <ollieRosTools/Map.hpp>
 #include <ollieRosTools/aux.hpp>
 
 
@@ -16,8 +17,8 @@ void matchClip(DMatches& ms, const uint max_nr);
 // Return the smallest and largest distance along with the total nr of matches
 void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total);
 
-// Calculate disparity and filter pixels by disparity if required
-DMatches disparityFilter(const DMatches& in, FramePtr& f1, FramePtr& f2, const float maxDisparity, bool disparityFilter=true);
+// Calculate disparity and filter pixels by disparity if required [DONT USE ANYMORE: now prefilter disparities!]
+//DMatches disparityFilter(const DMatches& in, FramePtr& f1, FramePtr& f2, const float maxDisparity, bool disparityFilter=true);
 
 // Filter out matches that are not unique. Specifically unqiue = dist1/dist2 > similarity
 void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float similarity, const bool keep_sorted = false);
@@ -35,10 +36,10 @@ void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted=fals
 void matchThreshold(DMatches& ms, float thresh, bool is_sorted=false);
 
 // Compute average distance of a set of matches
-float matchAverageDistance(const DMatches& ms);
+//float matchAverageDistance(const DMatches& ms);
 
 // Compute median distance of a set of matches
-float matchMedianDistance(DMatches& ms, const bool is_sorted=false);
+//float matchMedianDistance(DMatches& ms, const bool is_sorted=false);
 
 // Returns true if match not good enough
 bool matchBad(const cv::DMatch& match, const float thresh);
@@ -50,6 +51,19 @@ bool matchGood(const cv::DMatch& match, const float thresh);
 bool isSorted(const DMatches& ms);
 
 float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms);
+
+cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+
+
+// Makes a mask that prefilters potential matches by using a predicted bearing vector. This effectively only allows matches between points where the KF and F bearing vector are within a threshold.
+cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryPoints, const Bearings& trainPoints, const float maxBVError, const OVO::BEARING_ERROR method = OVO::DEFAULT_BV_ERROR, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+cv::Mat makeDisparityMask(int qSize, int tSize, const Points2f& queryPoints, const Points2f& trainPoints, const float maxDisparity, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+
+// Gets the median of a set of values
+float median_approx(Floats& values);
+
+// Sorts matches by distance, increasing order
+void sortMatches(DMatches& ms);
 
 
 class Matcher
@@ -71,12 +85,6 @@ public:
                const Ints& maskIdx=Ints()
             );
 
-    // Match descriptor -> descriptors. Returns best
-    bool match(const cv::Mat& descSingle,
-               const cv::Mat& descMulti,
-               cv::DMatch& m
-            );
-
 
     float getMaxDisp() const{return m_pxdist;}
 
@@ -85,7 +93,7 @@ private:
     ollieRosTools::VoNode_paramsConfig config_pre;
     void updateMatcher(const int type, const int size, const bool update=false);
 
-    int m_type;
+    bool m_flann;
     int m_norm;
     int m_sym_neighbours; // 0 = no symmetry
     float m_unique; // 0 = off

@@ -33,7 +33,8 @@ public:
     int getDetectorId() const {return detectorNr;}
     int getExtractorId() const {return extractorNr;}
     int getDescriptorType() const {return cv_extractor->descriptorType();}
-    int getDescriptorSize() const {return cv_extractor->descriptorSize();}
+    int getDescriptorSize() const {return cv_extractor->descriptorSize();}    
+    const cv::Rect& getBorder() const {return border;}
 
 
 
@@ -63,6 +64,7 @@ private:
     int kp_octaveLayers;
     bool kp_nms;
     int kp_border;
+    cv::Rect border;
     int kp_subPix;
     int kp_removeDouble;
     bool kp_imuRotate;
