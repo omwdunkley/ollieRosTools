@@ -12,7 +12,7 @@ extern std::string WORLD_FRAME;
 extern std::string CAM_FRAME;
 extern Eigen::Affine3d IMU2CAM;
 #include <boost/assign.hpp>
-
+#include <boost/preprocessor.hpp>
 
 #include <opengv/types.hpp>
 #include <opencv2/opencv.hpp>
@@ -30,6 +30,30 @@ class Frame;
 
 
 #define __SHORTFILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
+
+
+//// http://stackoverflow.com/questions/5093460/how-to-convert-an-enum-type-variable-to-a-string
+//#define X_DEFINE_ENUM_WITH_STRING_CONVERSIONS_TOSTRING_CASE(r, data, elem)    \
+//    case elem : return BOOST_PP_STRINGIZE(elem);
+//#define DEFINE_ENUM_WITH_STRING_CONVERSIONS(name, enumerators)                \
+//    enum name {                                                               \
+//        BOOST_PP_SEQ_ENUM(enumerators)                                        \
+//    };                                                                        \
+//                                                                              \
+//    inline const char* ToString(name v)                                       \
+//    {                                                                         \
+//        switch (v)                                                            \
+//        {                                                                     \
+//            BOOST_PP_SEQ_FOR_EACH(                                            \
+//                X_DEFINE_ENUM_WITH_STRING_CONVERSIONS_TOSTRING_CASE,          \
+//                name,                                                         \
+//                enumerators                                                   \
+//            )                                                                 \
+//            default: return "[Unknown " BOOST_PP_STRINGIZE(name) "]";         \
+//        }                                                                     \
+//    }
+
+
 
 // 3d
 typedef opengv::bearingVector_t Bearing;
