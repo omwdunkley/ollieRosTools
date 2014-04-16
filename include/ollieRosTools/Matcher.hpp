@@ -1,45 +1,21 @@
 #ifndef MATCHER_HPP
 #define MATCHER_HPP
-#include <algorithm>    // std::max
 
+#include <algorithm>    // std::max
 #include <opencv2/features2d/features2d.hpp>
 #include <opencv2/opencv.hpp>
 
 #include <ollieRosTools/VoNode_paramsConfig.h>
+//#include <ollieRosTools/Map.hpp>
+class OdoMap;
 #include <ollieRosTools/Frame.hpp>
-#include <ollieRosTools/Map.hpp>
 #include <ollieRosTools/aux.hpp>
 
 
-// Doesnt sort, just takes the first max_nr. Idealy sorted by matching distance
-void matchClip(DMatches& ms, const uint max_nr);
 
-// Return the smallest and largest distance along with the total nr of matches
-void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total);
 
-// Calculate disparity and filter pixels by disparity if required [DONT USE ANYMORE: now prefilter disparities!]
-//DMatches disparityFilter(const DMatches& in, FramePtr& f1, FramePtr& f2, const float maxDisparity, bool disparityFilter=true);
 
-// Filter out matches that are not unique. Specifically unqiue = dist1/dist2 > similarity
-void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float similarity, const bool keep_sorted = false);
-
-// same as above, but works in place, preserving order and size
-void matchFilterUnique(DMatchesKNN& msknn, const float similarity);
-
-// Reduces vector of vectors DMatchesKNN to a single vector DMatches
-void matchKnn2single(const DMatchesKNN& msknn, DMatches& ms, const bool keep_sorted=false, const size_t maxPerMatch=5);
-
-// remove matches that are ratio * worse than the best
-void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted=false);
-
-// Remove all matches below threshold.
-void matchThreshold(DMatches& ms, float thresh, bool is_sorted=false);
-
-// Compute average distance of a set of matches
-//float matchAverageDistance(const DMatches& ms);
-
-// Compute median distance of a set of matches
-//float matchMedianDistance(DMatches& ms, const bool is_sorted=false);
+/// MATCHING UTILITY FUNCTIONS
 
 // Returns true if match not good enough
 bool matchBad(const cv::DMatch& match, const float thresh);
@@ -47,24 +23,70 @@ bool matchBad(const cv::DMatch& match, const float thresh);
 // Returns true if match good enough
 bool matchGood(const cv::DMatch& match, const float thresh);
 
-// Returns true if the matches are sorted by distance, ascending order
+// Return the smallest, largest distance along with the total nr of matches
+void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total);
+
+// returns true if the distances are sorted by size, lowest first
 bool isSorted(const DMatches& ms);
 
-float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms);
-
-cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
-
-
-// Makes a mask that prefilters potential matches by using a predicted bearing vector. This effectively only allows matches between points where the KF and F bearing vector are within a threshold.
-cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryPoints, const Bearings& trainPoints, const float maxBVError, const OVO::BEARING_ERROR method = OVO::DEFAULT_BV_ERROR, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
-cv::Mat makeDisparityMask(int qSize, int tSize, const Points2f& queryPoints, const Points2f& trainPoints, const float maxDisparity, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
-
-// Gets the median of a set of values
-float median_approx(Floats& values);
-
-// Sorts matches by distance, increasing order
+// sorts matches by increaseing distance
 void sortMatches(DMatches& ms);
 
+// Reduces vector of vectors DMatchesKNN to a single vector DMatches
+void matchKnn2single(const DMatchesKNN& msknn, DMatches& ms, const size_t maxPerMatch);
+
+
+
+
+
+/// MATCH FILTERING FUNCTIONS
+
+// Filter out matches that are not unique. Specifically unqiue = dist1/dist2 > similarity
+void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float similarity);
+
+// Same as above but preservers length and order. Filters in place
+void matchFilterUnique(DMatchesKNN& msknn, const float similarity);
+
+// Keeps the best N matches
+void matchFilterBest(DMatches& ms, const uint max_nr);
+
+// Remove all matches below threshold.
+void matchFilterThreshold(DMatches& ms, float thresh, bool is_sorted=false);
+
+// remove matches that are ratio * worse than the best
+void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted=false);
+
+// Only allows matches where matches from ms1 and ms2 match to eachother
+void matchSymmetryTest(const DMatchesKNN& ms1,const DMatchesKNN& ms2, DMatches& msSym);
+
+
+
+
+/// MATCH REFINEMENT FUNCTIONS
+
+// Does KLT Refinement over matches. Provide all kps, matches chose subset. Returns matches that passed and updated kps
+void kltRefine(const KeyPoints& qKps, const KeyPoints& tKps, DMatches& matches, KeyPoints& qKpsRefined);
+
+
+
+
+/// MASK MAKING FUNCTIONS
+
+// Returns a mask where all intersecionts of rows[queryOk] = 1 and cols[trainOk] = 1 are 1 else 0
+cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+
+// Makes a mask that prefilters potential matches by using a predicted position - image plane version
+cv::Mat makeDisparityMask(int qSize, int tSize, const Points2f& queryPoints, const Points2f& trainPoints, const float maxDisparity, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+
+// Makes a mask that prefilters potential matches by using a predicted bearing vector
+cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryPoints, const Bearings& trainPoints, const float maxBVError, const OVO::BEARING_ERROR methodR = OVO::BVERR_DEFAULT, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+
+
+
+
+
+
+/// MATCHING CLASS
 
 class Matcher
 {
@@ -72,50 +94,45 @@ public:
     Matcher();
     void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
+    // Match f against map with with an initial pose estimate
+    void matchMap(const OdoMap& map, FramePtr& f, FramePtr& f_close, const Ints& fMask=Ints());
+
+    // Match f against map withOUT pose estimate = WE ARE LOST
+    void matchMap(const OdoMap& map, FramePtr& f, const Ints& fMask=Ints());
+
+    // Match f against frame with an initial pose estimate
+    void matchFrame(FramePtr& kf, FramePtr& f, FramePtr& f_close, const Ints& kfMask=Ints(), const Ints& fMask=Ints());
+
+    // Match f against frame withOUT pose estimate = WE ARE LOST
+    void matchFrame(FramePtr& kf, FramePtr& f, const Ints& kfMask=Ints(), const Ints& fMask=Ints());
 
 
-
-    // Match frame-frame
-    void match(FramePtr& f1,
-               FramePtr& f2,
-               DMatches& matches,                           // matches out               
-               double& time,
-               float maxDisparit = 0.f, // in
-               const cv::Mat& mask=cv::Mat(),
-               const Ints& maskIdx=Ints()
-            );
-
-
-    float getMaxDisp() const{return m_pxdist;}
 
 private:
     cv::Ptr<cv::DescriptorMatcher> matcher;
     ollieRosTools::VoNode_paramsConfig config_pre;
     void updateMatcher(const int type, const int size, const bool update=false);
 
-    bool m_flann;
-    int m_norm;
-    int m_sym_neighbours; // 0 = no symmetry
-    float m_unique; // 0 = off
-    float m_thresh; // 0 = no threshold
-    float m_ratio; //1 = off
-    int m_max; // 0 = unlimited
-    float m_pxdist; // maximum disparity allowed between matching points between current frame and keyframe
+    // Matching with masks and filters on input descriptors
+    void match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matches, double& time, const cv::Mat mask=cv::Mat());
+
+    // Does KLT Refinement over matches. Provide all kps, matches chose subset. Returns matches that passed and updated kps
+    void kltRefine(FramePtr& fQuery, FramePtr& fTrain, DMatches& matches);
 
 
-    bool m_doUnique;
-    bool m_doThresh;
-    bool m_doRatio;
-    bool m_doMax;
-    bool m_doSym;
-    bool m_doPxdist;
 
-    bool orb34; // remember if we are using orb or not...
+    /// Matcher Settings
+    int   m_norm;     // L1 or L2, Automatic for binary types
+    float m_unique;   // 0 = off
+    float m_thresh;   // 0 = no threshold
+    uint   m_max;      // 0 = unlimited
+    bool  m_doUnique;
+    bool  m_doThresh;
+    bool  m_doMax;
+    bool  m_doSym;
+    bool  orb34; // remember if we are using orb WTK 3 or 4
 
-    int descType;
-    int descSize;
-
-    // Used by KLT specifically
+    /// KLT Settings
     cv::Point klt_window;
     int klt_levels;
     cv::TermCriteria klt_criteria;
@@ -123,9 +140,9 @@ private:
     double klt_eigenThresh;
     bool klt_refine; // used to refine descriptor matches. Similar to corner refinement
 
-
-
-
+    /// Cached
+    int descType; // descriptor type (eg binary vs float)
+    int descSize; // descriptor size (eg 64, 448, 256, etc)
 
 };
 

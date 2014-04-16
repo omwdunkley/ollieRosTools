@@ -3,9 +3,9 @@
 
 
 /// initialise static members
-CameraATAN Frame::cameraModel = CameraATAN();
-Detector   Frame::detector    = Detector();
-PreProc    Frame::preproc     = PreProc();
+cv::Ptr<CameraATAN> Frame::cameraModel = cv::Ptr<CameraATAN>();
+cv::Ptr<Detector>   Frame::detector    =  cv::Ptr<Detector>();
+cv::Ptr<PreProc>    Frame::preproc     =  cv::Ptr<PreProc>();
 int Frame::idCounter   = -1;
 int Frame::kfIdCounter   = -1;
 float Frame::averageQuality = 0.8;
@@ -35,8 +35,8 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
     this->mask = mask;
 
     ros::WallTime t0 = ros::WallTime::now();
-    cv::Mat imgProc = preproc.process(img);
-    image = cameraModel.rectify(imgProc);
+    cv::Mat imgProc = preproc->process(img);
+    image = cameraModel->rectify(imgProc);
     timePreprocess = (ros::WallTime::now()-t0).toSec();
 
     /// Deal with IMU and Pose

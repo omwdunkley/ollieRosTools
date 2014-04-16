@@ -56,22 +56,23 @@ class Odometry
 
 private:
     // Keeps track of the internal state of the VO pipeline
-    enum State {WAIT_FIRST_FRAME, // waiting for the first ever keyframe
-                WAIT_INIT, // waiting for initial initialisation
-                INITIALISED,      // Initialised and triangulated points
-                LOST       // Initialised by no reference to keyframe
+    enum State {ST_WAIT_FIRST_FRAME, // waiting for the first ever keyframe
+                ST_WAIT_INIT,        // waiting for initial initialisation
+                ST_TRACKING,         // Initialised and triangulated points
+                ST_LOST              // Initialised by no reference to keyframe
                };
     // Allows the user to manually initiate steps in the pipeline
-    enum Control {DO_NOTHING, // No user input
-                  DO_INIT,    // Force initialisation
-                  DO_ADDKF,   // Force adding KF (if initialised, this adds one, if not, it replaces the current)
-                  DO_RESET
+    enum Control {CTR_DO_NOTHING, // No user input
+                  CTR_DO_INIT,    // Force initialisation
+                  CTR_DO_ADDKF,   // Force adding KF (if initialised, this adds one, if not, it replaces the current)
+                  CTR_DO_RESET    // resets everything, emptying the map and returning to WAIT_FIRST_FRAME state
                };
-    enum BaselineMethod {UNCHANGED=-1,       // Baseline is not altered
-                         FIXED,           // Baseline fixed to one meter
-                         MANUAL_BASELINE, // Baseline specified by the user
-                         MANUAL_AVGDEPTH, // Baseline adjusted so the specified avg depth is reached
-                         AUTO_MARKER      // Baseline is estimated absoluted, eg by known markers
+    // Different ways to chose the initial baseline
+    enum BaselineMethod {BL_UNCHANGED=-1,    // Baseline is not altered
+                         BL_FIXED,           // Baseline fixed to one meter
+                         BL_MANUAL_BASELINE, // Baseline specified by the user
+                         BL_MANUAL_AVGDEPTH, // Baseline adjusted so the specified avg depth is reached
+                         BL_AUTO_BASELINE    // Baseline is estimated absolutey, eg by known markers or IMU, Barometer, etc
                };
 
     /// ////////////////////////////////////////////////////////////////////////////////////// PRIVATE MEMBERS
@@ -252,21 +253,21 @@ private:
         ROS_INFO("ODO = Generating new point cloud. Relative Pose baseline [%f]", baselineInitial);
         double meanDepth=0.0;
         switch (voBaselineMethod){
-            case UNCHANGED:
+            case BL_UNCHANGED:
                 ROS_INFO("ODO = Baseline left unchanged [%f]", baselineInitial);
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, points3d);
                 break;
-            case FIXED:
+            case BL_FIXED:
                 ROS_INFO("ODO = Baseline scaled [1.0]");
                 transKFtoF.translation() *= 1.0/baselineInitial;
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, points3d);
                 break;
-            case MANUAL_BASELINE:
+            case BL_MANUAL_BASELINE:
                 ROS_INFO("ODO = Baseline selected scaled [%f]", voBaseline);
                 transKFtoF.translation() *= voBaseline/baselineInitial;
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, points3d);
                 break;
-            case MANUAL_AVGDEPTH:
+            case BL_MANUAL_AVGDEPTH:
                 ROS_INFO("ODO > Scaling Baseline so avg depth is [%f]", voBaseline);
                 transKFtoF.translation() /= baselineInitial;
                 // Triangulate with baseline = 1
@@ -285,7 +286,7 @@ private:
                 transKFtoF.translation()/= meanDepth/voBaseline;
                 ROS_INFO("ODO < Baseline updated to [%f] with mean depth [%f]", transKFtoF.translation().norm(), voBaseline);
                 break;
-            case AUTO_MARKER:
+            case BL_AUTO_BASELINE:
                 ROS_ERROR("ODO = NOT IMPLEMENTED: Baseline being scaled using Markers");
                 transKFtoF.translation()*= 1.0/baselineInitial;
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, points3d);
@@ -468,13 +469,13 @@ private:
 
         const float quality = frame->getQuality();
         if (quality < keyFrameQualityThreshold && quality>=0){
-            state=WAIT_FIRST_FRAME;
+            state=ST_WAIT_FIRST_FRAME;
             ROS_WARN("ODO < FAILED TO ADD INITIAL KEYFRAME, quality too bad [%f]", quality);
             return false;
         }
         // add first keyframe
         map.pushKF(frame, true);
-        state = WAIT_INIT;
+        state = ST_WAIT_INIT;
         ROS_INFO("ODO < INITIAL KEYFRAME ADDED ");
         return true;
 
@@ -487,7 +488,7 @@ private:
     /// resets all internal structures
     void reset(){
         ROS_INFO("ODO > RESETTING");
-        state=WAIT_FIRST_FRAME;
+        state=ST_WAIT_FIRST_FRAME;
         baselineInitial = -1;
         baselineCorrected = -1;
         timeVO = -1;
@@ -502,12 +503,12 @@ private:
     bool initialiseVO(){
         ROS_INFO("ODO > DOING INITIALISATION");
 
-         bool okay; // = initialise(map.getCurrentFrame());
+         bool okay = false; // = initialise(map.getCurrentFrame());
         //addKFVO();
 
         if (okay){
             ROS_INFO("ODO < INITIALISATION SUCCESS");
-            state = INITIALISED;
+            state = ST_TRACKING;
         } else {
             ROS_WARN("ODO < INITIALISATION FAIL");
         }
@@ -624,10 +625,10 @@ private:
         timeVO = (ros::WallTime::now()-t0).toSec();
         if (okay){
             ROS_INFO("ODO < POSE ESTIMATION SUCCESS [%.1fms]", timeVO*1000.);
-            state = INITIALISED;
+            state = ST_TRACKING;
         } else {
             ROS_WARN("ODO < POSE ESTIMATION FAIL [%.1fms]", timeVO*1000.);
-            state = LOST;
+            state = ST_LOST;
         }
 
     }
@@ -648,8 +649,8 @@ public:
         voInitDisparity = 100;
         nextAddKf = false;
 
-        control = DO_NOTHING;
-        state   = WAIT_FIRST_FRAME;
+        control = CTR_DO_NOTHING;
+        state   = ST_WAIT_FIRST_FRAME;
 
         frameQualityThreshold = 0.2;
         keyFrameQualityThreshold = 0.6;
@@ -674,26 +675,56 @@ public:
             return;
         }
 
+
+
+        // STATE MACHINE
+
+        switch (state) {
+            case ST_WAIT_FIRST_FRAME:
+                voFirstFrame(frame); // -> WAIT_INIT
+                break;
+            case ST_WAIT_INIT:
+                voTrackFrame(frame); // -> WAIT_INIT, TRACKING; RESET, ADD KF (replaces current), FORCE INIT
+                break;
+            case ST_TRACKING:
+                voTrackMap(frame); // -> TRACKING, LOST; RESET, ADD KF
+                break;
+            case ST_LOST:
+                voTrackMap(frame); // -> LOST, TRACKING; RESET
+                break;
+        }
+
+
+
+
+
+
+
+
+
+
+
+
         float disparity = 0.f;
 
 
-        if (control==DO_RESET){
-            control = DO_NOTHING;
+        if (control==CTR_DO_RESET){
+            control = CTR_DO_NOTHING;
             reset();
         }
 
 
-        if (state==WAIT_FIRST_FRAME) {
+        if (state==ST_WAIT_FIRST_FRAME) {
             // first time we received a keyframe ever
            setInitialKFVO(frame);
            //track(frame);
 
-        } else if (state==WAIT_INIT) {
+        } else if (state==ST_WAIT_INIT) {
             // waiting to initialise
 
             /// Reset initial KF
-            if (control==DO_ADDKF){
-                control = DO_NOTHING;
+            if (control==CTR_DO_ADDKF){
+                control = CTR_DO_NOTHING;
                 setInitialKFVO(frame);
                 //track(frame); // I think?
             } else {
@@ -701,14 +732,14 @@ public:
                 //disparity = track(frame);
 
                 /// Check if we can initialise
-                if (control==DO_INIT || disparity>voInitDisparity){                    
-                    control = DO_NOTHING;
+                if (control==CTR_DO_INIT || disparity>voInitDisparity){
+                    control = CTR_DO_NOTHING;
                     initialiseVO();
 
                 }
             }
 
-        } else if (state==INITIALISED || state==LOST) {
+        } else if (state==ST_TRACKING || state==ST_LOST) {
             // initialised, estimate pose vs keyframe
 
 
@@ -724,8 +755,8 @@ public:
             }
 
 
-            if (control==DO_ADDKF || disparity>voKfDisparity){
-                control = DO_NOTHING;
+            if (control==CTR_DO_ADDKF || disparity>voKfDisparity){
+                control = CTR_DO_NOTHING;
                 nextAddKf = true;
                 ROS_WARN("ODO = SETTING NEXT FRAME AS KEYFRAME");
             }
@@ -734,7 +765,7 @@ public:
 
         }
 
-        if (state==LOST) {
+        if (state==ST_LOST) {
             ROS_WARN("ODO = LOST");
         }
 
@@ -799,7 +830,7 @@ public:
 
         // Settings
         voRelRansacIter   = config.vo_relRansacIter;
-        voRelRansacThresh = 1.0 - cos(atan(config.vo_relRansacThresh*sqrt(2.0)*0.5/720.0));
+        voRelRansacThresh = OVO::px2error(config.vo_relRansacThresh); //1.0 - cos(atan(config.vo_relRansacThresh*sqrt(2.0)*0.5/720.0));
         voRelPoseMethod   = config.vo_relPoseMethod;
         voTriangulationMethod = config.vo_triMethod;
         voRelNLO          = config.vo_relNLO;
@@ -809,19 +840,19 @@ public:
         voBaseline        = config.vo_relBaseline;
         voAbsPoseMethod   = config.vo_absPoseMethod;
         voAbsRansacIter   = config.vo_absRansacIter;
-        voAbsRansacThresh = 1.0 - cos(atan(config.vo_absRansacThresh*sqrt(2.0)*0.5/720.0));
+        voAbsRansacThresh = OVO::px2error(config.vo_absRansacThresh);// 1.0 - cos(atan(config.vo_absRansacThresh*sqrt(2.0)*0.5/720.0));
         voAbsNLO          = config.vo_absNLO;
 
 
         // User controls
         if (config.vo_doInitialisation){
-            control = DO_INIT;
+            control = CTR_DO_INIT;
             config.vo_doInitialisation = false;
         } else if (config.vo_setKeyFrame){
-            control = DO_ADDKF;
+            control = CTR_DO_ADDKF;
             config.vo_setKeyFrame = false;
         } else if (config.vo_doReset){
-            control = DO_RESET;
+            control = CTR_DO_RESET;
             config.vo_doReset = false;
         }
 

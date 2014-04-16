@@ -27,10 +27,11 @@
 
 
 #include <ollieRosTools/VoNode_paramsConfig.h>
-#include <ollieRosTools/aux.hpp>
 #include <ollieRosTools/Frame.hpp>
-//#include <ollieRosTools/Tracker.hpp>
 #include <ollieRosTools/Odometry.hpp>
+#include <ollieRosTools/aux.hpp>
+
+
 /*****************************************************************************
  ** Class
  *****************************************************************************/
@@ -42,6 +43,10 @@ class VoNode{
         ~VoNode();
 
 	private:
+
+        cv::Ptr<CameraATAN> cameraModel;
+        cv::Ptr<Detector> detector;
+        cv::Ptr<PreProc> preproc;
 
         /// ROS specific stuff
         ros::NodeHandle& n;
@@ -87,8 +92,6 @@ class VoNode{
 
         /// Parameters
         std::string inputTopic;
-        std::string imuFrame;
-        std::string worldFrame;
 
         /// Callbacks
         void incomingImage(const sensor_msgs::ImageConstPtr& msg);

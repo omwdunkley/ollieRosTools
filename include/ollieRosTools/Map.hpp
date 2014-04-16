@@ -26,12 +26,13 @@
 
 
 //#include <ollieRosTools/Frame.hpp>
-#include <ollieRosTools/Matcher.hpp>
-#include <ollieRosTools/Landmark.hpp>
 #include <ollieRosTools/aux.hpp>
+#include <ollieRosTools/Landmark.hpp>
+#include <ollieRosTools/Matcher.hpp>
+
+
 
 static const uint MAX_KF = 1000;
-
 
 // worldPoint[i] corresponds to feature[idx[i]]
 cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, const Ints& idx);
@@ -146,6 +147,10 @@ class OdoMap {
             return keyframes.size();
         }
 
+        size_t getLandmarkNr() const{
+            return landmarks.size();
+        }
+
 
 
         /// Matches against a keyframe. If voOnly = true, only match against points that have associsated land marks
@@ -213,7 +218,7 @@ class OdoMap {
             ROS_ASSERT(points.size() == voMatches.size());
             ROS_ASSERT(keyframes.size()==1);
             ROS_ASSERT(landmarks.size()==0);
-            ROS_ASSERT(f->PoseEstimated());
+            ROS_ASSERT(f->poseEstimated());
 
             // Short cut to current key frame
             FramePtr kf = getLatestKF();

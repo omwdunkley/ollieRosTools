@@ -17,6 +17,9 @@
 
 /// Initialise ROS Node
 VoNode::VoNode(ros::NodeHandle& _n):
+    cameraModel(new CameraATAN()),
+    detector(new Detector()),
+    preproc(new PreProc()),
     n(_n),
     imTransport(_n),
     timeAlpha(0.95),
@@ -24,12 +27,16 @@ VoNode::VoNode(ros::NodeHandle& _n):
     imgDelay(0),
     repeatOn(false)
     {
+    Frame::setCamera(cameraModel);
+    Frame::setDetector(detector);
+    Frame::setPreProc(preproc);
 
     /// Set default values
     n.param("image", inputTopic, std::string("/cf/cam/image_raw"));
-    n.param("useIMU", USEIMU, true);
-    n.param("imuFrame", imuFrame, std::string("/cf0"));
-    n.param("worldFrame", worldFrame, std::string("/world"));
+    n.param("useIMU", USE_IMU, true);
+    n.param("imuFrame", IMU_FRAME, std::string("/cf_attitude"));
+    n.param("worldFrame", WORLD_FRAME, std::string("/world"));
+    n.param("camFrame", CAM_FRAME, std::string("/cam"));
     // Cam frame is specified from the header in the cam msg
 
 
@@ -50,23 +57,13 @@ VoNode::VoNode(ros::NodeHandle& _n):
 
 
     ROS_INFO("Starting <%s> node with <%s> as image source", /*ros::this_node::getNamespace().c_str(),*/ ros::this_node::getName().c_str(), inputTopic.c_str());
-    if (USEIMU){
-        ROS_INFO("Using <%s> as imu frame", imuFrame.c_str());
+    if (USE_IMU){
+        ROS_INFO("Using <%s> as imu frame", IMU_FRAME.c_str());
     } else {
-        ROS_INFO("NOT Using imu!");
+        ROS_INFO("Not Using imu!");
     }
-    ROS_INFO("Using <%s> as world frame",  worldFrame.c_str());
-
-
-
-//    // test color map
-//    cv::Mat test = cv::Mat(100,1600,CV_8UC3);
-//    for(int i=0; i<test.cols; ++i){
-//        test.col(i) = OVO::getColor(100,test.cols-100,i);
-//    }
-//    cv::imshow("colmap",test);
-//    cv::waitKey(1000);
-
+    ROS_INFO("Using <%s> as world frame",  WORLD_FRAME.c_str());
+    ROS_INFO("Using <%s> as camera frame",  CAM_FRAME.c_str());
 
 }
 
@@ -103,11 +100,11 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     /// GET IMU
     tf::StampedTransform imuStamped;
 
-    if (USEIMU){
+    if (USE_IMU){
         try{
             // sent out by the crazyflie driver driver.py
-            subTF.waitForTransform(imuFrame, worldFrame, msg->header.stamp-imgDelay, ros::Duration(0.1) );
-            subTF.lookupTransform(imuFrame, worldFrame, msg->header.stamp-imgDelay, imuStamped);
+            subTF.waitForTransform(IMU_FRAME, WORLD_FRAME, msg->header.stamp-imgDelay, ros::Duration(0.1) );
+            subTF.lookupTransform(IMU_FRAME, WORLD_FRAME, msg->header.stamp-imgDelay, imuStamped);
         } catch(tf::TransformException& ex){
             ROS_ERROR_THROTTLE(1,"TF exception. Could not get flie IMU transform: %s", ex.what());
             if (repeatOn){
@@ -134,10 +131,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     double time = (ros::WallTime::now()-time_s0).toSec();
     timeAvg = (timeAvg*timeAlpha) + (1.0 - timeAlpha)*time;
 
-
-
     ROS_INFO("NOD < FRAME [%d|%d] PROCESSED [%.1fms, Avg: %.1fms]", frame->getId(), frame->getKfId(), time*1000., timeAvg*1000.);
-
 
     publishStuff();
 
@@ -156,7 +150,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         cv_bridge::CvImage cvi;
         cvi.header.stamp = msg->header.stamp;
         cvi.header.seq = msg->header.seq;
-        cvi.header.frame_id = msg->header.frame_id;
+        cvi.header.frame_id = CAM_FRAME;
         cvi.encoding = sensor_msgs::image_encodings::BGR8;// OVO::COLORS[colorId];
         //cvi.image = imageRect;
         cvi.image = drawImg;
@@ -165,14 +159,6 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         pubImage.publish(cvi.toImageMsg());
 
     }
-
-
-
-
-
-
-
-
 
 //    if (repeatOn!=configLast.repeatInput){
 //        if (configLast.repeatInput){
@@ -227,6 +213,25 @@ ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_p
     colorId = config.color;
 
     Frame::setParameter(config, level);
+
+    preproc->setParam(config.doPreprocess,
+                     config.doDeinterlace,
+                     config.doEqualise,
+                     config.doEqualiseColor,
+                     config.kernelSize,
+                     config.sigmaX,
+                     config.sigmaY,
+                     config. brightness,
+                     config.contrast);
+    cameraModel->setParams(config.zoomFactor, config.zoom,
+                       config.PTAMRectify,
+                       config.sameOutInSize,
+                       config.width, config.height,
+                       config.fx, config.fy,
+                       config.cx, config.cy,
+                       config.s);
+
+    detector->setParameter(config, level);
     odometry.setParameter(config, level);
 
 

@@ -65,9 +65,9 @@ class Frame{
         Eigen::MatrixXd pointsRect; // rectified points, align with all of the above
 
         //
-        static CameraATAN cameraModel;
-        static Detector detector;
-        static PreProc preproc;
+        static cv::Ptr<CameraATAN> cameraModel;
+        static cv::Ptr<Detector> detector;
+        static cv::Ptr<PreProc> preproc;
 
         /// If a keyframe, this contains references to map points
         LandMarkPtrs landmarkRefs;
@@ -100,7 +100,7 @@ class Frame{
             ROS_INFO("FRA > Computing Keypoints frame [id: %d]", getId());
             clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
-            detector.detect(image, keypointsImg, detectorId, mask);
+            detector->detect(image, keypointsImg, detectorId, mask);
             timeDetect = (ros::WallTime::now()-t0).toSec();
             ROS_INFO("FRA < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
         }
@@ -136,6 +136,11 @@ class Frame{
 
         Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask=cv::Mat());
 
+        void static setCamera  (cv::Ptr<CameraATAN> cm){cameraModel=cm;}
+        void static setDetector(cv::Ptr<Detector>    d){detector=d;    }
+        void static setPreProc (cv::Ptr<PreProc>    pp){preproc=pp;    }
+
+
         void addLandMarkRef(const int id, LandmarkPtr lm);
         void removeLandMarkRef(const int id);
 
@@ -143,7 +148,7 @@ class Frame{
         float compareSBI(FramePtr& f);
         const cv::Mat& getSBI();
 
-        bool PoseEstimated() const{
+        bool poseEstimated() const{
             return hasPoseEstimate;
         }
 
@@ -329,7 +334,7 @@ class Frame{
 
         // Fetches the cameraInfo used by ros for the current rectification output
         const sensor_msgs::CameraInfoPtr& getCamInfo() const {
-            return cameraModel.getCamInfo();
+            return cameraModel->getCamInfo();
         }
 
         // returns the original preprocessed image the frame was initialised with. Cannot be changed
@@ -415,9 +420,9 @@ class Frame{
             if (!dontCompute){
                 if (keypointsImg.empty()){
                     computeKeypoints();
-                } else if (getDetId() != detector.getDetectorId()){
+                } else if (getDetId() != detector->getDetectorId()){
                     // we have outdated keypoints - recompute
-                    ROS_INFO("FRA > Keypoints outdated [%d != %d], redetecting", getDetId(), detector.getDetectorId());
+                    ROS_INFO("FRA > Keypoints outdated [%d != %d], redetecting", getDetId(), detector->getDetectorId());
                     computeKeypoints();
                     ROS_INFO("FRA < Keypoints redetected");
                 }
@@ -466,7 +471,7 @@ class Frame{
                 // we already have some
             } else if (!keypointsImg.empty()){
                 // compute them from out keypoints if we have some
-                keypointsRotated = cameraModel.rotatePoints(keypointsImg, -getRoll(), aroundOptical);
+                keypointsRotated = cameraModel->rotatePoints(keypointsImg, -getRoll(), aroundOptical);
             } else {
                 ROS_WARN("FRA = Asked for rotated keypoints but dont have any keypoints to compute them from");
             }
@@ -491,9 +496,9 @@ class Frame{
                 extractDescriptors();
             } else {
                 // we have descriptrs, check if they are still okay
-                if (getDescriptorId() != detector.getExtractorId() ){
+                if (getDescriptorId() != detector->getExtractorId() ){
                     // we switched the type
-                    ROS_WARN("FRA = Descriptor type changed [%d vs %d], recomputing descriptors for frame [%d]", getDescriptorId(), detector.getExtractorId(), getId());
+                    ROS_WARN("FRA = Descriptor type changed [%d vs %d], recomputing descriptors for frame [%d]", getDescriptorId(), detector->getExtractorId(), getId());
                     extractDescriptors();
                 }
             }
@@ -507,7 +512,7 @@ class Frame{
             uint kpsize = keypointsImg.size();
             ROS_INFO("FRA > Computing [%lu] descriptors for frame [id: %d]", keypointsImg.size(), id);
             ros::WallTime t0 = ros::WallTime::now();
-            detector.extract(image, keypointsImg, descriptors, descriptorId, getRoll() );
+            detector->extract(image, keypointsImg, descriptors, descriptorId, getRoll() );
             // detector might actually remove/add keypoints. IN this case it is important to realign existing data
             if (kpsize!=0 && kpsize != keypointsImg.size()){
                 ROS_INFO("FRA = Detecting changed kp size, resetting data aligned with these");
@@ -529,7 +534,7 @@ class Frame{
                 ROS_INFO("FRA > Computing bearing vectors and rectified points for frame [id: %d]", id);
                 ros::WallTime t0 = ros::WallTime::now();
                 if (keypointsImg.size()>0){
-                    cameraModel.bearingVectors(keypointsImg, bearings, pointsRect);
+                    cameraModel->bearingVectors(keypointsImg, bearings, pointsRect);
                 } else {
                     ROS_WARN("FRA = Asked for bearings but dont have any keypoints to compute them from");
                 }
@@ -578,11 +583,11 @@ class Frame{
         }
 
         int getDescType() const{
-            return detector.getDescriptorType();
+            return detector->getDescriptorType();
         }
 
         int getDescSize() const{
-            return detector.getDescriptorSize();
+            return detector->getDescriptorSize();
         }
 
         int getDescriptorId() const {
@@ -596,24 +601,7 @@ class Frame{
 
         static void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
             ROS_INFO("FRA > SETTING PARAMS");
-            preproc.setParam(config.doPreprocess,
-                             config.doDeinterlace,
-                             config.doEqualise,
-                             config.doEqualiseColor,
-                             config.kernelSize,
-                             config.sigmaX,
-                             config.sigmaY,
-                             config. brightness,
-                             config.contrast);
-            cameraModel.setParams(config.zoomFactor, config.zoom,
-                               config.PTAMRectify,
-                               config.sameOutInSize,
-                               config.width, config.height,
-                               config.fx, config.fy,
-                               config.cx, config.cy,
-                               config.s);
 
-            detector.setParameter(config, level);
 
             ROS_INFO("FRA < PARAMS SET");
 

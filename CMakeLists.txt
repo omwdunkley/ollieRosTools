@@ -29,7 +29,7 @@ include_directories(${Eigen_INCLUDE_DIRS})
 
 
 #ind_package(libg2o REQUIRED)
-#ET(G2O_LIBS ${libg2o_LIBRARIES} cholmod cxsparse)
+#SET(G2O_LIBS ${libg2o_LIBRARIES} cholmod cxsparse)
 #ADD_DEFINITIONS(-DDO_FEATURE_OPTIMIZATION)
 
 #find_package(OpenMP REQUIRED)
@@ -105,7 +105,7 @@ SET(G2O_LIBS cholmod cxsparse -lg2o_cli -lg2o_core
 -lg2o_types_slam3d)
 
 ####### g2o custom types ###############################
-#ADD_SUBDIRECTORY(src/custom_types)
+ADD_SUBDIRECTORY(src/custom_types)
 
 
 
@@ -131,20 +131,19 @@ SET(PREPROC_FILES
     src/CameraATAN.cpp
 )
 
-SET(VO_FILES    
-    src/Frame.cpp
+SET(VO_FILES
     src/Landmark.cpp
     src/aux.cpp
     src/mainVO.cpp
     src/PreProc.cpp
     src/VoNode.cpp    
-    src/CameraATAN.cpp
+    src/CameraATAN.cpp    
     src/Frame.cpp
     src/Detector.cpp
     src/Tracker.cpp
     src/Matcher.cpp
     src/Odometry.cpp
-    src/Map.cpp        
+    src/Map.cpp
 )
 
 

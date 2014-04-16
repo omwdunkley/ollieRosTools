@@ -134,7 +134,7 @@ void Detector::extract(const cv::Mat& image, KeyPoints &kps_inout, cv::Mat& desc
 
 
 
-void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask) const {
+void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask) {
     kps_out.clear();
     detId = detectorNr;
 

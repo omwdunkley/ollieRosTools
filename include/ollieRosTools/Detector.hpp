@@ -27,14 +27,14 @@ public:
     Detector();
     void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
-    void detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask=cv::Mat()) const;
+    void detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask=cv::Mat());
     void extract(const cv::Mat& img, KeyPoints& kps_inout, cv::Mat& descs_out, int& descId, double angleRad = 0.0) const;
 
     int getDetectorId() const {return detectorNr;}
     int getExtractorId() const {return extractorNr;}
     int getDescriptorType() const {return cv_extractor->descriptorType();}
     int getDescriptorSize() const {return cv_extractor->descriptorSize();}    
-    const cv::Rect& getBorder() const {return border;}
+    cv::Rect getBorder() const {return border;}
 
 
 

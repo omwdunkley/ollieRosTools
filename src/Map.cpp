@@ -1,7 +1,7 @@
 #include <ollieRosTools/Map.hpp>
 
 
-
+/*
 cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, const Ints& idx){
 
     //cv::Mat img = f->getVisualImage();
@@ -38,4 +38,4 @@ cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, c
 
     return img;
 }
-
+*/
