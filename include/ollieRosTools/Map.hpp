@@ -35,7 +35,7 @@
 static const uint MAX_KF = 1000;
 
 // worldPoint[i] corresponds to feature[idx[i]]
-cv::Mat getPointsProjectedImage(FramePtr& f, const opengv::points_t& worldPts, const Ints& idx);
+cv::Mat getPointsProjectedImage(const FramePtr& f, const opengv::points_t& worldPts, const Ints& idx);
 
 
 
@@ -80,44 +80,61 @@ class OdoMap {
             g2oFix = FIX_FIRST;
         }
 
+        /// /////////////////////////////////////////////////////////////////////////////////
+        /// GETTER / SETTER
+
+        // Get
         const FramePtrs& getKFs() const {
             return keyframes;
         }
+
+        // Get All Landmarks
         const LandMarkPtrs& getLMs() const {
             return landmarks;
         }
 
+        // Get last keyframe
         FramePtr& getLatestKF(){
             ROS_ASSERT(getKeyframeNr()>0);
             return keyframes.back();
         }
 
+        // Get last keyframe CONST version
+        /// TODO: should this return the latest or the most recently used??
         const FramePtr& getLatestKF() const{
             ROS_ASSERT(getKeyframeNr()>0);
             return keyframes.back();
         }
 
-        // Gets latest frame the
+        // Gets Latest frame matches vs map
         FramePtr& getCurrentFrame(){
-            ROS_ASSERT(!currentFrame.empty()&&currentFrame->isInitialised());
+            ROS_INFO("MAP > Getting current frame");
+            ROS_ASSERT(!currentFrame.empty());
+            ROS_ASSERT(currentFrame->isInitialised());
             return currentFrame;
         }
 
-        FramePtrs getClosestKeyframes(FramePtr){
-            /// Goes through all keyframes and gets the cloest N frames
-            // TODO
-            // image descriptor (rotation invarient)
-            // sbi ncc/ssd  ( rotated)
-            // estimated angle
-            ///x,y,z < 2m,
-            // gyro angle, yaw only +- 45 degrees
-            // optical axis vs optical axis < 45 degrees
-            ROS_ERROR("MAP = NOT IMPLEMENTED GET CLOSEST KEYFRAMES: %s}\n For now returning all", __SHORTFILE__);
-            return keyframes;
+        // Get nr of keyframes
+        size_t getKeyframeNr() const{
+            return keyframes.size();
+        }
+
+        // Get nr of landmarks
+        size_t getLandmarkNr() const{
+            return landmarks.size();
         }
 
 
-        /// Goes through all map points and remove them if they only have one reference (ie this container holding it)
+
+
+
+
+
+        /// /////////////////////////////////////////////////////////////////////////////////
+        /// Landmark Related Functions
+
+        // Goes through all map points and remove them if they only have one reference (ie this container holding it)
+        /// NOT TESTED
         void removeNonVisiblePoints(){
             ROS_INFO("MAP > Removing non visible points");
             size_t s = landmarks.size();
@@ -126,14 +143,105 @@ class OdoMap {
         }
 
 
-        // Gets some kind of visual image showing the state of the keyframes (and current frame)?)
-        cv::Mat getVisualImage(){
-            ROS_WARN("MAP = NOT IMPLEMENTED GET VISUAL IMAGE");
-            cv::Mat img;
-            //cv::Mat img = tracker.getVisualImage();
-            return img;
+
+
+        /// /////////////////////////////////////////////////////////////////////////////////
+        /// Matching Functions frame-frame points, frame-map points, frame->closest frames,
+
+
+        // Matches against a keyframe. If voOnly = true, only match against points that have associsated land marks
+        void match2KF(FramePtr& f, DMatches& matches, double& time, bool voOnly=false){
+            /// Match against last N keyframes
+            /// Match against closest N keyframes
+            ROS_ASSERT(keyframes.size()>0);
+            FramePtr& kf = getLatestKF();
+            currentFrame = f;
+            ROS_INFO("MAP > Matching Frame [%d|%d] against KeyFrame [%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId() );
+
+            if (voOnly){
+                //matcher.match();
+                matcher.matchFrame(f, kf, matches, time, Ints(0), kf->getIndLM());
+            } else {
+                matcher.matchFrame(f, kf, matches, time);
+            }
+
+
         }
 
+        // Matches against the map
+        void match2Map(FramePtr& f, Points3d points, DMatches& ms){
+            ROS_ASSERT(landmarks.size()>0);
+            ROS_ASSERT(keyframes.size()>0);
+            ROS_ASSERT_MSG(0, "NOT IMPLEMENTED");
+        }
+
+
+
+
+
+        /// /////////////////////////////////////////////////////////////////////////////////
+        /// Keyframe Functions frame->closest frames, add kf, remove kf, etc
+
+        void pushKF(FramePtr& frame, const bool first=false){
+            ROS_INFO("MAP > ADDING%s KF TO MAP", first?" FIRST":"");
+            frame->setAsKF(first);
+            if (keyframes.size()==0 || first){
+                reset();
+                currentFrame = frame;
+                keyframes.push_back(frame);
+                ROS_INFO("MAP < INITIAL KF PUSHED");
+            } else {
+                keyframes.push_back(frame);
+                currentFrame = frame;
+                ROS_INFO("MAP < KF PUSHED [KFS = %lu]", getKeyframeNr());
+                // Check we dont have too many keyframes
+                shirnkKFs();
+            }
+        }
+
+        // Removes KFs if needed
+        void shirnkKFs(){
+            if (keyframes.size()>maxKFNr || keyframes.size()==MAX_KF) {
+                ROS_INFO("MAP > TOO MANY KEYFRAMES, REMOVING OLDEST");
+                while(keyframes.size()>maxKFNr){
+                    popKF();
+                }
+                ROS_INFO("MAP < CAPPED KFS");
+            }
+        }
+
+        // Removes oldest keyframe
+        void popKF(){
+            ROS_INFO("MAP > POPPING OLDEST KF FIFO [%d|%d]", keyframes.front()->getId(), keyframes.front()->getKfId() );
+            keyframes.pop_front();
+            removeNonVisiblePoints();
+            ROS_INFO("MAP < OLDEST KF POPPED");
+        }
+
+
+        // Goes through all keyframes and gets the cloest N frames
+        FramePtrs getClosestKeyframes(const FramePtr& f){
+            ROS_ERROR("MAP = NOT IMPLEMENTED GET CLOSEST KEYFRAMES: %s}\n For now returning all", __SHORTFILE__);
+            // TODO
+            // image descriptor (rotation invarient)
+            // sbi ncc/ssd  ( rotated)
+            // estimated angle
+            ///x,y,z < 2m,
+            // gyro angle, yaw only +- 45 degrees
+            // optical axis vs optical axis < 45 degrees
+
+            return keyframes;
+        }
+
+
+
+
+
+        /// /////////////////////////////////////////////////////////////////////////////////
+        /// High Level Map Functions reset, initialise, bundle adjust
+
+
+        // Resets the map
         void reset(){
             ROS_INFO("MAP > RESETING MAP. Clearing [%lu] key frames and [%lu] land marks", keyframes.size(), landmarks.size());
             keyframes.clear();
@@ -143,76 +251,10 @@ class OdoMap {
             ROS_INFO("MAP < MAP RESET");
         }
 
-        size_t getKeyframeNr() const{
-            return keyframes.size();
-        }
-
-        size_t getLandmarkNr() const{
-            return landmarks.size();
-        }
-
-
-
-        /// Matches against a keyframe. If voOnly = true, only match against points that have associsated land marks
-        void match2KF(FramePtr& f, Points3d points, DMatches& ms, bool voOnly=false){
-            /// Match against last N keyframes
-            /// Match against closest N keyframes
-            ROS_ASSERT(keyframes.size()>0);
-            FramePtr& kf = getLatestKF();
-            ROS_INFO("MAP > Matching Frame [%d|%d] against KeyFrame [%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId() );
-
-
-            if (voOnly){
-                //matcher.match();
-            } else {
-
-            }
-
-
-
-
-
-        }
-
-        /// Matches against the map
-        void match2Map(FramePtr& f, Points3d points, DMatches& ms){
-            ROS_ASSERT(landmarks.size()>0);
-
-        }
-
-        /// Show the frame to the map, track against latest KF, return disparity
-//        float showFrame(FramePtr& frame, bool reset = false){
-//            currentFrame = frame;
-//            const float disparity = tracker.track(currentFrame, reset);
-//            return disparity;
-//        }
-
-
-
-
-//        const DMatches& getF2KFMatches(const bool forceVoModeOff = false){
-//                return tracker.getF2KFMatches(forceVoModeOff);
-//        }
-
-
-        void pushKF(FramePtr& frame, const bool first=false){
-            ROS_INFO("MAP > ADDING KF TO MAP");
-            frame->setAsKF(first);
-            if (keyframes.size()==0 || first){
-                reset();
-                keyframes.push_back(frame);
-                ROS_INFO("MAP > INITIAL KF ADDED");
-            } else {
-                keyframes.push_back(frame);
-                ROS_INFO("MAP > KF ADDED [KFS = %lu]", getKeyframeNr());
-                // Check we dont have too many keyframes
-                shirnkKFs();
-            }
-        }
 
         // Initialise the map. Must have an initial keyframe already, and this should then
         // add the second one. vomatches associate them and must be aligned to points (in world frame)
-        void initialise(FramePtr& f, const Points3d& points, const DMatches& voMatches){
+        void initialiseMap(FramePtr& f, const Points3d& points, const DMatches& voMatches){
             ROS_INFO("MAP > Initialiseing map with new Frame [%d]", f->getId());
 
             ROS_ASSERT(points.size() == voMatches.size());
@@ -220,8 +262,10 @@ class OdoMap {
             ROS_ASSERT(landmarks.size()==0);
             ROS_ASSERT(f->poseEstimated());
 
+
             // Short cut to current key frame
-            FramePtr kf = getLatestKF();
+            FramePtr& kf = getLatestKF();
+            ROS_ASSERT(kf->poseEstimated());
 
             // Add frame
             pushKF(f);
@@ -242,35 +286,9 @@ class OdoMap {
             ROS_INFO_STREAM("MAP < Map Initialised. " << *this);
         }
 
-        // Assumes worldPoiints are triangulated from current frame and frame
-        /// TODO
-//        void initialise(const opengv::points_t worldPoints, const DMatches& voMatches){
-//            ROS_INFO("MAP < INITIALISING MAP ");
-//            points = worldPoints;
-//            kfMatches = voMatches;
-//            ROS_INFO("MAP < MAP INITIALISED ");
-//        }
-
-        void shirnkKFs(){
-            if (keyframes.size()>maxKFNr || keyframes.size()==MAX_KF) {
-                ROS_INFO("MAP > TOO MANY KEYFRAMES, REMOVING OLDEST");
-                while(keyframes.size()>maxKFNr){
-                    popKF();
-                }
-                ROS_INFO("MAP < CAPPED KFS");
-            }
-        }
 
 
-        void popKF(){
-            ROS_INFO("MAP > REMOVING OLDEST KF [%d|%d]", keyframes.front()->getId(), keyframes.front()->getKfId() );
-            keyframes.pop_front();
-            removeNonVisiblePoints();
-            ROS_INFO("MAP < REMOVED OLDEST KF");
-        }
-
-
-
+        // DO bundle adjustment over all points and observations
         void bundleAdjust(){
             ROS_INFO("MAP > Doing G2O Bundle adjustment with [%lu] KeyFrames and [%lu] LandMarks", keyframes.size(), landmarks.size());
             ros::WallTime tStart = ros::WallTime::now();
@@ -411,11 +429,26 @@ class OdoMap {
 
             optimizer.clear();
 
-
             ros::WallTime tEnd = ros::WallTime::now();
             ROS_INFO("MAP < Bundle Adjustment Finished [Setup: %.1fms] [Opti: %.1fms] [Update: %.1fms] [Total: %.1fms]",
                      (tSetup-tStart).toSec()*1000., (tOpt-tSetup).toSec()*1000., (tEnd-tOpt).toSec()*1000., (tEnd-tStart).toSec()*1000. );
 
+        }
+
+
+
+
+
+
+        /// /////////////////////////////////////////////////////////////////////////////////
+        /// META Functions time keeping, drawing, outputting, statistics, etc
+
+        // Gets some kind of visual image showing the state of the keyframes (and current frame)?)
+        cv::Mat getVisualImage(){
+            ROS_WARN("MAP = NOT IMPLEMENTED GET VISUAL IMAGE");
+            cv::Mat img;
+            //cv::Mat img = tracker.getVisualImage();
+            return img;
         }
 
 
@@ -434,7 +467,7 @@ class OdoMap {
         }
 
 
-
+        // Dynamic reconfigure
         void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
             ROS_INFO("MAP > SETTING PARAMS");
             maxKFNr = config.map_maxKF;

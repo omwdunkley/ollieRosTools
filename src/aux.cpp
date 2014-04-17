@@ -69,7 +69,7 @@ void OVO::testColorMap(){
 
 }
 
-void OVO::drawTextCenter(cv::Mat& img, const std::string& text, const CvScalar RGB, const float textScale, const int textThickness){
+void OVO::drawTextCenter(cv::Mat img, const std::string& text, const CvScalar RGB, const float textScale, const int textThickness){
     cv::Size textSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, textScale, textThickness, NULL);
     cv::Point textOrg((img.cols - textSize.width)/2,(img.rows + textSize.height)/2);
     cv::putText(img, text, textOrg, cv::FONT_HERSHEY_SIMPLEX, textScale, RGB, textThickness, CV_AA);
@@ -89,6 +89,13 @@ void OVO::putInt(cv::Mat& img, const float nr, const cv::Point& p, const CvScala
 
     cv::putText(img, str + ss.str() +post, p ,cv::FONT_HERSHEY_SIMPLEX, 0.5, col,1,CV_AA,false);
 }
+
+
+
+
+
+
+
 
 // matOut[i] = matIn[ind[i]]
 void OVO::matReduceInd (const cv::Mat& matIn, cv::Mat& matOut, const Ints& ind){
@@ -158,6 +165,31 @@ cv::Mat OVO::rotateImage(const cv::Mat& in, const double angleRad, const int int
     return out;
 }
 
+void OVO::drawFlow(cv::Mat img, const Points2f& q, const Points2f& t, const DMatches& ms, const CvScalar& col, const double oppacity){
+    Points2f kfPts, fPts;
+    OVO::vecAlignMatch<Points2f>(q,t, fPts, kfPts, ms);
+    drawFlowAligned(img, fPts, kfPts, col, oppacity);
+}
+void OVO::drawFlowAligned(cv::Mat img, const Points2f& fPts, const Points2f& kfPts, const CvScalar& col, const double oppacity){
+    ROS_ASSERT(fPts.size()==kfPts.size());
+    cv::Mat alpha;
+    if (oppacity>=1.f){
+        alpha = img;
+    } else {
+        alpha = cv::Mat::zeros(img.size(), img.type());
+    }
+
+    for (uint i=0; i<fPts.size(); ++i){
+        cv::line(alpha, fPts[i], kfPts[i], col, 1, CV_AA);
+    }
+
+    if (oppacity>=1.f){
+    } else {
+        cv::addWeighted(img, 1.0, alpha, oppacity, 0.0, img);
+    }
+}
+
+
 
 Eigen::VectorXd OVO::reprojectErrPointsVsBV(
         const Pose& model,
@@ -211,13 +243,27 @@ double OVO::errorBV(const Bearing& bv1, const Bearing& bv2, const BEARING_ERROR 
 
 // returns the error given px dist on image plane with focal length f
 double OVO::px2error(const double px, const double horiFovDeg, const double width, const BEARING_ERROR method){ // 252px = 110° horizontal FOV with 720px width
-    const double focal_px = (horiFovDeg*toRad/2.) / atan(width/2.);
-    return angle2error(atan(px/focal_px)*toDeg, method);
+    return angle2error(OVO::px2degrees(px, horiFovDeg, width), method);
 }
+
+double OVO::px2degrees(const double px, const double horiFovDeg, const double width){
+    const double focal_px = (horiFovDeg*toRad/2.) / atan(width/2.);
+    return atan(px/focal_px)*toDeg;
+}
+
 
 void OVO::relativeRotation(const Eigen::Matrix3d& ImuRotFrom,const Eigen::Matrix3d& ImuRotTo, Eigen::Matrix3d& rotRelative){
     ROS_ASSERT_MSG(USE_IMU, "This function should probably not be called if we are not using an IMU");
     rotRelative = IMU2CAM.linear().transpose() * ImuRotFrom.transpose() * ImuRotTo * IMU2CAM.linear();
+
+    //adapter.setR12(IMU2CAM.linear().transpose() * kf->getImuRotationCam().transpose() * f->getImuRotationCam() * IMU2CAM.linear());
+    //adapter.setR12(kf->getImuRotation().transpose() * f->getImuRotation());
+    //adapter.setR12(f->getImuRotation() * kf->getImuRotation().transpose());
+    //adapter.setR12(f->getImuRotation().transpose() * kf->getImuRotation());
+//            adapter.setR12(Eigen::Matrix3d::Identity());
+//            ROS_INFO_STREAM("kf' * f\n" << kf->getImuRotation().transpose() * f->getImuRotation());
+//            ROS_INFO_STREAM("f * kf'\n" << f->getImuRotation() * kf->getImuRotation().transpose());
+//            ROS_INFO_STREAM("f' * kf\n" << f->getImuRotation().transpose() * kf->getImuRotation());
 }
 
 

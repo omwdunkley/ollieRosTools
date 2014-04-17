@@ -103,14 +103,14 @@ public:
     }
 
     // add an observation. Seen by frame f with f.keypoint[i]
-    void addObservation(FramePtr& f, const int id){
+    void addObservation(const FramePtr& f, const int id){
         seenFrom.push_back(f);
         pointIds.push_back(id);
     }
 
     // returns true if the given frame might provide a similar observation.
     // Frame must have an estiamted position in its pose member
-    bool visibleFrom(FramePtr& f) const{
+    bool visibleFrom(const FramePtr& f) const{
         for (uint i=0; i<pointIds.size(); ++i){
             // Check Distance
             const Eigen::Vector3d xyz_kf = seenFrom[i]->getOpticalCenter();
@@ -147,13 +147,13 @@ public:
     }
 
     const cv::Mat getClosestDescriptor(){
-        ROS_ASSERT_MSG(false, "NOT IMPLEMENTED");
+        ROS_ASSERT_MSG(false, "[LMK] = NOT IMPLEMENTED");
         return cv::Mat();
     }
 
     // simply reset the id counter
     static void reset(){
-        ROS_INFO("Resetting Landmark IDs");
+        ROS_INFO("[LMK] = Resetting Landmark IDs");
         pIdCounter = 0;
     }
 

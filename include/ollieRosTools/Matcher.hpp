@@ -88,61 +88,80 @@ cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryPoints, con
 
 /// MATCHING CLASS
 
-class Matcher
-{
-public:
-    Matcher();
-    void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
+class Matcher{
+    private:
+        /// ENUMS
+        enum Prediction {PRED_BLIND,     // Dont use pose or imu to predict descriptor location
+                    PRED_KF,    // Use the KF desc locations (make sure to use a relaxed thresh) 2d->BV vs 2d->BV
+                    PRED_KF_IMU, // Predict the KF desc locations by using the imu to obtain a relative rotation. 2d->BV->IMU_BV vs 2d->BV
+                    PRED_POSE,       // Use a pose to initialise the desc locations 3d->BV vs 2d->BV
+                    PRED_POSE_IMU     // Use a pose and apply the relative rotation to it to predict the desc locations 3d->BV->IMU_BV vs 2d->BV
+                   };
 
-    // Match f against map with with an initial pose estimate
-    void matchMap(const OdoMap& map, FramePtr& f, FramePtr& f_close, const Ints& fMask=Ints());
+        /// Matching
+        // Matching with masks and filters on input descriptors
+        void match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matches, double& time, const cv::Mat mask=cv::Mat());
 
-    // Match f against map withOUT pose estimate = WE ARE LOST
-    void matchMap(const OdoMap& map, FramePtr& f, const Ints& fMask=Ints());
+        // Does KLT Refinement over matches. Provide all kps, matches chose subset. Returns matches that passed and updated kps
+        void kltRefine(FramePtr& fQuery, FramePtr& fTrain, DMatches& matches);
 
-    // Match f against frame with an initial pose estimate
-    void matchFrame(FramePtr& kf, FramePtr& f, FramePtr& f_close, const Ints& kfMask=Ints(), const Ints& fMask=Ints());
-
-    // Match f against frame withOUT pose estimate = WE ARE LOST
-    void matchFrame(FramePtr& kf, FramePtr& f, const Ints& kfMask=Ints(), const Ints& fMask=Ints());
+        // Updates the matcher according to the latest settings
+        void updateMatcher(const int type, const int size, const bool update=false);
 
 
-
-private:
-    cv::Ptr<cv::DescriptorMatcher> matcher;
-    ollieRosTools::VoNode_paramsConfig config_pre;
-    void updateMatcher(const int type, const int size, const bool update=false);
-
-    // Matching with masks and filters on input descriptors
-    void match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matches, double& time, const cv::Mat mask=cv::Mat());
-
-    // Does KLT Refinement over matches. Provide all kps, matches chose subset. Returns matches that passed and updated kps
-    void kltRefine(FramePtr& fQuery, FramePtr& fTrain, DMatches& matches);
+        /// Members
+        cv::Ptr<cv::DescriptorMatcher> matcher;
+        ollieRosTools::VoNode_paramsConfig config_pre;
 
 
 
-    /// Matcher Settings
-    int   m_norm;     // L1 or L2, Automatic for binary types
-    float m_unique;   // 0 = off
-    float m_thresh;   // 0 = no threshold
-    uint   m_max;      // 0 = unlimited
-    bool  m_doUnique;
-    bool  m_doThresh;
-    bool  m_doMax;
-    bool  m_doSym;
-    bool  orb34; // remember if we are using orb WTK 3 or 4
+        /// Matcher Settings
+        int   m_norm;     // L1 or L2, Automatic for binary types
+        float m_unique;   // 0 = off
+        float m_thresh;   // 0 = no threshold
+        uint   m_max;      // 0 = unlimited
+        bool  m_doUnique;
+        bool  m_doThresh;
+        bool  m_doMax;
+        bool  m_doSym;
+        bool  orb34; // remember if we are using orb WTK 3 or 4
+        Prediction m_pred;
+        double m_bvDisparityThresh;
 
-    /// KLT Settings
-    cv::Point klt_window;
-    int klt_levels;
-    cv::TermCriteria klt_criteria;
-    int klt_flags;
-    double klt_eigenThresh;
-    bool klt_refine; // used to refine descriptor matches. Similar to corner refinement
+        /// KLT Settings
+        cv::Point klt_window;
+        int klt_levels;
+        cv::TermCriteria klt_criteria;
+        int klt_flags;
+        double klt_eigenThresh;
+        bool klt_refine; // used to refine descriptor matches. Similar to corner refinement
 
-    /// Cached
-    int descType; // descriptor type (eg binary vs float)
-    int descSize; // descriptor size (eg 64, 448, 256, etc)
+        /// Cached
+        int descType; // descriptor type (eg binary vs float)
+        int descSize; // descriptor size (eg 64, 448, 256, etc)
+
+
+    public:
+        Matcher();
+
+        // Set parameters
+        void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
+
+        // Match f against map with with an initial pose estimate
+        void matchMap(const OdoMap& map, FramePtr& f, FramePtr& fClose, const Ints& fMask=Ints());
+
+        // Match f against map withOUT pose estimate = WE ARE LOST
+        void matchMap(const OdoMap& map, FramePtr& f, const Ints& fMask=Ints());
+
+        // Match f against kframe with an initial pose estimate
+        void matchFrame(FramePtr& f, FramePtr& kf,  FramePtr& fClose, DMatches& matches,const Ints& fMask=Ints(), const Ints& kfMask=Ints());
+
+        // Match f against kframe withOUT pose estimate = WE ARE LOST, or initialising.
+        void matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask=Ints(), const Ints& kfMask=Ints());
+
+
+
+
 
 };
 

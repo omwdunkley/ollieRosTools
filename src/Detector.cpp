@@ -406,9 +406,17 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
 void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
     ROS_INFO("DET > SETTING PARAMS");
 
-    //////////////////////////////////////////////////////////////// DETECTOR
-    kp_border = config.kp_border;
+    // maxKp == 0 means dont cap size
+    if (config.kp_max!=0){
+        // make sure max>=min
+        int minKp, maxKp;
+        minKp=std::min(config.kp_min, config.kp_max);
+        maxKp=std::max(config.kp_min, config.kp_max);
+        config.kp_max = maxKp;
+        config.kp_min = minKp;
+    }
 
+    kp_border = config.kp_border;
     kp_subPix = config.kp_subpix;
     kp_removeDouble = config.kp_removeDouble;
     kp_imuRotate = config.kp_imuRotate;

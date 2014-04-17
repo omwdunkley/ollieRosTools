@@ -32,26 +32,7 @@ class Frame;
 #define __SHORTFILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
 
 
-//// http://stackoverflow.com/questions/5093460/how-to-convert-an-enum-type-variable-to-a-string
-//#define X_DEFINE_ENUM_WITH_STRING_CONVERSIONS_TOSTRING_CASE(r, data, elem)    \
-//    case elem : return BOOST_PP_STRINGIZE(elem);
-//#define DEFINE_ENUM_WITH_STRING_CONVERSIONS(name, enumerators)                \
-//    enum name {                                                               \
-//        BOOST_PP_SEQ_ENUM(enumerators)                                        \
-//    };                                                                        \
-//                                                                              \
-//    inline const char* ToString(name v)                                       \
-//    {                                                                         \
-//        switch (v)                                                            \
-//        {                                                                     \
-//            BOOST_PP_SEQ_FOR_EACH(                                            \
-//                X_DEFINE_ENUM_WITH_STRING_CONVERSIONS_TOSTRING_CASE,          \
-//                name,                                                         \
-//                enumerators                                                   \
-//            )                                                                 \
-//            default: return "[Unknown " BOOST_PP_STRINGIZE(name) "]";         \
-//        }                                                                     \
-//    }
+// http://stackoverflow.com/questions/5093460/how-to-convert-an-enum-type-variable-to-a-string
 
 
 
@@ -119,7 +100,7 @@ namespace OVO {
     // Returns a color based on an internal colour map Green->Red (via blue, missing yellow on purpose) TODO: put this in a look up table
     CvScalar getColor(const float range_min, const float range_max, const float depth, bool reverse = false);
     // Draws text centered in ROI img
-    void drawTextCenter(cv::Mat& img, const std::string& text, const CvScalar RGB, const float textScale, const int textThickness);
+    void drawTextCenter(cv::Mat img, const std::string& text, const CvScalar RGB, const float textScale, const int textThickness);
     // Draw a number onto an image
     void putInt(cv::Mat& img,  const float nr, const cv::Point& p, const CvScalar& col, const bool round, const std::string& str,const std::string& post="");
     // used to convert [cant remember] to ros types
@@ -130,10 +111,8 @@ namespace OVO {
             (2, sensor_msgs::image_encodings::MONO8)
             (3, sensor_msgs::image_encodings::YUV422);
     cv::Mat rotateImage(const cv::Mat& in, const double angleRad, const int interpolation=CV_INTER_LINEAR, const double scale=1.0, const double threshDeg=0.1);
-
-
-
-
+    void drawFlow(cv::Mat img, const Points2f& q, const Points2f& t, const DMatches& ms,  const CvScalar& col, const double oppacity = 0.8);
+    void drawFlowAligned(cv::Mat img, const Points2f& fPts, const Points2f& kfPts, const CvScalar& col,const double oppacity = 0.8);
 
 
 
@@ -150,8 +129,9 @@ namespace OVO {
     // returns the error given px dist on image plane with focal length f
     double px2error(const double px, const double horiFovDeg = 110., const double width = 720, const BEARING_ERROR method = BVERR_DEFAULT);
     // returns the median of a list of values
-
-
+    void relativeRotation(const Eigen::Matrix3d& ImuRotFrom,const Eigen::Matrix3d& ImuRotTo, Eigen::Matrix3d& rotRelative);
+    // returns the angle from a px distance
+    double px2degrees(const double px, const double horiFovDeg = 110., const double width = 720);
 
     /// Utility Functions
     // Return approximate median of a list of values. Note: may change the input vector!!

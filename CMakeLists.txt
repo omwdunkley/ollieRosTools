@@ -105,7 +105,16 @@ SET(G2O_LIBS cholmod cxsparse -lg2o_cli -lg2o_core
 -lg2o_types_slam3d)
 
 ####### g2o custom types ###############################
-ADD_SUBDIRECTORY(src/custom_types)
+SET(CUSTOM_G2O_TYPES_SOURCES
+              src/custom_types/vertex_landmarkxyz.cpp
+              src/custom_types/vertex_pose.cpp
+              src/custom_types/edge_pose_landmark_reprojectBV.cpp
+              src/custom_types/edge_pose_pose.cpp
+              src/custom_types/register_types.cpp)
+
+ROSBUILD_ADD_LIBRARY(g2o_custom_types ${CUSTOM_G2O_TYPES_SOURCES})
+target_link_libraries(g2o_custom_types ${G2O_LIBS} GL GLU glut)
+
 
 
 

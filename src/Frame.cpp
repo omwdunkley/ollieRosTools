@@ -19,8 +19,6 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
     ROS_INFO("FRA > CREATING NEW FRAME [ID: %d]", id);
     time = imu.stamp_;
 
-    imu2cam << 0, 0, 1, -1, 0 ,0, 0,-1, 0;
-
     timePreprocess = 0;
     timeExtract    = 0;
     timeDetect     = 0;
@@ -47,7 +45,7 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
     tf::matrixTFToEigen(imu.getBasis(), imuAttitude);
 
     // get imu in cam frame
-    imuAttitudeCam = imu2cam*imuAttitude;
+    imuAttitude = IMU2CAM*imuAttitude;
 
     // just for printing
 
@@ -60,8 +58,6 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
     hasPoseEstimate = false;
 
     ROS_INFO("FRA < NEW FRAME CREATED [ID: %d]", id);
-
-
 }
 
 void Frame::addLandMarkRef(int id, LandmarkPtr lm){
@@ -101,7 +97,7 @@ void Frame::computeSBI(){
 
 }
 
-const cv::Mat&Frame::getSBI(){
+const cv::Mat& Frame::getSBI(){
     /// Returns a reference to a small blurry image. Computes if if required.
     if (sbi.empty()){
         computeSBI();

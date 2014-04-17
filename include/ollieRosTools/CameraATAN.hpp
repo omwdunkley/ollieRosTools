@@ -136,8 +136,6 @@ class CameraATAN {
 
 
 
-
-
         // Rotate a point in place
         void rotatePoint(cv::Point2f& inout, const cv::Point2f& center, const double angleRad) const {
             const cv::Point2f shifted = inout - center;
@@ -147,7 +145,7 @@ class CameraATAN {
             rotatePoint(inout.pt, center, angleRad);
         }
 
-        /// TODO DO this with eigen, and we have some+- mistakes somewhere along the way
+        /// TODO DO this with eigen, and we might have some+- mistakes somewhere along the way
         KeyPoints rotatePoints(const KeyPoints& keypoints, const double angleRad, bool aroundOptical=true) const{            
             // Copy key points
             KeyPoints keypointsOut = keypoints;
@@ -250,6 +248,8 @@ class CameraATAN {
 */
 
 
+
+        // Takes distorted points and rectifies them
         KeyPoints rectifyPoints(const KeyPoints& keypoints, bool pointsFromCamera=true){
             KeyPoints kps =keypoints;
             if (pointsFromCamera && interpolation>=0 ){
@@ -315,6 +315,7 @@ class CameraATAN {
         }
 
 
+        // Takes rectified points and distorts them
         Matrix<float, Dynamic, 2, RowMajor> unrectifyPoints(const Points2f& points, bool force=false){
             Points2f pts;
 
@@ -346,16 +347,12 @@ class CameraATAN {
             }
 
             pts.reserve(pts.size());
-            ROS_ERROR("CAM = NOT IMPLEMENTED unrectifyPoints");
+            ROS_ASSERT_MSG(0, "CAM = NOT IMPLEMENTED unrectifyPoints");
             return f2d;
         }
 
 
-//        g2o::ParameterCamera* getG2OCam() const {
-//            g2o::ParameterCamera * cam_params = new g2o::ParameterCamera();
-//            cam_params->setKcam(1.0,1.0,0.0,0.0);
-//            return cam_params;
-//        }
+        // Computes bearing vectors and rectified points from keypoints
         void bearingVectors(const KeyPoints& keypoints, MatrixXd& bearings, MatrixXd& pointsRectified) const{
             Points2f points;
             cv::KeyPoint::convert(keypoints, points);
@@ -365,12 +362,11 @@ class CameraATAN {
         void bearingVectors(const Points2f& points, MatrixXd& bearings, MatrixXd& pointsRectified) const{
             /// Given 2d points, compute the bearing vecotrs that point from the
             /// optical center in the direction of the features.
-            // Note that this class might be rectifying images (in which case we just use the pinhole model)
-            // or the images are not yet rectified in which case we must first rectify the 2d points
+            // Note that this _class_ might be rectifying images (in which case the input points are rectified and we just use the pinhole model)
+            // or the images/points are not yet rectified in which case we must first rectify the 2d points
 
 
             // Use the precomputed look up table to rectify the points.
-            const bool useLUT = false;
 
             Matrix<float, Dynamic, 2, RowMajor> f2d;
 
@@ -379,72 +375,41 @@ class CameraATAN {
             if (interpolation>=0){
                 /// Incoming points are rectified
                f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
-
-
-
-                //std::cout << "IN EIGEN:" << std::endl << f2d << std::endl;
-
-
             } else {                
                 /// Incoming points are not rectified
-
-                if (useLUT) {
-                    /// Use lookup table to rectify points
-                    //TODO
-                    //cv::remap(points, pointsr,rect_mapx, rect_mapy, CV_INTER_LINEAR);
-
-                } else {
-                    /// Compute each point individually
-
-//                    MatrixXf f2dCV(points.size(),2);
-//                    for (uint i=0; i<points.size(); ++i){
-//                        const double ox = (points[i].x - icx) / ifx;
-//                        const double oy = (points[i].y - icy) / ify;
-//                        const double r = sqrt(ox*ox + oy*oy);
-//                        const double fac = tan(r * fov) / (r*d2t);
-//                        f2dCV(i,0) = fac*ox;
-//                        f2dCV(i,1) = fac*oy; // ofy*fac*oy+ocy;
-//                    }
-//                    std::cout << "RECTIFIED CV:" << std::endl << f2dCV << std::endl;
-
-                    f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
-                    //std::cout << "IN EIGEN:" << std::endl << f2d << std::endl;
-                    f2d.col(0).array() -= icx;
-                    f2d.col(1).array() -= icy;
-                    f2d.col(0) /= ifx;
-                    f2d.col(1) /= ify;
-
-                    const MatrixXf r = f2d.rowwise().norm();
-                    const ArrayXf fac = (r* fov).array().tan() / (r*d2t).array();
-                    f2d.array().colwise() *= fac;
-
-                    f2d.col(0) *= fx;
-                    f2d.col(1) *= fy;
-                    f2d.col(0).array() += cx;
-                    f2d.col(1).array() += cy;
-                    //std::cout << "RECTIFIED:" << std::endl << f2d << std::endl;
-
-                }
-
+//                MatrixXf f2dCV(points.size(),2);
+//                for (uint i=0; i<points.size(); ++i){
+//                    const double ox = (points[i].x - icx) / ifx;
+//                    const double oy = (points[i].y - icy) / ify;
+//                    const double r = sqrt(ox*ox + oy*oy);
+//                    const double fac = tan(r * fov) / (r*d2t);
+//                    f2dCV(i,0) = fac*ox;
+//                    f2dCV(i,1) = fac*oy; // ofy*fac*oy+ocy;
+//                }
+//                std::cout << "RECTIFIED CV:" << std::endl << f2dCV << std::endl;
+                f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                f2d.col(0).array() -= icx;
+                f2d.col(1).array() -= icy;
+                f2d.col(0) /= ifx;
+                f2d.col(1) /= ify;
+                const MatrixXf r = f2d.rowwise().norm();
+                const ArrayXf fac = (r* fov).array().tan() / (r*d2t).array();
+                f2d.array().colwise() *= fac;
+                f2d.col(0) *= fx;
+                f2d.col(1) *= fy;
+                f2d.col(0).array() += cx;
+                f2d.col(1).array() += cy;
             }
 
 
             // Make homogenious, transpose 3xN
             const MatrixXf f2dh = f2d.transpose().colwise().homogeneous();
-            //std::cout << "TCH:" << std::endl << f2dh << std::endl;
 
             // Project 2d -> 3d rays
             bearings = Pinv.solve(f2dh).cast<double>();
-            //std::cout << "SOLVE:" << std::endl << bearings << std::endl;
-
             bearings.colwise().normalize();
-            //std::cout << "CN" << std::endl << bearings << std::endl;
-
             bearings.transposeInPlace(); // Nx3
-            //std::cout << "T:" << std::endl<< bearings << std::endl;
-
             pointsRectified = f2d.cast<double>();
-
         }
 
         //ollieRosTools::PreProcNode_paramsConfig& setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){

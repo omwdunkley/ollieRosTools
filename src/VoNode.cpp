@@ -24,25 +24,21 @@ VoNode::VoNode(ros::NodeHandle& _n):
     imTransport(_n),
     timeAlpha(0.95),
     timeAvg(0),
-    imgDelay(0),
-    repeatOn(false)
+    imgDelay(0)
     {
     Frame::setCamera(cameraModel);
     Frame::setDetector(detector);
     Frame::setPreProc(preproc);
 
+    ROS_INFO("Starting VO node\nAvailable params:\n\t_image:=/image_raw\n\t_useIMU:=true\n\t_imuFrame:=/cf_attitude\n\t_camFrame:=/cam");
     /// Set default values
-    n.param("image", inputTopic, std::string("/cf/cam/image_raw"));
+    n.param("image", inputTopic, std::string("/image_raw"));
     n.param("useIMU", USE_IMU, true);
     n.param("imuFrame", IMU_FRAME, std::string("/cf_attitude"));
     n.param("worldFrame", WORLD_FRAME, std::string("/world"));
     n.param("camFrame", CAM_FRAME, std::string("/cam"));
     // Cam frame is specified from the header in the cam msg
 
-
-
-    /// Subscribe to Topics    
-    subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
 
     /// Publish to Topics
     pubCamera  = imTransport.advertiseCamera("/vo/image_raw", 1);
@@ -56,7 +52,7 @@ VoNode::VoNode(ros::NodeHandle& _n):
     srv.setCallback(f);
 
 
-    ROS_INFO("Starting <%s> node with <%s> as image source", /*ros::this_node::getNamespace().c_str(),*/ ros::this_node::getName().c_str(), inputTopic.c_str());
+
     if (USE_IMU){
         ROS_INFO("Using <%s> as imu frame", IMU_FRAME.c_str());
     } else {
@@ -64,6 +60,17 @@ VoNode::VoNode(ros::NodeHandle& _n):
     }
     ROS_INFO("Using <%s> as world frame",  WORLD_FRAME.c_str());
     ROS_INFO("Using <%s> as camera frame",  CAM_FRAME.c_str());
+
+
+    /// Init IMU transform
+    initImu2Cam();
+
+
+    ROS_INFO("Starting <%s> node with <%s> as image source", /*ros::this_node::getNamespace().c_str(),*/ ros::this_node::getName().c_str(), inputTopic.c_str());
+    /// Subscribe to Topics
+    subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
+
+
 
 }
 
@@ -73,12 +80,37 @@ VoNode::~VoNode() {
 }
 
 
+/// Looks ithe IMU -> CAM transformation
+void VoNode::initImu2Cam(){
+    if (USE_IMU){
+        tf::StampedTransform imu2cam;
+        try{
+            // sent out by the crazyflie driver driver.py
+            while(1){
+                ROS_INFO("Waiting for [%s] -> [%s] transform...", IMU_FRAME.c_str(), CAM_FRAME.c_str());
+                if (subTF.waitForTransform(CAM_FRAME, IMU_FRAME, ros::Time::now(), ros::Duration(2), ros::Duration(0.05))) {
+                    break;
+                }
+            }
+            subTF.lookupTransform(CAM_FRAME, IMU_FRAME, ros::Time::now(), imu2cam);
+            tf::transformTFToEigen(imu2cam, IMU2CAM);
+        } catch(tf::TransformException& ex){
+            ROS_ERROR_THROTTLE(1,"TF exception. Could not get IMU2CAM transform: %s", ex.what());
+            exit(EXIT_FAILURE);
+        }
+        ROS_INFO("...IMU transform [%s] -> [%s] set", IMU_FRAME.c_str(), CAM_FRAME.c_str());
+    } else {
+        ROS_INFO("Not using IMU, so no [%s] -> [%s] transform needed", IMU_FRAME.c_str(), CAM_FRAME.c_str());
+        IMU2CAM.setIdentity();
+    }
+}
+
 /// PINHOLE
 void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     ROS_INFO("\n");
 
     /// Measure HZ, Processing time, Image acquisation time
-    ros::WallTime time_s0 = ros::WallTime::now();
+    ros::WallTime t0 = ros::WallTime::now();
 
     /// Check TIME
     if (lastTime>msg->header.stamp){
@@ -106,11 +138,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
             subTF.waitForTransform(IMU_FRAME, WORLD_FRAME, msg->header.stamp-imgDelay, ros::Duration(0.1) );
             subTF.lookupTransform(IMU_FRAME, WORLD_FRAME, msg->header.stamp-imgDelay, imuStamped);
         } catch(tf::TransformException& ex){
-            ROS_ERROR_THROTTLE(1,"TF exception. Could not get flie IMU transform: %s", ex.what());
-            if (repeatOn){
-                repeatOn=false;
-                subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
-            }
+            ROS_ERROR_THROTTLE(1,"TF exception. Could not get flie IMU transform: %s", ex.what());            
             return;
         }
     } else {
@@ -120,21 +148,18 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     /// Make Frame
     FramePtr frame(new Frame(cvPtr->image, imuStamped));
 
-    ROS_INFO("NODE > PROCESSING FRAME [%d]", frame->getId());
 
-    /// Do visual odometry
+    /// Process Frame
+    ROS_INFO("NOD > PROCESSING FRAME [%d]", frame->getId());
     odometry.update(frame);
 
-
-
     /// Compute running average of processing time
-    double time = (ros::WallTime::now()-time_s0).toSec();
+    double time = (ros::WallTime::now()-t0).toSec();
     timeAvg = (timeAvg*timeAlpha) + (1.0 - timeAlpha)*time;
 
+    /// Clean up and output
     ROS_INFO("NOD < FRAME [%d|%d] PROCESSED [%.1fms, Avg: %.1fms]", frame->getId(), frame->getKfId(), time*1000., timeAvg*1000.);
-
     publishStuff();
-
 
     /// publish debug image
     if (pubCamera.getNumSubscribers()>0 || pubImage.getNumSubscribers()>0){
@@ -157,63 +182,33 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         camInfoPtr->header = cvi.header;
         //pubCamera.publish(cvi.toImageMsg(), camInfoPtr);
         pubImage.publish(cvi.toImageMsg());
-
     }
-
-//    if (repeatOn!=configLast.repeatInput){
-//        if (configLast.repeatInput){
-//            subImage.shutdown();
-//            ROS_INFO("NODE = Repeat on");
-//        } else {
-//            ROS_INFO("NODE = Repeat off");
-//            subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
-//        }
-//        repeatOn = configLast.repeatInput;
-//    }
-
-
-//    if (repeatOn){
-//        ROS_INFO_THROTTLE(1,"NODE = Repeating Input");
-//        ros::spinOnce(); // check for changes in dynamic reconfigure
-//        incomingImage(msg);
-//    }
-
 }
 
 
 ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
-    ROS_INFO("NODE > SETTING PARAM");
+    ROS_INFO("NOD > SETTING PARAM");
 
     /// Turn node on and off when settings change
-//    if (nodeOn!=config.nodeOn){
-//        nodeOn = config.nodeOn;
-//        if (nodeOn){
-//            // Node was just turned on
-//            subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
-//            ROS_INFO("NODE = Node On");
-//        } else {
-//            // Node was just turned off
-//            subImage.shutdown();
-//            ROS_INFO("NODE = Node Off");
-//        }
-//    }
-
-
-    // maxKp == 0 means dont cap size
-    if (config.kp_max!=0){
-        // make sure max>=min
-        int minKp, maxKp;
-        minKp=std::min(config.kp_min, config.kp_max);
-        maxKp=std::max(config.kp_min, config.kp_max);
-        config.kp_max = maxKp;
-        config.kp_min = minKp;
+    if (nodeOn!=config.nodeOn){
+        nodeOn = config.nodeOn;
+        if (nodeOn){
+            // Node was just turned on
+            subImage = imTransport.subscribe(inputTopic, 1, &VoNode::incomingImage, this);
+            ROS_INFO("NODE = Node On");
+        } else {
+            // Node was just turned off
+            subImage.shutdown();
+            ROS_INFO("NODE = Node Off");
+        }
     }
 
     imgDelay = ros::Duration(config.imgDelay);
     colorId = config.color;
 
-    Frame::setParameter(config, level);
 
+
+    Frame::setParameter(config, level);
     preproc->setParam(config.doPreprocess,
                      config.doDeinterlace,
                      config.doEqualise,
@@ -230,7 +225,6 @@ ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_p
                        config.fx, config.fy,
                        config.cx, config.cy,
                        config.s);
-
     detector->setParameter(config, level);
     odometry.setParameter(config, level);
 

@@ -76,7 +76,6 @@ private:
                };
 
 
-
     /// MEMBERS
     // Map
     OdoMap map;
@@ -115,22 +114,45 @@ private:
     double baselineInitial;
     double baselineCorrected;
     double timeVO;
+    double timeMA;
 
 
 
 
-    /// ////////////////////////////////////////////////////////////////////////////////////// PRIVATE METHODS
 
-
+    /// ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    /// META FUNCTIONS /////////////////////////////////////////////////////////////////////////////////////////////////////
+    // getter, setters, time keeping, drawing, etc
 
 
     /// Sets a state and shows a message if it changed
     void setState(State s){
         if (s!=state){
-            ROS_INFO("ODO [M] = Changing state from [%d to %d]", state, s);
+            ROS_INFO("ODO [M] = Changing state from [%s to %s]", getStateName(state).c_str(), getStateName(s).c_str());
             state = s;
         }
     }
+
+    // If no argument is supplied, it returns the current state as a string. Else retures the state string specified
+    std::string getStateName(int spec=-1){
+        if (spec<0){
+            spec = state;
+        }
+        switch(spec){
+            case ST_WAIT_FIRST_FRAME: return "WAIT_FIRST";
+            case ST_WAIT_INIT:        return "WAIT_INIT";
+            case ST_TRACKING:         return "TRACKING";
+            case ST_LOST:             return "LOST";
+            default: ROS_ASSERT(0);   return "ERROR";
+        }
+    }
+
+    // Returns the current state
+    State getState() const {
+        return state;
+    }
+
+
 
 
 
@@ -170,7 +192,7 @@ private:
 
 
 
-/*    Ints reprojectFilter(const Bearings& bv, const Points3d& pts3dFrame, OVO::BEARING_ERROR method = OVO::BVERR_NormAminusB){
+    Ints reprojectFilter(const Bearings& bv, const Points3d& pts3dFrame, OVO::BEARING_ERROR method = OVO::BVERR_NormAminusB){
         /// If the angle between bv[i] and pts3dFrame[i] is close enough, return i
         // bv is the bearing vector of a frame F
         // pts3dFrame are the points in frame F that the bearing vectors point to. They must be aligned
@@ -191,7 +213,7 @@ private:
         return inliers;
 
     }
-*/
+
 
 
 
@@ -206,15 +228,15 @@ private:
 
     /// adds a keyframe to the map
     // returns true on success
-    bool addKf(){
+    bool addKf(FramePtr& frame){
         /// Start timer, show messages, check quality
         ros::WallTime t0 = ros::WallTime::now();
 
 
 
 
-        FramePtr& f = map.getCurrentFrame();
-        FramePtr& kf = map.getLatestKF();
+        FramePtr f = map.getCurrentFrame();
+        FramePtr kf = map.getLatestKF();
         /*
         ROS_WARN("ODO > ATTEMPTING TO MAKE FRAME [%d] KEYFRAME", f->getId());
 
@@ -278,8 +300,8 @@ private:
 
 
     /// Attempts to estiamte the pose with 2d-3d estiamtes
-    bool absolutePose(FramePtr& f, FramePtr& kf, const DMatches& matches){
-        ROS_INFO("ODO [L] > Doing VO Pose Estimate Frame [%d|%d] vs KeyFrame [%d|%d] with [%lu] matches", f->getId(), f->getKfId(), kf->getId(), kf->getKfId(), matches.size());
+    bool absolutePose(FramePtr& f){
+        //ROS_INFO("ODO [L] > Doing VO Pose Estimate Frame [%d|%d] vs KeyFrame [%d|%d] with [%lu] matches", f->getId(), f->getKfId(), kf->getId(), kf->getKfId(), matches.size());
 
         matchesVO.clear();
 
@@ -288,7 +310,7 @@ private:
             return false;
         }
 
-        ROS_ERROR("ODO [L] = NOT IMPLEMENTED poseEstimate()");
+        ROS_ASSERT_MSG(0, "ODO [L] = NOT IMPLEMENTED absolutePose()");
         /*
         const Points3d& worldPtsKF = kf->getWorldPoints3d();
         const Eigen::MatrixXd& bvf         = f->getBearings();
@@ -431,16 +453,10 @@ private:
             /// Use IMU for rotation, compute translation
             ROS_INFO("Using IMU for relative rotation");
             // compute relative rotation
-            const Eigen::Matrix3d& imu2cam = f->getImu2Cam(); /// TODO: getImuRotation cam is actually imu2cam*imuRot
-            adapter.setR12(imu2cam * kf->getImuRotationCam().transpose() * f->getImuRotationCam() * imu2cam.transpose());
+            Eigen::Matrix3d relativeRot;
+            OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relativeRot);
+            adapter.setR12(relativeRot);
 
-            //adapter.setR12(kf->getImuRotation().transpose() * f->getImuRotation());
-            //adapter.setR12(f->getImuRotation() * kf->getImuRotation().transpose());
-            //adapter.setR12(f->getImuRotation().transpose() * kf->getImuRotation());
-//            adapter.setR12(Eigen::Matrix3d::Identity());
-//            ROS_INFO_STREAM("kf' * f\n" << kf->getImuRotation().transpose() * f->getImuRotation());
-//            ROS_INFO_STREAM("f * kf'\n" << f->getImuRotation() * kf->getImuRotation().transpose());
-//            ROS_INFO_STREAM("f' * kf\n" << f->getImuRotation().transpose() * kf->getImuRotation());
 
             ///DO RANSAC for translation only
             boost::shared_ptr<RP::TranslationOnlySacProblem>relposeproblem_ptr(new RP::TranslationOnlySacProblem(adapter) );
@@ -580,7 +596,7 @@ private:
         OVO::transformPoints(kf->getPose(), points3d);
 
         /// Update map
-        map.initialise(f, points3d, matchesVO);
+        map.initialiseMap(f, points3d, matchesVO);
 
         ROS_INFO("ODO < Initialised");
         return true;
@@ -596,16 +612,18 @@ private:
 
     /// resets all internal structures
     void resetVO(){
-        ROS_INFO("ODO > RESETTING");
-        state=ST_WAIT_FIRST_FRAME;
+        ROS_INFO("ODO [M] > RESETTING");
+        setState(ST_WAIT_FIRST_FRAME);
         control = CTR_DO_NOTHING;
         baselineInitial = -1;
         baselineCorrected = -1;
         timeVO = -1;
+        timeMA = -1;
         disparity = -1;
-        map.reset();
+        //map.reset();
         matchesVO.clear();
-        ROS_INFO("ODO < RESET");
+        matches.clear();
+        ROS_INFO("ODO [M] < RESET");
     }
 
 
@@ -616,7 +634,7 @@ private:
 
         const float quality = frame->getQuality();
         if (quality < keyFrameQualityThreshold && quality>=0){
-            ROS_WARN("ODO [M] < FAILED TO ADD INITIAL KEYFRAME, quality too bad [%f]", quality);
+            ROS_WARN("ODO [M] < FAILED TO ADD INITIAL KEYFRAME, quality too bad [%f < %f]", quality, keyFrameQualityThreshold);
             return false;
         }
         // add first keyframe
@@ -631,6 +649,11 @@ private:
         ROS_ASSERT(state==ST_WAIT_INIT || state == ST_TRACKING);
         // track against initial keyframe
         disparity = -1;
+        ROS_WARN("ODO [M] = NOT IMPLEMENTED tracking");
+
+        map.match2KF(frame, matches, timeMA, false);
+
+
 
         if (state == ST_WAIT_INIT){
             // tracking against first keyframe
@@ -644,11 +667,11 @@ private:
             // TODO
         }
 
-        if (dispartiy>=0){
+        if (disparity>=0){
             ROS_INFO("ODO [M] = Tracking Success. Disparity = [%f]", disparity);
             return true;
         } else {
-            ROS_INFO("ODO [M] = Tracking Success. Disparity = [%f]", disparity);
+            ROS_INFO("ODO [M] = Tracking Failure. Disparity = [%f]", disparity);
             return false;
         }
 
@@ -686,19 +709,17 @@ private:
 
 
         bool okay = false;
+        ROS_ASSERT_MSG(0, "NOT IMPLEMENTED");
 
-        // absolutePose()
-        // sets disparity
 
         timeVO = (ros::WallTime::now()-t0).toSec();
         if (okay){
             ROS_INFO("ODO [M] < POSE ESTIMATION SUCCESS [%.1fms]", timeVO*1000.);
-            state = ST_TRACKING;
+            return true;
         } else {
             ROS_WARN("ODO [M] < POSE ESTIMATION FAIL [%.1fms]", timeVO*1000.);
-            state = ST_LOST;
+            return false;
         }
-
     }
 
 
@@ -708,14 +729,13 @@ private:
         ROS_ASSERT(state==ST_LOST);
         ros::WallTime t0 = ros::WallTime::now();
 
+        ROS_ASSERT_MSG(0, "NOT IMPLEMENTED");
+
+
+        ROS_WARN("ODO [M] < RELOCALISATION FAILED [%.1fms]", 1000* (ros::WallTime::now()-t0).toSec());
+        return false;
+
     }
-
-
-
-
-
-
-
 
 
 
@@ -790,7 +810,7 @@ private:
         if (control == CTR_DO_ADDKF || disparity >= voInitDisparity){
             control = CTR_DO_NOTHING;
             ROS_INFO("ODO [H] > Initialising [Disparity = %f/%f]", disparity, voInitDisparity);
-            if (initialseVO(frame)){
+            if (initialiseVO(frame)){
                 // Initialisation okay, start tracking
                 setState(ST_TRACKING);
                 ROS_INFO("ODO [H] < Initialisation Success");
@@ -837,7 +857,7 @@ private:
         }
 
         /// Compute pose
-        if (!estimatePoseVO(frame)){
+        if (!absolutePose(frame)){
             // Failed to compute pose
             setState(ST_LOST); /// TODO: are we lost? Or just failed to compute pose?
             ROS_WARN("ODO [H] < Tracking fail: Failed to compute pose");
@@ -846,7 +866,7 @@ private:
         }
 
         /// Add KF and and update Map
-        if (control == CTR_DO_ADDKF || dispartiy >= voKfDisparity){
+        if (control == CTR_DO_ADDKF || disparity >= voKfDisparity){
             control = CTR_DO_NOTHING;
             ROS_INFO("ODO [H] > Adding KF [Disparity = %f/%f", disparity, voKfDisparity);
 
@@ -941,7 +961,7 @@ public:
 
     // a step in the VO pipeline. Main entry point for odometry
     void update(FramePtr& frame){
-        ROS_INFO("ODO > PROCESSING FRAME [%d]", frame->getId());
+        ROS_INFO("ODO > PROCESSING FRAME [%d] - Current in state [%s]", frame->getId(), getStateName().c_str());
 
         /// Skip frame immediatly if quality is too bad (should ust be used for extremely bad frames)
         const float quality = frame->getQuality();
@@ -976,8 +996,20 @@ public:
 
     // Gets a visual image of the current state
     cv::Mat getVisualImage(){
-        /// Get matching image
-        cv::Mat image = map.getVisualImage();
+        ROS_INFO("ODO > GETTING VISUAL IMAGE [State: %s]", getStateName().c_str());
+        // Get matching image
+        cv::Mat image;
+        if (state==ST_WAIT_FIRST_FRAME){
+            image = cv::Mat::zeros(720,576,CV_8UC3);
+            OVO::drawTextCenter(image, "NO IMG", CV_RGB(255,0,0), 4, 3);
+            return image;
+        } else {
+            cv::drawMatches(map.getCurrentFrame()->getVisualImage(), KeyPoints(0), map.getLatestKF()->getVisualImage(), KeyPoints(0), DMatches(0), image);
+        }
+
+        // Draw state
+        OVO::drawTextCenter(image.colRange(0,image.cols/2).rowRange(20,50), getStateName(), CV_RGB(200, 200, 0), 1.5, 2);
+
 
         // Overlay baseline
         if (baselineInitial>=0){
@@ -986,34 +1018,45 @@ public:
         if (baselineCorrected>=0){
             OVO::putInt(image, baselineCorrected, cv::Point(10,10*25), CV_RGB(0,96*2,0), false , "BLC:");
         }
-
-        // Draw VO flow
-        // only for drawing!
-
-        if (matchesVO.size()>0){
-            /*
-            Points2f drawVoKFPts, drawVoFPts;
-            OVO::vecAlignMatch<Points2f>(map.getCurrentFrame()->getPoints(true), map.getLatestKF()->getPoints(true), drawVoFPts, drawVoKFPts, matchesVO);
-            for (uint i=0; i<drawVoFPts.size(); ++i){
-                cv::line(image, drawVoFPts[i], drawVoKFPts[i], CV_RGB(255,0,255), 1, CV_AA);
-            }
-            */
-            OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
-        }
-
         // show timings
-        if (timeVO>0){
+        if (disparity>0){
             OVO::putInt(image, timeVO*1000., cv::Point(10,image.rows-2*25), CV_RGB(200,0,200), false, "O:");
         }
 
 
-        // show state
+        /// THESE ONLY WORK WHEN THE CURRENT MATCHES WERE VS THE CURRENT KEYFRAME!
+        if (matches.size()>0){
+            OVO::drawFlow(image, map.getCurrentFrame()->getPoints(), map.getLatestKF()->getPoints(), matches, CV_RGB(0,128,0));
+            OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,128,0),  true,"MA:");
+        }
+        if (matchesVO.size()>0){
+            OVO::drawFlow(image, map.getCurrentFrame()->getPoints(), map.getLatestKF()->getPoints(), matchesVO, CV_RGB(200,0,200));
+            OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
+        }
+
+        // Project in world points
+//        if (){
+//        }
+
+        // Project in estiamted point positions
+//        if (){
+//        }
+
+
+        // show timings
+        if (timeMA>0){
+            OVO::putInt(image, timeMA*1000., cv::Point(10,image.rows-3*25), CV_RGB(200,0,200), false, "M:");
+        }
+        if (timeVO>0){
+            OVO::putInt(image, timeVO*1000., cv::Point(10,image.rows-2*25), CV_RGB(200,0,200), false, "O:");
+        }
+
         // show user controls
-        // show imu
         // show flow
         // show tracker matches
-        // show vo matches
         // show map statistics
+
+        ROS_INFO("ODO < RETURNING VISUAL IMAGE");
         return image;
 
     }
@@ -1025,13 +1068,13 @@ public:
     }
 
     // Get the last KF
-    FramePtr& getLastFrame(){
+    FramePtr getLastFrame(){
         return map.getCurrentFrame();
     }
 
     // Set paramters with dynamic reconfigure
     void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
-        ROS_INFO("ODO > SETTING PARAMS");
+        ROS_INFO("ODO > [U] SETTING PARAMS");
 
         // Settings
         voRelRansacIter   = config.vo_relRansacIter;

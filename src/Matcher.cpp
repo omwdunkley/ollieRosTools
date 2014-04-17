@@ -144,8 +144,10 @@ void Matcher::matchMap(const OdoMap& map, FramePtr& f, const Ints& fMask){
 
 
 // Match f against frame with an initial pose estimate
-void Matcher::matchFrame(FramePtr& kf, FramePtr& f, FramePtr& f_close, const Ints& kfMask, const Ints& fMask){
+void Matcher::matchFrame(FramePtr& f, FramePtr& kf, FramePtr& f_close, DMatches& matches, const Ints& fMask, const Ints& kfMask){
     ROS_ASSERT(f_close->poseEstimated());
+
+
     // use f_close to dispartiy filter matches
     if (USE_IMU){
         // apply relative rotation difference to f_close pose to get anmore accurate pose estiamte to do disparity over
@@ -153,19 +155,35 @@ void Matcher::matchFrame(FramePtr& kf, FramePtr& f, FramePtr& f_close, const Int
 }
 
 
-// Match f against frame withOUT pose estimate = WE ARE LOST
-void Matcher::matchFrame(FramePtr& kf, FramePtr& f, const Ints& kfMask, const Ints& fMask){
-    if (USE_IMU){
+// Match f against frame withOUT pose estimate = WE ARE LOST, or we are initialising
+void Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask, const Ints& kfMask){
+    ROS_INFO("MAT [H] > matchFrame QueryFrame[%d|%d] vs TrainFrame[%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
 
-    } else {
+    /// Get descriptors, possibly masking out some
+    const cv::Mat& qD =  f->getDescriptors();
+    const cv::Mat& tD = kf->getDescriptors();
+    cv::Mat mask = makeMask(qD.rows, tD.rows, fMask, kfMask);
 
+    /// Do masking predictions on masked bearing vectors
+    if (m_pred==PRED_KF){
+        ROS_ASSERT("NOT IMPLEMENTED");
+    } else if (m_pred==PRED_KF_IMU){
+        ROS_ASSERT("NOT IMPLEMENTED");
+    } else if (m_pred==PRED_POSE) {
+        ROS_ASSERT("NOT IMPLEMENTED");
+    } else if (m_pred==PRED_POSE_IMU) {
+        ROS_ASSERT("NOT IMPLEMENTED");
     }
+
+    /// Do the actual matching
+    match(qD, tD, matches, time, mask);
+
 }
 
 
 // Does KLT Refinement over matches. Returns matches that passed. Also updates keypoints of fQuery
 void Matcher::kltRefine(FramePtr& fQuery, FramePtr& fTrain, DMatches& matches){
-    ROS_INFO("MAT > Doing KLT refinement over [%lu] matches. Window size [%d]", matches.size(), klt_window.x);
+    ROS_INFO("MAT [M] > Doing KLT refinement over [%lu] matches. Window size [%d]", matches.size(), klt_window.x);
 
     KeyPoints& qKps = fQuery->getKeypoints();
     const KeyPoints& tKps = fTrain->getKeypoints();
@@ -199,7 +217,7 @@ void Matcher::kltRefine(FramePtr& fQuery, FramePtr& fTrain, DMatches& matches){
             qKps[matches[i].queryIdx].pt = qPtsPredicted[i];
         }
     }
-    ROS_INFO("FTR > Finished doing KLT refinement. [%lu/%lu] successful in [%.1fms]", filteredMatches.size(), matches.size(),1000* (ros::WallTime::now()-t1).toSec());
+    ROS_INFO("MAT [M] > Finished doing KLT refinement. [%lu/%lu] successful in [%.1fms]", filteredMatches.size(), matches.size(),1000* (ros::WallTime::now()-t1).toSec());
 }
 
 
@@ -220,34 +238,41 @@ void Matcher::updateMatcher(const int type, const int size, const bool update){
             ROS_INFO("MAT = Updated Matcher: BRUTEFORCE [BINARY 2 bit%s]", sym?" Sym":"");
         } else {
             matcher = new cv::BFMatcher(cv::NORM_HAMMING, sym); //1bit
-            ROS_INFO("MAT = Updated Matcher: BRUTEFORCE [BINARY 1 bit %s]", sym?" Sym":"");
+            ROS_INFO("MAT [H] = Updated Matcher: BRUTEFORCE [BINARY 1 bit %s]", sym?" Sym":"");
         }
     } else if (type==CV_32F){ // FLOAT DESCRIPTOR
         matcher = new cv::BFMatcher(m_norm, sym);
-        ROS_INFO("MAT = Updated Matcher: BRUTEFORCE [FLOAT L%d]", m_norm==2?1:2 );
+        ROS_INFO("MAT [H] = Updated Matcher: BRUTEFORCE [FLOAT L%d]", m_norm==2?1:2 );
     } else {
-        ROS_ERROR("MAT = Unknown Desc Type: %d", type);
+        ROS_ERROR("MAT [H] = Unknown Desc Type: %d", type);
     }
 }
 
 
 // Set matcher params from dynamic reconfigre. Scales thresholds depending on extracttor
 void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
-    ROS_INFO("MAT > SETTING PARAM");
+    ROS_INFO("MAT [H] > SETTING PARAM");
 
     //////////////////////////////////////////////////////////////// MATCHER
     //TODO add FLANN vars
 
-    m_unique = config.match_unique;    
-    m_norm = config.match_norm;
-    m_thresh = config.match_thresh;
-    m_max = config.match_max;
+    m_unique            = config.match_unique;
+    m_norm              = config.match_norm;
+    m_thresh            = config.match_thresh;
+    m_max               = config.match_max;
+    m_bvDisparityThresh = OVO::px2error(config.match_bvDisparityThresh);
+    m_pred              = static_cast<Prediction>(config.match_prediction);
+
+    if(!USE_IMU){
+        m_pred = PRED_BLIND;
+    }
 
     // For ease of use later
     m_doUnique = m_unique;
     m_doSym    = config.match_symmetric>0;
     m_doThresh = m_thresh>0;
     m_doMax    = m_max>0;
+
 
     orb34 = config.extractor==7 || config.extractor==8;
     updateMatcher(descType, true);
@@ -348,7 +373,7 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
     }
 
 
-    ROS_INFO("MAT < PARAM SET");
+    ROS_INFO("MAT [H] < PARAM SET");
 
 }
 
@@ -389,7 +414,7 @@ void minMaxTotal(const DMatches& ms, float& minval, float& maxval, uint& total){
 
 // returns true if the distances are sorted by size, lowest first
 bool isSorted(const DMatches& ms){    
-    ROS_INFO("Checking if matches are sorted");
+    ROS_INFO("MAT [U] = Checking if matches are sorted");
     for (uint i=1; i<ms.size(); ++i){
         //if (ms[i-1].distance > ms[i].distance){
         if (ms[i]<ms[i-1]){
@@ -431,7 +456,7 @@ void matchKnn2single(const DMatchesKNN& msknn, DMatches& ms, const size_t maxPer
 
 // Filter out matches that are not unique. Specifically unqiue = dist1/dist2 > similarity
 void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float similarity){
-    ROS_INFO("MAT > Filtering [%lu] Matches by uniqueness", msknn.size());
+    ROS_INFO("MAT [U] > Filtering [%lu] Matches by uniqueness", msknn.size());
     ms.clear();
     ms.reserve(msknn.size());
 
@@ -447,13 +472,13 @@ void matchFilterUnique(const DMatchesKNN& msknn, DMatches& ms, const float simil
             ms.push_back(m1);
         }
     }
-    ROS_INFO("MAT < Matches [%lu/%lu] remaining after uniqueness test", ms.size(), msknn.size());
+    ROS_INFO("MAT [U] < Matches [%lu/%lu] remaining after uniqueness test", ms.size(), msknn.size());
 }
 
 
 // Same as above but preservers length and order. Filters in place
 void matchFilterUnique(DMatchesKNN& msknn, const float similarity){
-    ROS_INFO("MAT > Filtering [%lu] Matches by uniqueness in place", msknn.size());
+    ROS_INFO("MAT [U] > Filtering [%lu] Matches by uniqueness in place", msknn.size());
     DMatchesKNN out;
     out.reserve(msknn.size());
     uint counter = 0;
@@ -475,14 +500,14 @@ void matchFilterUnique(DMatchesKNN& msknn, const float similarity){
             out.push_back(DMatches());
         }
     }
-    ROS_INFO("MAT < Matches [%u/%lu] remaining after uniqueness test", counter, msknn.size());
+    ROS_INFO("MAT [U] < Matches [%u/%lu] remaining after uniqueness test", counter, msknn.size());
     std::swap(out, msknn);
 }
 
 
 // Keeps the best N matches
 void matchFilterBest(DMatches& ms, const uint max_nr){
-    ROS_INFO("MAT = Capping top [%lu/%u] matches", ms.size(), max_nr);
+    ROS_INFO("MAT [U] = Capping top [%lu/%u] matches", ms.size(), max_nr);
     ROS_ASSERT(isSorted(ms));
     if (ms.size()>max_nr){
         ms.erase(ms.begin()+MIN(max_nr,ms.size()),ms.end());
@@ -492,7 +517,7 @@ void matchFilterBest(DMatches& ms, const uint max_nr){
 
 // Remove all matches below threshold.
 void matchFilterThreshold(DMatches& ms, float thresh, bool is_sorted){
-    ROS_INFO("MAT > Thresholding [%lu] matches by distance [%f]", ms.size(), thresh);
+    ROS_INFO("MAT [U] > Thresholding [%lu] matches by distance [%f]", ms.size(), thresh);
     uint s = ms.size();
     ROS_ASSERT_MSG(!is_sorted || isSorted(ms), "Expecting matches to be sorted, but they are not");
     if (is_sorted){
@@ -504,7 +529,7 @@ void matchFilterThreshold(DMatches& ms, float thresh, bool is_sorted){
         ms.erase( std::remove_if( ms.begin(), ms.end(), boost::bind(matchBad, _1, thresh)), ms.end() );
     }
 
-    ROS_INFO("MAT < Thresholded matches by distance [%lu / %u] left", ms.size(), s);
+    ROS_INFO("MAT [U] < Thresholded matches by distance [%lu / %u] left", ms.size(), s);
 }
 
 
@@ -526,14 +551,14 @@ void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted){
         }
 
         const double thresh = std::max(1e-8f,ratio*best);
-        ROS_INFO("MAT > Filtering [%lu] matches by ratio. Range: [%f - %f], [%f] thresh", ms.size(), best, worst, thresh);
+        ROS_INFO("MAT [U] > Filtering [%lu] matches by ratio. Range: [%f - %f], [%f] thresh", ms.size(), best, worst, thresh);
 
         if (worst>thresh){
             uint s = ms.size();
             matchFilterThreshold(ms, thresh, is_sorted);
-            ROS_INFO("MAT < [%lu/%u] left", ms.size(), s);
+            ROS_INFO("MAT [U] < [%lu/%u] left", ms.size(), s);
         } else {
-            ROS_INFO("MAT < None to Ratio Filter");
+            ROS_INFO("MAT [U] < None to Ratio Filter");
         }
 
     }
@@ -541,11 +566,11 @@ void matchFilterRatio(DMatches& ms, const float ratio, const bool is_sorted){
 
 // Only allows matches where matches from ms1 and ms2 match to eachother
 void matchSymmetryTest(const DMatchesKNN& ms1,const DMatchesKNN& ms2, DMatches& msSym) {
-    ROS_INFO("MAT > Symmetrical Check [%lu vs %lu]", ms1.size(), ms2.size());
+    ROS_INFO("MAT [U] > Symmetrical Check [%lu vs %lu]", ms1.size(), ms2.size());
     msSym.clear();
     int size = std::min(ms1.size(), ms2.size());
     if (size==0){
-        ROS_WARN("MAT = NOTHING TO SYMMETRY MATCH");
+        ROS_WARN("MAT [U] = NOTHING TO SYMMETRY MATCH");
     } else {
         msSym.reserve(size);
         //loop through smaller one
@@ -601,14 +626,18 @@ cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk, const In
     cv::Mat maskT = cv::Mat::zeros(qSize, tSize, CV_8U);
     if (queryOk.empty()){
         maskQ.setTo(1);
+        ROS_INFO("MAT [L] = Keeping all [%d] Query Descriptors", qSize);
     } else {
+        ROS_INFO("MAT [L] = Masking Query Descriptors");
         for (uint qi=0; qi<queryOk.size(); ++qi){
             maskQ.row(queryOk[qi]).setTo(1);
         }
     }
     if (trainOk.empty()){
         maskT.setTo(1);
+        ROS_INFO("MAT [L] = Keeping all [%d] Query Descriptors", tSize);
     } else {
+        ROS_INFO("MAT [L] = Masking Train Descriptors");
         for (uint ti=0; ti<trainOk.size(); ++ti){
             maskT.col(trainOk[ti]).setTo(1);
         }
@@ -620,7 +649,7 @@ cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk, const In
 // Makes a mask that prefilters potential matches by using a predicted position - image plane version
 cv::Mat makeDisparityMask(int qSize, int tSize, const Points2f& queryPoints, const Points2f& trainPoints, const float maxDisparity, const Ints& queryOk, const Ints& trainOk){
     // We do the opposite first and then invert
-    ROS_INFO("MAT > Premasking 2d Disparities");
+    ROS_INFO("MAT [M] > Premasking 2d Disparities");
     // kd tree would be nice...worth the overhead?
     ros::WallTime t0 = ros::WallTime::now();
 
@@ -670,7 +699,7 @@ cv::Mat makeDisparityMask(int qSize, int tSize, const Points2f& queryPoints, con
         }
     }
 
-    ROS_INFO("MAT < Finished premasking, matches reduced by [%.1f%%] in [%.1fms]", 100.f*(1.f-static_cast<float>(counter)/qSize*tSize), (ros::WallTime::now()-t0).toSec()*1000.);
+    ROS_INFO("MAT [M] < Finished premasking, matches reduced by [%.1f%%] in [%.1fms]", 100.f*(1.f-static_cast<float>(counter)/qSize*tSize), (ros::WallTime::now()-t0).toSec()*1000.);
     return mask;
 }
 
@@ -678,7 +707,7 @@ cv::Mat makeDisparityMask(int qSize, int tSize, const Points2f& queryPoints, con
 // Makes a mask that prefilters potential matches by using a predicted bearing vector
 cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryPoints, const Bearings& trainPoints, const float maxBVError, const OVO::BEARING_ERROR method, const Ints& queryOk, const Ints& trainOk){
     // We do the opposite first and then invert
-    ROS_INFO("MAT > Premasking 3d Disparities");
+    ROS_INFO("MAT [M] > Premasking 3d Disparities");
     // kd tree would be nice...worth the overhead?
     ros::WallTime t0 = ros::WallTime::now();
 
@@ -727,7 +756,7 @@ cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryPoints, con
         }
     }
 
-    ROS_INFO("MAT < Finished premasking, matches reduced by [%.1f%%] in [%.1fms]", 100.f*(1.f-static_cast<float>(counter)/qSize*tSize), (ros::WallTime::now()-t0).toSec()*1000.);
+    ROS_INFO("MAT [M] < Finished premasking, matches reduced by [%.1f%%] in [%.1fms]", 100.f*(1.f-static_cast<float>(counter)/qSize*tSize), (ros::WallTime::now()-t0).toSec()*1000.);
     return mask;
 }
 

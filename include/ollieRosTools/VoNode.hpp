@@ -60,8 +60,7 @@ class VoNode{
 
         /// Dynamic Reconfigure
         ollieRosTools::VoNode_paramsConfig configLast;
-        dynamic_reconfigure::Server<ollieRosTools::VoNode_paramsConfig> srv;
-        ollieRosTools::VoNode_paramsConfig&  setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
+        dynamic_reconfigure::Server<ollieRosTools::VoNode_paramsConfig> srv;        
 
         /// Members
         float timeAlpha;
@@ -71,7 +70,6 @@ class VoNode{
 
         /// Dynamic parameters
         bool nodeOn;
-        bool repeatOn;
         float timeAvg;
         int colorId;
         ros::Duration imgDelay;
@@ -95,6 +93,10 @@ class VoNode{
 
         /// Callbacks
         void incomingImage(const sensor_msgs::ImageConstPtr& msg);
+        ollieRosTools::VoNode_paramsConfig&  setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
+
+        /// Utility Functions
+        void initImu2Cam();
 
 
 

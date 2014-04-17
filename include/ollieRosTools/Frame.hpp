@@ -31,7 +31,7 @@ class Frame{
         cv::Mat sbi;
         Mats pyramid;
         cv::Size pyramidWindowSize;
-        opengv::rotation_t imuAttitudeCam; // IMU rotation in the camera frame
+        opengv::rotation_t imuAttitude; // IMU rotation in the world frame
         Eigen::Affine3d pose; // transformation of the camera in the world frame
         double roll, pitch, yaw;  //quad frame
         /// TODO not used yet
@@ -48,7 +48,6 @@ class Frame{
         double timePreprocess, timeDetect, timeExtract;
         float quality; // <0 means not measured, 0 means bad, 1 means perfect
         static float averageQuality;
-        Eigen::Matrix3d imu2cam;
         bool hasPoseEstimate;
 
         // Type of descriptor / detector used
@@ -240,7 +239,7 @@ class Frame{
                 id          = 0;
                 // initial pose is zero translation with IMU rotation
                 pose.setIdentity();
-                setPoseRotationFromImu(true);
+                setPoseRotationFromImu(/*true*/);
             } else {
                 ROS_INFO("FRA > Setting Frame [%d] as keyframe", id);
             }
@@ -313,12 +312,11 @@ class Frame{
         }
 
         // sets the pose from the imu rotation. This is usually used on the very first keyframe
-        void setPoseRotationFromImu(bool inverse = false){
-            pose.linear() = imuAttitudeCam;
-            if (inverse){
+        void setPoseRotationFromImu(/*bool inverse = false*/){
+            pose.linear() = imuAttitude;
+            /*if (inverse){
                 pose.linear().transposeInPlace();
-            }
-
+            }*/
             hasPoseEstimate = true;
         }
 
@@ -328,8 +326,8 @@ class Frame{
         }
 
         // Gets the imu rotation recorded at the time the frame was taken.
-        const opengv::rotation_t& getImuRotationCam() const {
-            return imuAttitudeCam;
+        const opengv::rotation_t& getImuRotation() const {
+            return imuAttitude;
         }
 
         // Fetches the cameraInfo used by ros for the current rectification output
@@ -344,6 +342,7 @@ class Frame{
 
         // Creates a new image with visual information displayed on it
         cv::Mat getVisualImage() const{
+            ROS_INFO("FRA > GETTING VISUAL IMAGE OF FRAME [%d|%d]", getId(), getKfId());
             cv::Mat img;
 
             // Draw keypoints if they exist, also makes img colour
@@ -412,6 +411,7 @@ class Frame{
             }
 
             // Draw artificial horizon using CameraModel (eg it might be a curve too)
+            ROS_INFO("FRA < Returning VISUAL IMAGE OF FRAME [%d|%d]", getId(), getKfId());
             return img;
         }
 
@@ -440,11 +440,6 @@ class Frame{
             landmarkRefs.clear();
             //descId = -1;
             //detId = -2; // unknown type
-        }
-
-        const Eigen::Matrix3d& getImu2Cam() const{
-            /// Returns the imu2Cam transform
-            return imu2cam;
         }
 
         // Converts keypoints to poitns and returns them. Used for KLT refinement TODO: cache
