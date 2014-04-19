@@ -1,5 +1,8 @@
 # Created by http://www.gitignore.io
 
+matlab/*.csv
+matlab/*.png
+
 ### ROS ###
 ~$
 .swp$
