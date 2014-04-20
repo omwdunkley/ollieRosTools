@@ -654,7 +654,6 @@ private:
         map.match2KF(frame, matches, timeMA, false);
 
 
-
         if (state == ST_WAIT_INIT){
             // tracking against first keyframe
             // disparity = match(...)
@@ -1018,7 +1017,6 @@ public:
         if (baselineCorrected>=0){
             OVO::putInt(image, baselineCorrected, cv::Point(10,10*25), CV_RGB(0,96*2,0), false , "BLC:");
         }
-        // show timings
         if (disparity>0){
             OVO::putInt(image, timeVO*1000., cv::Point(10,image.rows-2*25), CV_RGB(200,0,200), false, "O:");
         }
@@ -1026,7 +1024,7 @@ public:
 
         /// THESE ONLY WORK WHEN THE CURRENT MATCHES WERE VS THE CURRENT KEYFRAME!
         if (matches.size()>0){
-            OVO::drawFlow(image, map.getCurrentFrame()->getPoints(), map.getLatestKF()->getPoints(), matches, CV_RGB(0,128,0));
+            OVO::drawFlow(image, map.getCurrentFrame()->getPoints(), map.getLatestKF()->getPoints(), matches, CV_RGB(0,128,0), 1.1);
             OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,128,0),  true,"MA:");
         }
         if (matchesVO.size()>0){

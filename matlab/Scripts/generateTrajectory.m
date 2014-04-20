@@ -55,7 +55,7 @@ for step=1:nr_t
     % keep homo values 1
     f2d = bsxfun(@times,f2d,1./f2d(3,:));    
     % Calculate bounds
-    idx = f2d(1,:)<=CX*2 & f2d(1,:)>=0 & f2d(2,:)<=CY*2 & f2d(2,:)>=0;% & features_cam(3,:,step)'<0 ;    
+    idx = f2d(1,:)<=CX*2 & f2d(1,:)>=0 & f2d(2,:)<=CY*2 & f2d(2,:)>=0 & features_cam(3,:,step)>0 ;    
     % Save. Last column is true if in field of view
     features_img(:,:,step) = f2d';    
     features_img(~idx,3,step) = 0;

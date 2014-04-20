@@ -14,6 +14,7 @@
 #include <Eigen/LU>
 
 #include <opencv2/highgui/highgui.hpp>
+#include <image_geometry/pinhole_camera_model.h>
 
 /**
   * Implements the ATAN camera model. For similar notation and more information see:
@@ -27,6 +28,8 @@ using namespace Eigen;
 class CameraATAN {
 
     public:
+        //sensor_msgs::CameraInfo camInfoSynthetic;
+        image_geometry::PinholeCameraModel pinholeSynthetic;
         CameraATAN():
             fx(0.425198),
             fy(0.579108),
@@ -46,10 +49,43 @@ class CameraATAN {
         }
 
 
+
+        cv::Mat rectify(const cv::Mat& imgIn, sensor_msgs::CameraInfo camInfo){
+            ROS_ASSERT(USE_SYNTHETIC);
+            pinholeSynthetic.fromCameraInfo(camInfo);
+
+            infoMsgPtr = sensor_msgs::CameraInfoPtr(new sensor_msgs::CameraInfo(camInfo));
+
+            ROS_INFO("CAM > RECTIFYING");
+            cv::Mat imgOut;
+
+
+            if(USE_SYNTHETIC){
+                if  (interpolation>-1){
+                    pinholeSynthetic.rectifyImage(imgIn, imgOut, interpolation);
+                    ROS_INFO("CAM [SYN] < RECTIFYIED");
+                } else {
+                    imgOut = imgIn;
+                    ROS_INFO("CAM [SYN] < RECTIFICATION OFF, PASS THROUGH");
+                }
+            }
+
+
+            return imgOut;
+        }
+
+
+
         cv::Mat rectify(const cv::Mat& imgIn){
             /// Rectifiy image using precomputed matricies and camInfoMessage
             ROS_INFO("CAM > RECTIFYING");
             cv::Mat imgOut;
+
+            ROS_ASSERT(!USE_SYNTHETIC);
+
+
+
+
 
             // Check input image size vs previous size. Initial previous size is -1,
             // so this forces an update the first time this function is called
@@ -252,31 +288,48 @@ class CameraATAN {
         // Takes distorted points and rectifies them
         KeyPoints rectifyPoints(const KeyPoints& keypoints, bool pointsFromCamera=true){
             KeyPoints kps =keypoints;
-            if (pointsFromCamera && interpolation>=0 ){
-                /// Incoming points are rectified
-                // do nothing
 
+            if (USE_SYNTHETIC){
+                if (pointsFromCamera && interpolation>=0 ){
+                    /// Incoming points are rectified
+                    // do nothing
+
+                } else {
+                    for (uint i=0; i<kps.size(); ++i){
+                        kps[i].pt = pinholeSynthetic.rectifyPoint(keypoints[i].pt);
+                    }
+                }
 
             } else {
-                Points2f points;
-                cv::KeyPoint::convert(keypoints, points);
-                Matrix<float, Dynamic, 2, RowMajor> f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
-                f2d.col(0).array() -= icx;
-                f2d.col(1).array() -= icy;
-                f2d.col(0) /= ifx;
-                f2d.col(1) /= ify;
-                const MatrixXf r = f2d.rowwise().norm();
-                const ArrayXf fac = (r* fov).array().tan() / (r*d2t).array();
-                f2d.array().colwise() *= fac;
-                f2d.col(0) *= ifx; //should it not sometimes be ofx depending on what we want?
-                f2d.col(1) *= ify;
-                f2d.col(0).array() += icx;
-                f2d.col(1).array() += icy;
 
-                // Put point locations back into keypoints
-                for (uint i=0; i<points.size(); ++i){
-                    kps[i].pt.x = f2d(i,0);
-                    kps[i].pt.y = f2d(i,1);
+
+
+                if ((pointsFromCamera && interpolation>=0 )){
+                    /// Incoming points are rectified
+                    // do nothing
+
+
+                } else {
+                    Points2f points;
+                    cv::KeyPoint::convert(keypoints, points);
+                    Matrix<float, Dynamic, 2, RowMajor> f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                    f2d.col(0).array() -= icx;
+                    f2d.col(1).array() -= icy;
+                    f2d.col(0) /= ifx;
+                    f2d.col(1) /= ify;
+                    const MatrixXf r = f2d.rowwise().norm();
+                    const ArrayXf fac = (r* fov).array().tan() / (r*d2t).array();
+                    f2d.array().colwise() *= fac;
+                    f2d.col(0) *= ifx; //should it not sometimes be ofx depending on what we want?
+                    f2d.col(1) *= ify;
+                    f2d.col(0).array() += icx;
+                    f2d.col(1).array() += icy;
+
+                    // Put point locations back into keypoints
+                    for (uint i=0; i<points.size(); ++i){
+                        kps[i].pt.x = f2d(i,0);
+                        kps[i].pt.y = f2d(i,1);
+                    }
                 }
             }
 
@@ -315,35 +368,49 @@ class CameraATAN {
         }
 
 
-        // Takes rectified points and distorts them
+        // Takes rectified points and distorts them NOT IMPLEMENTED
         Matrix<float, Dynamic, 2, RowMajor> unrectifyPoints(const Points2f& points, bool force=false){
             Points2f pts;
 
-//            const float ix = (x - infoMsgPtr->K.at(2)) / infoMsgPtr->K.at(0);
-//            const float iy = (y - infoMsgPtr->K.at(5)) / infoMsgPtr->K.at(4);
-//            const float r = sqrt(ix*ix + iy*iy);
-//            const float fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
-//            const float ox = ifx*fac*ix+icx;
-//            const float oy = ify*fac*iy+icy;
-//            contour.push_back(cv::Point(ox,oy));
-
             Matrix<float, Dynamic, 2, RowMajor> f2d;
-            f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
-            if (interpolation>=0 && !force){
-                /// Incoming points are rectified
-                f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+
+            if (USE_SYNTHETIC){
+                if ((interpolation>=0 && !force)){
+                    /// Incoming points are rectified
+                } else {
+
+
+                }
             } else {
-                f2d.col(0).array() -= infoMsgPtr->K.at(2);
-                f2d.col(1).array() -= infoMsgPtr->K.at(5);
-                f2d.col(0) /= infoMsgPtr->K.at(0);
-                f2d.col(1) /= infoMsgPtr->K.at(4);
-                const MatrixXf r = f2d.rowwise().norm();
-                const ArrayXf fac = (r* d2t).array().tan() / (fov*r).array();
-                f2d.array().colwise() *= fac;
-                f2d.col(0) *= ifx;
-                f2d.col(1) *= ify;
-                f2d.col(0).array() += icx;
-                f2d.col(1).array() += icy;
+
+
+
+                //            const float ix = (x - infoMsgPtr->K.at(2)) / infoMsgPtr->K.at(0);
+                //            const float iy = (y - infoMsgPtr->K.at(5)) / infoMsgPtr->K.at(4);
+                //            const float r = sqrt(ix*ix + iy*iy);
+                //            const float fac = r<0.01 ? 1:atan(r * d2t)/(fov*r);
+                //            const float ox = ifx*fac*ix+icx;
+                //            const float oy = ify*fac*iy+icy;
+                //            contour.push_back(cv::Point(ox,oy));
+
+
+                f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                if ((interpolation>=0 && !force)){
+                    /// Incoming points are rectified
+                    f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                } else {
+                    f2d.col(0).array() -= infoMsgPtr->K.at(2);
+                    f2d.col(1).array() -= infoMsgPtr->K.at(5);
+                    f2d.col(0) /= infoMsgPtr->K.at(0);
+                    f2d.col(1) /= infoMsgPtr->K.at(4);
+                    const MatrixXf r = f2d.rowwise().norm();
+                    const ArrayXf fac = (r* d2t).array().tan() / (fov*r).array();
+                    f2d.array().colwise() *= fac;
+                    f2d.col(0) *= ifx;
+                    f2d.col(1) *= ify;
+                    f2d.col(0).array() += icx;
+                    f2d.col(1).array() += icy;
+                }
             }
 
             pts.reserve(pts.size());
@@ -366,50 +433,67 @@ class CameraATAN {
             // or the images/points are not yet rectified in which case we must first rectify the 2d points
 
 
-            // Use the precomputed look up table to rectify the points.
-
             Matrix<float, Dynamic, 2, RowMajor> f2d;
 
-            //std::cout << std::endl<< std::endl<< "P" << std::endl << P << std::endl;
 
-            if (interpolation>=0){
-                /// Incoming points are rectified
-               f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
-            } else {                
-                /// Incoming points are not rectified
-//                MatrixXf f2dCV(points.size(),2);
-//                for (uint i=0; i<points.size(); ++i){
-//                    const double ox = (points[i].x - icx) / ifx;
-//                    const double oy = (points[i].y - icy) / ify;
-//                    const double r = sqrt(ox*ox + oy*oy);
-//                    const double fac = tan(r * fov) / (r*d2t);
-//                    f2dCV(i,0) = fac*ox;
-//                    f2dCV(i,1) = fac*oy; // ofy*fac*oy+ocy;
-//                }
-//                std::cout << "RECTIFIED CV:" << std::endl << f2dCV << std::endl;
-                f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
-                f2d.col(0).array() -= icx;
-                f2d.col(1).array() -= icy;
-                f2d.col(0) /= ifx;
-                f2d.col(1) /= ify;
-                const MatrixXf r = f2d.rowwise().norm();
-                const ArrayXf fac = (r* fov).array().tan() / (r*d2t).array();
-                f2d.array().colwise() *= fac;
-                f2d.col(0) *= fx;
-                f2d.col(1) *= fy;
-                f2d.col(0).array() += cx;
-                f2d.col(1).array() += cy;
+            if (USE_SYNTHETIC){
+                if (interpolation>=0){
+                    /// Incoming points are rectified
+                    f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                } else {
+                    /// Incoming points are not rectified
+                    f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                    f2d.col(0).array() -= pinholeSynthetic.cx() -0.5;
+                    f2d.col(1).array() -= pinholeSynthetic.cy() -0.5;
+                    f2d.col(0) /= pinholeSynthetic.fx();
+                    f2d.col(1) /= pinholeSynthetic.fy();
+
+                    pointsRectified = f2d.cast<double>();
+                    bearings = f2d.rowwise().homogeneous().cast<double>();
+                    bearings.rowwise().normalize();
+
+                }
+            } else {
+
+                if (interpolation>=0){
+                    /// Incoming points are rectified
+                    f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                } else {
+                    /// Incoming points are not rectified
+                    //                MatrixXf f2dCV(points.size(),2);
+                    //                for (uint i=0; i<points.size(); ++i){
+                    //                    const double ox = (points[i].x - icx) / ifx;
+                    //                    const double oy = (points[i].y - icy) / ify;
+                    //                    const double r = sqrt(ox*ox + oy*oy);
+                    //                    const double fac = tan(r * fov) / (r*d2t);
+                    //                    f2dCV(i,0) = fac*ox;
+                    //                    f2dCV(i,1) = fac*oy; // ofy*fac*oy+ocy;
+                    //                }
+                    //                std::cout << "RECTIFIED CV:" << std::endl << f2dCV << std::endl;
+                    f2d = Map<Matrix<float, Dynamic, 2, RowMajor> >(cv::Mat(points).ptr<float>(),points.size(), 2); //O(1)
+                    f2d.col(0).array() -= icx;
+                    f2d.col(1).array() -= icy;
+                    f2d.col(0) /= ifx;
+                    f2d.col(1) /= ify;
+                    const MatrixXf r = f2d.rowwise().norm();
+                    const ArrayXf fac = (r* fov).array().tan() / (r*d2t).array();
+                    f2d.array().colwise() *= fac;
+                    f2d.col(0) *= fx;
+                    f2d.col(1) *= fy;
+                    f2d.col(0).array() += cx;
+                    f2d.col(1).array() += cy;
+                }
+
+
+                // Make homogenious, transpose 3xN
+                const MatrixXf f2dh = f2d.transpose().colwise().homogeneous();
+
+                // Project 2d -> 3d rays
+                bearings = Pinv.solve(f2dh).cast<double>();
+                bearings.colwise().normalize();
+                bearings.transposeInPlace(); // Nx3
+                pointsRectified = f2d.cast<double>();
             }
-
-
-            // Make homogenious, transpose 3xN
-            const MatrixXf f2dh = f2d.transpose().colwise().homogeneous();
-
-            // Project 2d -> 3d rays
-            bearings = Pinv.solve(f2dh).cast<double>();
-            bearings.colwise().normalize();
-            bearings.transposeInPlace(); // Nx3
-            pointsRectified = f2d.cast<double>();
         }
 
         //ollieRosTools::PreProcNode_paramsConfig& setParameter(ollieRosTools::PreProcNode_paramsConfig &config, uint32_t level){
@@ -425,29 +509,33 @@ class CameraATAN {
 
             this->outZoom = zoomFactor;
             interpolation = PTAMRectify;
-            outSizeIsInSize = sameOutInSize;
 
-            // Use image size as outsize if we do not allow manual size setting or if we are not rectifying
-            if (outSizeIsInSize || interpolation<0){
-                outWidth = inWidth;
-                outHeight = inHeight;
-            } else {
-                outWidth = width;
-                outHeight = height;
+            if (!USE_SYNTHETIC){
+
+                outSizeIsInSize = sameOutInSize;
+
+                // Use image size as outsize if we do not allow manual size setting or if we are not rectifying
+                if (outSizeIsInSize || interpolation<0){
+                    outWidth = inWidth;
+                    outHeight = inHeight;
+                } else {
+                    outWidth = width;
+                    outHeight = height;
+                }
+
+                zoomType = static_cast<ZoomType>(zoom);
+
+                // PTAM params
+                this->fx = fx;
+                this->fy = fy;
+                this->cx = cx;
+                this->cy = cy;
+                this->fov = fov;
+
+                if (inWidth>0 && inHeight>0){
+                    // Only call this after we have an image size
+                    initialise();
             }
-
-            zoomType = static_cast<ZoomType>(zoom);
-
-            // PTAM params
-            this->fx = fx;
-            this->fy = fy;
-            this->cx = cx;
-            this->cy = cy;
-            this->fov = fov;
-
-            if (inWidth>0 && inHeight>0){
-                // Only call this after we have an image size
-                initialise();
             }
             ROS_INFO("CAM < PARAM SET");
             //return config;

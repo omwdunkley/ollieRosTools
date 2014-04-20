@@ -27,6 +27,12 @@ public:
     Detector();
     void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
+
+    // Synthetic data
+    void detect(const std::vector<geometry_msgs::Point>& KPDesc, const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask=cv::Mat());
+    void extract(KeyPoints& kps_inout, cv::Mat& descs_out, int& descId, double angleRad = 0.0) const;
+
+
     void detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask=cv::Mat());
     void extract(const cv::Mat& img, KeyPoints& kps_inout, cv::Mat& descs_out, int& descId, double angleRad = 0.0) const;
 

@@ -1,7 +1,7 @@
 # Created by http://www.gitignore.io
 
-matlab/*.csv
-matlab/*.png
+*.csv
+*.png
 
 ### ROS ###
 ~$

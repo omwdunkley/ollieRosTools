@@ -25,7 +25,7 @@
 
 
 class Frame{
-    private:
+    protected:
         cv::Mat image;
         cv::Mat mask;
         cv::Mat sbi;
@@ -95,7 +95,7 @@ class Frame{
             OVO::putInt(img, Yd, cv::Point2d(img.cols-75,img.rows-1*25), CV_RGB(0,200,200), false, "Y:");
         }
 
-        void computeKeypoints(){           
+        virtual void computeKeypoints(){
             ROS_INFO("FRA > Computing Keypoints frame [id: %d]", getId());
             clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
@@ -227,6 +227,47 @@ class Frame{
 
         }*/
 
+
+
+
+
+
+
+
+
+        visualization_msgs::Marker getBearingsMarker(int id=0, const std::string& name="Bearings", const std::string frame ="/world", double length=1.0, double width=1.0, const CvScalar RGB = CV_RGB(0,200,0), const Eigen::Matrix3d& rot=Eigen::Matrix3d::Identity()) const{
+            visualization_msgs::Marker ms;
+            ms.header.stamp = ros::Time::now();
+            ms.ns = name;
+            ms.id = id;
+            ms.header.frame_id = frame;
+            ms.type = visualization_msgs::Marker::LINE_LIST;
+            ms.action = visualization_msgs::Marker::ADD;
+            ms.scale.x = 0.005*width;
+            ms.frame_locked = true;
+
+            std_msgs::ColorRGBA col;
+            col.a = 0.7;
+            col.r = RGB.val[2]/255;
+            col.g = RGB.val[1]/255;
+            col.b = RGB.val[0]/255;
+            ms.color = col;
+            Eigen::MatrixXd bv(bearings);
+            if (bv.rows()==0){
+                return ms;
+            }
+            // Rotate. Note it should be rot * bearing' but as bearing has wrong shape we do bearing * rot'
+            bv*=rot.transpose();
+            for (int i=0; i< bv.rows(); ++i){
+                geometry_msgs::Point p;
+                tf::pointEigenToMsg(bv.row(i)*length, p);
+                ms.points.push_back(p);
+                ms.points.push_back(geometry_msgs::Point());
+            }
+            return ms;
+
+        }
+
         // Sets frame as keyframe, prepares it for bundle adjustment
         void setAsKF(bool first=false){
             ros::WallTime t0 = ros::WallTime::now();            
@@ -269,17 +310,18 @@ class Frame{
         // Convers the internal eigen pose to a TF pose
         const tf::Pose getTFPose() const {
             //TODO
+            ROS_ASSERT(hasPoseEstimate);
             tf::Pose pose;
             tf::poseEigenToTF(getPose(), pose);
             return pose;
         }
 
         // return stamped transform with current time and pose in world frame
-        const tf::StampedTransform getStampedTransform() const {
+         tf::StampedTransform getStampedTransform() const {
             if (kfId<0){
-                return tf::StampedTransform(getTFPose(), ros::Time::now(), "/world", "/F"); /// TODO: world frame!
+                return tf::StampedTransform(getTFPose(), ros::Time::now(), WORLD_FRAME, "/F");
             } else {
-                return tf::StampedTransform(getTFPose(), ros::Time::now(), "/world", "/KF_"+boost::lexical_cast<std::string>(kfId)); /// TODO: world frame!
+                return tf::StampedTransform(getTFPose(), ros::Time::now(), WORLD_FRAME, "/KF_"+boost::lexical_cast<std::string>(kfId));
             }
         }
 
@@ -297,11 +339,13 @@ class Frame{
 
         // gets the optical axis in the world frame
         const Eigen::Vector3d getOpticalAxisBearing() const {
+            ROS_ASSERT(hasPoseEstimate);
             return pose.linear()*Eigen::Vector3d(0., 0., 1.);
         }
 
         // gets the optical center in the world frame
         const Eigen::Vector3d getOpticalCenter() const {
+            ROS_ASSERT(hasPoseEstimate);
             return pose.translation();
         }
 
@@ -312,8 +356,10 @@ class Frame{
         }
 
         // sets the pose from the imu rotation. This is usually used on the very first keyframe
-        void setPoseRotationFromImu(/*bool inverse = false*/){
-            pose.linear() = imuAttitude;
+        virtual void setPoseRotationFromImu(/*bool inverse = false*/){
+            ROS_INFO("FRA = Setting pose from IMU rotation");
+            pose.setIdentity();
+            pose.linear() = imuAttitude*IMU2CAM.linear();
             /*if (inverse){
                 pose.linear().transposeInPlace();
             }*/
@@ -346,7 +392,7 @@ class Frame{
             cv::Mat img;
 
             // Draw keypoints if they exist, also makes img colour
-            cv::drawKeypoints(image, keypointsImg, img, CV_RGB(0,90,20));
+            cv::drawKeypoints(image, keypointsImg, img, CV_RGB(0,90,20), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
             OVO::putInt(img, keypointsImg.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"KP:");
 
             // Draw Frame ID
@@ -422,7 +468,7 @@ class Frame{
                     computeKeypoints();
                 } else if (getDetId() != detector->getDetectorId()){
                     // we have outdated keypoints - recompute
-                    ROS_INFO("FRA > Keypoints outdated [%d != %d], redetecting", getDetId(), detector->getDetectorId());
+                    ROS_WARN("FRA > Keypoints outdated [%d != %d], redetecting", getDetId(), detector->getDetectorId());
                     computeKeypoints();
                     ROS_INFO("FRA < Keypoints redetected");
                 }
@@ -502,7 +548,7 @@ class Frame{
 
 
         // Extracts descriptors, setting the frames desc type. Computes/recomputes Keypoints if required
-        void extractDescriptors(){
+        virtual void extractDescriptors(){
             getKeypoints(); // updates them if required
             uint kpsize = keypointsImg.size();
             ROS_INFO("FRA > Computing [%lu] descriptors for frame [id: %d]", keypointsImg.size(), id);
@@ -621,5 +667,134 @@ class Frame{
 };
 
 typedef cv::Ptr<Frame> FramePtr;
+
+
+class FrameSynthetic : public Frame {
+    public:
+        EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+        FrameSynthetic(){
+            ROS_ASSERT(USE_SYNTHETIC);
+        }
+
+        FrameSynthetic(const cv::Mat& img,
+                       const tf::StampedTransform& imu,
+                       const std::vector<geometry_msgs::Point>& KPDesc,
+                       const tf::Transform& poseCamGroundTruth,
+                       const tf::Transform& poseImuGroundTruth,
+                       const sensor_msgs::CameraInfo cam,
+                       const cv::Mat& mask = cv::Mat())
+            : Frame(),
+              synKPDesc(KPDesc){
+
+            tf::transformTFToEigen(poseCamGroundTruth,groundTruthCamTransform);
+            tf::transformTFToEigen(poseImuGroundTruth,groundTruthImuTransform);
+
+            initialised = true;
+            id = ++idCounter;
+            kfId = -1;
+
+
+            ROS_INFO("FRA [SYN] = CREATING NEW FRAME [ID: %d]", id);
+            time = imu.stamp_;
+
+            timePreprocess = 0;
+            timeExtract    = 0;
+            timeDetect     = 0;
+
+            /// SHOULD BE SET SOMEHOW
+            gyroX = gyroY = GyroZ = 0.0;
+            accX  = accY  = accZ  = 0.0;
+
+            detectorId = -1; //-1 = none, -2 = KLT
+            descriptorId = -1;
+
+            this->mask = mask;
+
+            ros::WallTime t0 = ros::WallTime::now();
+            cv::Mat imgProc = preproc->process(img);
+
+
+            image = cameraModel->rectify(imgProc, cam);
+
+            timePreprocess = (ros::WallTime::now()-t0).toSec();
+
+            /// Deal with IMU and Pose
+            // reset pose
+            pose.setIdentity();
+            // get imu (convert from TF)
+            tf::matrixTFToEigen(imu.getBasis(), imuAttitude);
+
+
+            // just for printing
+
+            /// TODO: WHY IS THIS LIKE THIS????
+            OVO::tf2RPY(imuAttitude, pitch, roll, yaw);
+//            OVO::tf2RPY(imuAttitude, roll, pitch, yaw);
+
+            /// TODO: estiamte quality of imageu using acceleromter, gyro and blurriness estiamtion
+            estimateImageQuality();
+            hasPoseEstimate = false;
+
+            IOFormat CleanFmt(4, 0, ", ", "\n", "[", "]");
+            ROS_INFO_STREAM("---------------------\nFRA [SYN] IMU2CAM:\n" << IMU2CAM.matrix().format(CleanFmt));
+            //ROS_INFO_STREAM("\nFRA [SYN] IMU:\n " << imuAttitude.format(CleanFmt));
+            ROS_INFO_STREAM("\nFRA [SYN] POSE IMU:\n" << groundTruthImuTransform.matrix().format(CleanFmt));
+            ROS_INFO_STREAM("\nFRA [SYN] POSE CAM:\n" << groundTruthCamTransform.matrix().format(CleanFmt) <<"\n---------------------\n");
+
+            ROS_INFO("FRA [SYN] < GroundTruth Injected into Frame [ID: %d]", id);
+        }
+
+        void extractDescriptors(){
+            getKeypoints(); // updates them if required
+            uint kpsize = keypointsImg.size();
+            ROS_INFO("FRA [SYN] > Computing [%lu] descriptors for frame [id: %d]", keypointsImg.size(), id);
+            ros::WallTime t0 = ros::WallTime::now();
+            detector->extract(keypointsImg, descriptors, descriptorId, getRoll() );
+            // detector might actually remove/add keypoints. IN this case it is important to realign existing data
+            if (kpsize!=0 && kpsize != keypointsImg.size()){
+                ROS_INFO("FRA [SYN] = Detecting changed kp size, resetting data aligned with these");
+                cv::Mat d;
+                KeyPoints kps;
+                std::swap(keypointsImg, kps);
+                std::swap(descriptors, d);
+                clearAllPoints();
+                std::swap(keypointsImg, kps);
+                std::swap(descriptors, d);
+            }
+            timeExtract = (ros::WallTime::now()-t0).toSec();
+            ROS_INFO("FRA [SYN] < Computed [%d] descriptors for frame [id: %d] in [%.1fms]", descriptors.rows, id,timeExtract*1000.);
+        }
+
+        void computeKeypoints(){
+            ROS_INFO("FRA [SYN] > Computing Synthetic Keypoints frame [id: %d]", getId());
+            clearAllPoints();
+            ros::WallTime t0 = ros::WallTime::now();
+            detector->detect(synKPDesc, image, keypointsImg, detectorId, mask);
+            timeDetect = (ros::WallTime::now()-t0).toSec();
+
+            ROS_INFO("FRA [SYN] < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
+        }
+
+        // sets the pose from the imu rotation. This is usually used on the very first keyframe
+        void setPoseRotationFromImu(/*bool inverse = false*/){
+            ROS_WARN("FRA [SYN] = Setting pose from Ground Truth instead of IMU");
+            pose.setIdentity();
+            //pose.linear() = imuAttitude*IMU2CAM.linear();
+            pose = groundTruthImuTransform*IMU2CAM;
+
+            hasPoseEstimate = true;
+        }
+
+
+    private:
+        Eigen::Affine3d groundTruthCamTransform;
+
+        Eigen::Affine3d groundTruthImuTransform;
+        const std::vector<geometry_msgs::Point> synKPDesc; //x,y = kp, z = desc
+
+
+};
+
+
 
 #endif // FRAME_HPP

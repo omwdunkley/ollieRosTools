@@ -151,8 +151,8 @@ class OdoMap {
 
         // Matches against a keyframe. If voOnly = true, only match against points that have associsated land marks
         void match2KF(FramePtr& f, DMatches& matches, double& time, bool voOnly=false){
-            /// Match against last N keyframes
-            /// Match against closest N keyframes
+            /// TODO Match against last N keyframes
+            /// TODO Match against closest N keyframes
             ROS_ASSERT(keyframes.size()>0);
             FramePtr& kf = getLatestKF();
             currentFrame = f;

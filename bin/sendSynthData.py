@@ -11,6 +11,8 @@ from sensor_msgs.msg import CameraInfo as CameraInfoMSG
 from sensor_msgs.msg import Image as ImageMSG
 from geometry_msgs.msg import Point as PointMSG
 from geometry_msgs.msg import Transform as TransformMSG
+from geometry_msgs.msg import Quaternion as QuatMSG
+from geometry_msgs.msg import Vector3 as TranslationMSG
 from visualization_msgs.msg import MarkerArray as MarkerArrayMSG
 from visualization_msgs.msg import Marker as MarkerMSG
 import roslib.packages
@@ -29,7 +31,34 @@ import cv2
 from cv2 import cv as cv
 
 from ollieRosTools.msg import synthFrame as synthMSG
- 
+
+
+
+def xyzWXYZ_xyzXYZW(data):
+    return np.concatenate((data[:,0:3],-data[:,4:5],-data[:,5:6],-data[:,6:7],data[:,3:4]),1)
+
+def toQuat(tq):
+    return tq[3:7]
+
+def toXYZ(tq):
+    return tq[0:3]
+
+def toRotMsg(tq):
+    q = QuatMSG()
+    q.x, q.y, q.z, q.w = toQuat(tq)
+    return q
+
+def toTranslationMsg(tq):
+    t = TranslationMSG()
+    t.x, t.y, t.z = toXYZ(tq)
+    return t
+
+def toTransformMsg(tq):
+    t = TransformMSG()
+    t.rotation = toRotMsg(tq)
+    t.translation = toTranslationMsg(tq)
+    return t
+
 
 class synthData:
     def __init__(self, options):
@@ -57,7 +86,7 @@ class synthData:
         self.forwards = 1;
         
         self.cloudMarker = MarkerArrayMSG()
-        self.load_data()
+        self.load_data(options.path)
 
 
         self.step = 0
@@ -103,8 +132,6 @@ class synthData:
 
         return config
     
-        
-            
 
 
     def sendSynth(self, force=False):
@@ -120,6 +147,7 @@ class synthData:
         
         # Build frame msg
         msg = synthMSG()
+        msg.frameId = self.step+1 #to be consistent with matlab
         
 
         
@@ -158,38 +186,31 @@ class synthData:
         msg.imu2cam = self.OBJ2CAMmsg     
 
         # IMU rotation only
-        msg.imu.translation.x, msg.imu.translation.y, msg.imu.translation.z = [0,0,0]
-        msg.imu.rotation.x, msg.imu.rotation.y, msg.imu.rotation.z, msg.imu.rotation.w =  [-self.TOBJ[self.step,4],-self.TOBJ[self.step,5],-self.TOBJ[self.step,6],self.TOBJ[self.step,3]]
+        msg.imu.rotation = toRotMsg(self.TOBJ[self.step])
         
         # Full GT pose of cam and imu in world frame
-        msg.imuPose.translation.x, msg.imuPose.translation.y, msg.imuPose.translation.z = self.TOBJ[self.step,0:3]
-        msg.imuPose.rotation.x,msg.imuPose.rotation.y,msg.imuPose.rotation.z,msg.imuPose.rotation.w = [-self.TOBJ[self.step,4],-self.TOBJ[self.step,5],-self.TOBJ[self.step,6],self.TOBJ[self.step,3]]
-        msg.camPose.translation.x, msg.camPose.translation.y, msg.camPose.translation.z = self.TCAM[self.step,0:3]
-        msg.camPose.rotation.x,msg.camPose.rotation.y,msg.camPose.rotation.z,msg.camPose.rotation.w =  [-self.TCAM[self.step,4],-self.TCAM[self.step,5],-self.TCAM[self.step,6],self.TCAM[self.step,3]]
-  
-                   
+        msg.imuPose = toTransformMsg(self.TOBJ[self.step])
+        msg.camPose =  toTransformMsg(self.TCAM[self.step])
                 
-        #Send all 
-        # Why do I need to negate the quats?        
-        # Publishing GT transforms to TF
-        self.pub_tf.sendTransform(self.TCAM[self.step,0:3], [-self.TCAM[self.step,4],-self.TCAM[self.step,5],-self.TCAM[self.step,6],self.TCAM[self.step,3]], msg.camInfo.header.stamp, "/synCamGT", "/world")
-        self.pub_tf.sendTransform(self.TOBJ[self.step,0:3], [-self.TOBJ[self.step,4],-self.TOBJ[self.step,5],-self.TOBJ[self.step,6],self.TOBJ[self.step,3]], msg.camInfo.header.stamp, "/synObjGT", "/world")
-        self.pub_tf.sendTransform(self.OBJ2CAM[0:3], [-self.OBJ2CAM[4], -self.OBJ2CAM[5], -self.OBJ2CAM[6], self.OBJ2CAM[3]], msg.camInfo.header.stamp, "/synCamGTviaObj", "/synObjGT")
-        self.pub_tf.sendTransform(self.OBJ2CAM[0:3], [-self.OBJ2CAM[4], -self.OBJ2CAM[5], -self.OBJ2CAM[6], self.OBJ2CAM[3]], msg.camInfo.header.stamp, "/cam", "/cf_attitude")
-        # Usually the CF driver publishes this. Added for completeness
-        self.pub_tf.sendTransform([0,0,0], [-self.TOBJ[self.step,4],-self.TOBJ[self.step,5],-self.TOBJ[self.step,6],self.TOBJ[self.step,3]], msg.camInfo.header.stamp, "/cf_attitude", "/world")
+        #Send all
+        self.pub_tf.sendTransform(toXYZ(self.TCAM[self.step]), toQuat(self.TCAM[self.step]), msg.camInfo.header.stamp, "/synCamGT", "/world")
+        self.pub_tf.sendTransform(toXYZ(self.TOBJ[self.step]), toQuat(self.TOBJ[self.step]), msg.camInfo.header.stamp, "/synObjGT", "/world")
+        self.pub_tf.sendTransform(toXYZ(self.OBJ2CAM), toQuat(self.OBJ2CAM), msg.camInfo.header.stamp, "/synCamGTviaObj", "/synObjGT")
+        self.pub_tf.sendTransform(toXYZ(self.OBJ2CAM), toQuat(self.OBJ2CAM), msg.camInfo.header.stamp, "/cam", "/cf_attitude")
+        self.pub_tf.sendTransform([0,0,0], toQuat(self.TOBJ[self.step]), msg.camInfo.header.stamp, "/cf_attitude", "/world") #TODO ADD NOISE
         
-
+        # Publish all messages
         self.pub_synth.publish(msg)
         self.pub_image.publish(msg.img)
         self.pub_caminfo.publish(msg.camInfo)
-        
-
-        # Map points
-        self.CLOUD.header.stamp = msg.img.header.stamp 
-        if self.step==0:
-            self.pub_marker.publish(self.CLOUD)       
         rospy.loginfo("Sent Frame %d", self.step)
+
+        # Publish Map points
+        self.CLOUD.header.stamp = msg.img.header.stamp 
+        if self.step%20==0:
+            rospy.loginfo("Updated Point Cloud")
+            self.pub_marker.publish(self.CLOUD)       
+
         
                 
         
@@ -210,8 +231,6 @@ class synthData:
                 
 
 
-
-
     def load_data(self, path=""):
         if path == "":
             path = roslib.packages.get_pkg_dir('ollieRosTools')+"/matlab/Data/exported/"
@@ -222,8 +241,7 @@ class synthData:
             for row in reader:
                 self.TCAM.append(row)    
         self.TCAM = np.array(self.TCAM)
-        self.TCAM = self.TCAM.astype(np.double)
-
+        self.TCAM =xyzWXYZ_xyzXYZW(self.TCAM.astype(np.double))
        
         # Load IMU Trajectory
         with open(path+'/trajectory/TOBJ.csv', 'rb') as f:
@@ -231,7 +249,7 @@ class synthData:
             for row in reader:
                 self.TOBJ.append(row)   
         self.TOBJ = np.array(self.TOBJ)
-        self.TOBJ = self.TOBJ.astype(np.double)                
+        self.TOBJ = xyzWXYZ_xyzXYZW(self.TOBJ.astype(np.double))
                 
         # Load cloud        
         with open(path+'points3d/cloud.csv', 'rb') as f:
@@ -290,7 +308,7 @@ class synthData:
                 self.CAM2IMG.append(row)    
         self.CAM2IMG = np.array(self.CAM2IMG)
         self.CAM2IMG = self.CAM2IMG.astype(np.double)    
-        self.CAM2IMG = np.array(self.CAM2IMG)        
+        self.CAM2IMG = np.array(self.CAM2IMG)
         self.camInfo = CameraInfoMSG()
         self.camInfo.width = self.CAM2IMG[0,2]*2
         self.camInfo.height = self.CAM2IMG[1,2]*2
@@ -307,12 +325,9 @@ class synthData:
             for row in reader:
                 self.OBJ2CAM.append(row) 
         self.OBJ2CAM = np.array(self.OBJ2CAM)
-        self.OBJ2CAM = self.OBJ2CAM.astype(np.double)[0] 
-        tmsg = TransformMSG()
-        tmsg.translation.x, tmsg.translation.y, tmsg.translation.z = self.OBJ2CAM[0:3]
-        tmsg.rotation.x, tmsg.rotation.y, tmsg.rotation.z, tmsg.rotation.w = [-self.OBJ2CAM[4],-self.OBJ2CAM[5],-self.OBJ2CAM[6],self.OBJ2CAM[3]]
-        self.OBJ2CAMmsg = tmsg
-        
+        self.OBJ2CAM = xyzWXYZ_xyzXYZW(self.OBJ2CAM.astype(np.double))[0]
+        self.OBJ2CAMmsg = toTransformMsg(self.OBJ2CAM)
+
         
         #Load KPS
         files = sorted(glob.glob(path+'features/f2d*.csv'))

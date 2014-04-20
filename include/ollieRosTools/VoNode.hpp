@@ -30,6 +30,7 @@
 #include <ollieRosTools/Frame.hpp>
 #include <ollieRosTools/Odometry.hpp>
 #include <ollieRosTools/aux.hpp>
+#include <ollieRosTools/synthFrame.h>
 
 
 /*****************************************************************************
@@ -54,6 +55,7 @@ class VoNode{
         image_transport::CameraPublisher pubCamera;
         image_transport::Publisher pubImage;
         image_transport::Subscriber subImage;
+        ros::Subscriber subSynthetic;
         ros::Publisher pubMarker;
         tf::TransformBroadcaster pubTF;
         tf::TransformListener subTF;
@@ -76,11 +78,77 @@ class VoNode{
 
         /// Display stuff
         void publishStuff(){
-            /// TODO
-//            FramePtrs kfs = odometry.getKeyFrames();
-//            for(uint i=0; i<kfs.size(); ++i){
-//                pubTF.sendTransform(kfs[i]->getStampedTransform());
-//            }
+
+
+//            Eigen::Matrix3d relRot;
+//            OVO::relativeRotation( odometry.getKeyFrames()[0]->getImuRotation(), odometry.getLastFrame()->getImuRotation(), relRot); // R * v <-> v * R'
+
+//            Eigen::Affine3d t =  odometry.getKeyFrames()[0]->getPose();
+//            t.linear() = relRot*t.linear();
+
+
+//            tf::Pose pose;
+//            tf::poseEigenToTF(t, pose);
+
+
+//            pubTF.sendTransform(tf::StampedTransform(odometry.getKeyFrames()[0]->getStampedTransform(), ros::Time::now(), WORLD_FRAME, "/F_est"));
+//            pubTF.sendTransform(tf::StampedTransform(pose, ros::Time::now(), WORLD_FRAME, "/F_est"));
+
+
+//            t.linear() = odometry.getLastFrame()->getImuRotation();
+//            tf::poseEigenToTF(t, pose);
+//            pubTF.sendTransform(tf::StampedTransform(pose, ros::Time::now(), WORLD_FRAME, "/F_imu"));
+
+
+
+
+
+            /// Publish TF for each KF
+            ROS_INFO("NOD = Publishing TF for each KF");
+            const FramePtrs& kfs = odometry.getKeyFrames();
+            for(uint i=0; i<kfs.size(); ++i){
+                pubTF.sendTransform(kfs[i]->getStampedTransform());
+            }
+
+            // test bearing vectors with projection
+
+            const FramePtr& f = odometry.getLastFrame();
+            const FramePtr& kf = kfs[0];
+
+
+
+            // bearing vectors from current frame
+
+            //pubMarker.publish(f->getBearingsMarker(0,"F", "/synCamGT",6.0, 1.0, CV_RGB(0,200,0)));
+
+
+//            // bearing vectors from KF
+//            pubMarker.publish(kf->getBearingsMarker(1,"KF", "/KF_0", 4.0, 2.0 , CV_RGB(0,0,200)));
+
+
+//            // unrotated bearings from F in KF
+//            Eigen::Matrix3d relRot;
+//            OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relRot);
+//            pubMarker.publish(f->getBearingsMarker(2,"FinKF","/KF_0", 2.0, 4.0, CV_RGB(200,0,0), relRot));
+
+
+
+
+
+            // test relative rotation
+
+
+
+
+            /// Publish TF of last frame
+
+
+            /// Publish MAP
+
+
+
+
+
 //            pubTF.sendTransform(odometry.getLastFrame()->getStampedTransform());
 //            pubMarker.publish(kfs.back()->getWorldPointsMarker(0,1.2,0.5));
 //            pubMarker.publish(odometry.getLastFrame()->getWorldPointsMarker(1,0.8,1.0));
@@ -93,6 +161,7 @@ class VoNode{
 
         /// Callbacks
         void incomingImage(const sensor_msgs::ImageConstPtr& msg);
+        void incomingSynthetic(const ollieRosTools::synthFrameConstPtr& msg);
         ollieRosTools::VoNode_paramsConfig&  setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
         /// Utility Functions

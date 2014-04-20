@@ -6,11 +6,14 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+
 extern bool USE_IMU;
+extern bool USE_SYNTHETIC;
 extern std::string IMU_FRAME;
 extern std::string WORLD_FRAME;
 extern std::string CAM_FRAME;
 extern Eigen::Affine3d IMU2CAM;
+
 #include <boost/assign.hpp>
 #include <boost/preprocessor.hpp>
 
@@ -30,7 +33,6 @@ class Frame;
 
 
 #define __SHORTFILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
-
 
 // http://stackoverflow.com/questions/5093460/how-to-convert-an-enum-type-variable-to-a-string
 
@@ -79,6 +81,8 @@ const float toDeg = 180/M_PI;
 
 namespace OVO {
 
+
+
     /// ENUMS
     enum BEARING_ERROR {BVERR_OneMinusAdotB, // 1-A.B
                     BVERR_ATAN2,             // ATAN2(||AxB||, A.B)
@@ -88,12 +92,40 @@ namespace OVO {
 
     const BEARING_ERROR BVERR_DEFAULT = BVERR_OneMinusAdotB;
 
+    enum FG {
+        FG_BLACK    = 30,
+        FG_RED      = 31,
+        FG_GREEN    = 32,
+        FG_YELLOW   = 33,
+        FG_BLUE     = 34,
+        FG_MAGNETA  = 35,
+        FG_CYAN     = 36,
+        FG_LRED     = 31,
+        FG_LGREEN   = 32,
+        FG_LYELLOW  = 33,
+        FG_LBLUE    = 34,
+        FG_LMAGNETA = 35,
+        FG_LCYAN    = 36,
+        FG_LGRAY    = 37,
+        FG_DGRAY    = 90,
+        FG_DEFAULT  = 39
+    };
+    enum BG {
+        BG_RED      = 41,
+        BG_GREEN    = 42,
+        BG_BLUE     = 44,
+        BG_DEFAULT  = 49
+       };
 
     /// Other
     cv::Mat getRosImage(const sensor_msgs::ImageConstPtr& msg, int colorId = 0);
-    void tf2RPY(const tf::Transform& T, double& R, double& P, double& Y);
+    void tf2RPY(const tf::Transform& T, double& R, double& P, double& Y);    
+    void tf2RPY(const Eigen::Matrix3d& T, double& R, double& P, double& Y);
     visualization_msgs::Marker getPointsMarker(const Points3d& worldPoints);
     void testColorMap();
+    std::string colorise(const std::string& str, const FG& fg, const BG& bg=BG_DEFAULT);
+
+
 
 
     /// Drawing Functions
@@ -126,9 +158,10 @@ namespace OVO {
     double angle2error(const double angleDeg, const BEARING_ERROR method = BVERR_DEFAULT );
     // Compute the error between bearing vectors
     double errorBV(const Bearing& bv1, const Bearing& bv2, const BEARING_ERROR method = BVERR_DEFAULT );
+    double errorNormalisedBV(const Bearing& bva, const Bearing& bvb, const BEARING_ERROR method );
     // returns the error given px dist on image plane with focal length f
     double px2error(const double px, const double horiFovDeg = 110., const double width = 720, const BEARING_ERROR method = BVERR_DEFAULT);
-    // returns the median of a list of values
+    //
     void relativeRotation(const Eigen::Matrix3d& ImuRotFrom,const Eigen::Matrix3d& ImuRotTo, Eigen::Matrix3d& rotRelative);
     // returns the angle from a px distance
     double px2degrees(const double px, const double horiFovDeg = 110., const double width = 720);
@@ -154,6 +187,7 @@ namespace OVO {
     void matReduceInd (const cv::Mat& matIn, cv::Mat& matOut, const Ints& ind);
     void matReduceInd (cv::Mat& matInOut, const Ints& ind);
     void matReduceInd (const Eigen::MatrixXd& bvm1, Bearings& bv1, const Ints& ind);
+    Bearings eigenBearing2Vector(const Eigen::MatrixXd& bvm);
     // align bearing vectors
     void alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, Bearings& bv1, Bearings& bv2);
     // aligns two vectors using matches

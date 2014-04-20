@@ -3,6 +3,9 @@ Header header
 # Camera Matrix
 sensor_msgs/CameraInfo camInfo
 
+# Id
+int16 frameId
+
 # Image from matlab
 sensor_msgs/Image img
 

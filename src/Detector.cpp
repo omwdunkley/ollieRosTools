@@ -1,4 +1,5 @@
 #include <ollieRosTools/Detector.hpp>
+#include <random_numbers/random_numbers.h>
 
 
 /// HELPER FUNCTIONS
@@ -66,22 +67,23 @@ void minMaxTotal(const KeyPoints& kps, double& minval, double& maxval, uint& tot
 //}
 
 void subPixKP(const cv::Mat& img, KeyPoints& kps, const int window2k1, const int zeroZone=-1, const int iterations = 20, const int accuracy=0.05 ){
-
+    ROS_INFO("DET [L] > Doing SubPix on [%lu] keypoints", kps.size());
+    ros::WallTime t0 = ros::WallTime::now();
     if (kps.size()>0){
         Points2f points;
         cv::KeyPoint::convert(kps, points);
-
         cv::cornerSubPix(img, points, cv::Size(window2k1,window2k1), cv::Size(zeroZone,zeroZone), cv::TermCriteria( CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, iterations, accuracy ));
-
         for (uint i=0; i<points.size(); ++i){
             kps[i].pt = points[i];
         }
     }
-
+    ROS_INFO("DET [L] < Finished Doing SubPix on [%lu] keypoints in [%.1fms]", kps.size(), (ros::WallTime::now()-t0).toSec()*1000.);
 }
 
 void kp_threshold(KeyPoints& kps, double thresh){
+    ROS_INFO("DET [L] < Thresholding [%lu] keypoints with [threshold = %f]", kps.size(), thresh);
     kps.erase( std::remove_if( kps.begin(), kps.end(), boost::bind(kp_bad, _1, thresh)), kps.end() );
+    ROS_INFO("DET [L] < Finished Thresholing. [%lu] keypoints remain", kps.size());
 }
 
 /// CLASS IMPLEMENTATION
@@ -123,16 +125,92 @@ void Detector::extract(const cv::Mat& image, KeyPoints &kps_inout, cv::Mat& desc
         }
     }
 
-
     //ROS_INFO("DESCRIPTOR TYPE: %d   SIZE: %d", cv_extractor->descriptorType(), cv_extractor->descriptorSize());
 
     ROS_INFO("DET = Extracting Descriptors (Type: %d, Size: %d)", cv_extractor->descriptorType(), cv_extractor->descriptorSize()) ;
     cv_extractor->compute(image, kps_inout, descs_out);    
 
 }
+/// TODO check if rotation should be negative or not for rbrief/kp_imuRotate
+void Detector::extract(KeyPoints &kps_inout, cv::Mat& descs_out, int& descId, const double rotRad) const {
+    ROS_ASSERT(USE_SYNTHETIC);
+    ROS_INFO("DET [SYN] > Getting Synthetic Descriptors");
+    descId = extractorNr;
+    descs_out = cv::Mat();
+    if(kp_imuRotate && std::abs(rotRad)>0.0001){
+        for (uint i=0; i < kps_inout.size(); ++i){
+            // PROBLEM: docs says angle is [-000,360) but sometimes it is [-180,180)
+            kps_inout[i].angle = rotRad*toDeg;//cv::min(359.9,cv::max(0.,180 + rotRad*180./M_PI)) ;
+        }
+    }
+    for (uint i=0; i < kps_inout.size(); ++i){
+        descs_out.push_back(static_cast<float>(kps_inout[i].class_id));
+    }
+    ROS_INFO("DET [SYN] < Created Descriptors") ;
+
+}
 
 
 
+void Detector::detect(const std::vector<geometry_msgs::Point>& KPDesc, const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask) {
+    ROS_ASSERT(USE_SYNTHETIC);
+    ROS_INFO("DET [SYN] > Getting Keypoints with detector [%d]", detectorNr);
+    kps_out.clear();
+    detId = detectorNr;
+
+
+    kps_out.reserve(KPDesc.size());
+    random_numbers::RandomNumberGenerator rnd;
+    for (uint i=0; i<KPDesc.size();++i){
+        float response = std::max(0.01, 1.0+rnd.gaussian01());
+        kps_out.push_back(cv::KeyPoint(KPDesc[i].x, KPDesc[i].y, 15, -1, response, 0, KPDesc[i].z ));
+    }
+    ROS_WARN_COND(KPDesc.size()<10||kps_out.size()<= KPDesc.size()/10, "Have few KPs!: [%lu/%lu] left!",kps_out.size(), KPDesc.size());
+
+
+    if (!mask.empty() ){
+        kp_filter.runByPixelsMask(kps_out, mask);
+        ROS_WARN_COND(KPDesc.size()<10||kps_out.size()<= KPDesc.size()/10, "Have few KPs left after masking!: [%lu/%lu] left!",kps_out.size(), KPDesc.size());
+    }
+
+
+
+    if (kp_border){
+        border = cv::Rect(cv::Point(kp_border, kp_border), cv::Point(img.cols, img.rows)-cv::Point(kp_border, kp_border));
+        kp_filter.runByImageBorder(kps_out, img.size(), kp_border);
+        ROS_WARN_COND(KPDesc.size()<10||kps_out.size()<= KPDesc.size()/10, "Have few KPs left after border removal!: [%lu/%lu] left!",kps_out.size(), KPDesc.size());
+    }
+
+
+    // Threshold by score if possible. kp_thresh=0 means dont threshold, or we cannot
+    /// TODO: best would be if one could put the thresh in the detector constructor...
+
+    if (kp_thresh>0){
+        kp_threshold(kps_out, kp_thresh);
+        ROS_WARN_COND(KPDesc.size()<10||kps_out.size()<= KPDesc.size()/10, "Have few KPs left after thresholding!: [%lu/%lu] left!",kps_out.size(), KPDesc.size());
+    }
+
+    // If we have too many, take X best by response. kp_max=0 do not threshold
+    if (kp_max>0 && kps_out.size()>kp_max){
+        //kp_clip(kps_out, kp_max);
+        kp_filter.retainBest(kps_out, kp_max);
+        ROS_WARN_COND(kps_out.size()<5, "Have few KPs left after capping nr!: [%lu/%lu] left!",kps_out.size(), KPDesc.size());
+    }
+
+
+    if (kp_subPix){
+        subPixKP(img, kps_out, kp_subPix);
+    }
+
+    if (kp_removeDouble){
+        cv::KeyPointsFilter::removeDuplicated(kps_out);
+        ROS_WARN_COND(KPDesc.size()<10||kps_out.size()<= KPDesc.size()/10, "Have few KPs left after double removal: [%lu/%lu] left!",kps_out.size(), KPDesc.size());
+    }
+
+    uint total; double rmin; double rmax;
+    minMaxTotal(kps_out, rmin, rmax, total);
+    ROS_INFO("DET [SYN] < KP DETECTION: Response [%g,  %g], KPs: %d KPs, Thresh: %g", rmin, rmax, total, kp_thresh);
+}
 
 void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const cv::Mat& mask) {
     kps_out.clear();
@@ -375,6 +453,7 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
     case 207 : algo  = new cv::FREAK(false, true, 22.0f, kp_octaves);  break;//U-FREAK
 
     case -1: break; // off
+    case -10: ROS_INFO("DET [SYN] = Fake Detector/Extractor Algo"); break;
     default:
         ROS_ERROR("DET = ALGORITHM WITH ID <%d> DOES NOT EXIST", id);
         // should never happen
@@ -406,6 +485,13 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
 void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
     ROS_INFO("DET > SETTING PARAMS");
 
+    if(USE_SYNTHETIC){
+        // Some hardcoded Values
+        config.detector = -10;
+        config.extractor = -10;
+        config.kp_grid = 0;
+    }
+
     // maxKp == 0 means dont cap size
     if (config.kp_max!=0){
         // make sure max>=min
@@ -423,6 +509,8 @@ void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t
     double thresh = config.kp_thresh;
     // Need to normalise the threshold score 
     switch(config.detector){
+    // Synthetic
+    case -10: break;
     // SURF
     case 0:
     case 1:

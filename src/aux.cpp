@@ -2,7 +2,9 @@
 
 // Extern var changed once when starting the node depending on the parameters
 // ugly but well..few days left to code..
+
 bool USE_IMU = false;
+bool USE_SYNTHETIC = false;
 std::string IMU_FRAME = "/cf_attitude";
 std::string WORLD_FRAME = "/world";
 std::string CAM_FRAME = "/cam";
@@ -57,6 +59,13 @@ void OVO::tf2RPY(const tf::Transform& T, double& R, double& P, double& Y){
     const tf::Quaternion q(T.getRotation());
     tf::Matrix3x3(q).getRPY(R, P, Y);
 }
+void OVO::tf2RPY(const Eigen::Matrix3d& T, double& R, double& P, double& Y){
+
+    Eigen::Matrix<double,3,1> euler = T.eulerAngles(2, 1, 0);
+    Y = euler(0,0);
+    P = euler(1,0);
+    R = euler(2,0);
+}
 
 void OVO::testColorMap(){
         // test color map
@@ -68,6 +77,13 @@ void OVO::testColorMap(){
         cv::waitKey(1000);
 
 }
+
+std::string OVO::colorise(const std::string& str, const FG& fg, const BG& bg){
+    std::stringstream ss;
+    ss<<"\033["<<fg<<"m"<<str<<"\033["<<bg<<"m";
+    return ss.str();
+}
+
 
 void OVO::drawTextCenter(cv::Mat img, const std::string& text, const CvScalar RGB, const float textScale, const int textThickness){
     cv::Size textSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, textScale, textThickness, NULL);
@@ -147,6 +163,18 @@ void OVO::matReduceInd (const Eigen::MatrixXd& bvm1, Bearings& bv1, const Ints& 
     }
 }
 
+Bearings OVO::eigenBearing2Vector(const Eigen::MatrixXd& bvm){
+    ROS_WARN("REIMPLEMENT EigenBearing2Vector to share memory");
+    Bearings bvs;
+    bvs.reserve(bvm.rows());
+    for (int i=0; i<bvm.rows(); ++i){
+        bvs.push_back(bvm.row(i));
+    }
+    return bvs;
+}
+
+
+
 void OVO::transformPoints(const Eigen::Affine3d& transform, opengv::points_t& points){
     for (uint i =0; i<points.size(); ++i){
         points[i] = transform * points[i];
@@ -221,6 +249,8 @@ Eigen::VectorXd OVO::reprojectErrPointsVsBV(
     return scores;
 }
 
+
+
 double OVO::angle2error(const double angleDeg, const BEARING_ERROR method ){
    Bearing bv1 = Eigen::Vector3d(1,0,0);
    Bearing bv2 = Eigen::Vector3d(0,0,0);
@@ -232,6 +262,15 @@ double OVO::angle2error(const double angleDeg, const BEARING_ERROR method ){
 double OVO::errorBV(const Bearing& bv1, const Bearing& bv2, const BEARING_ERROR method ){
     const Bearing bva = bv1.normalized();
     const Bearing bvb = bv2.normalized();
+    switch(method){
+        case BVERR_OneMinusAdotB:  return 1.0 - bva.dot(bvb);
+        case BVERR_ATAN2:          return atan2((bva.cross(bvb).norm()), bva.dot(bvb));
+        case BVERR_NormAminusB:    return (bva-bvb).norm();
+        case BVERR_SUM_AminusBSqr: return ((bva-bvb).array().pow(2)).sum();
+        default: ROS_ASSERT_MSG(0, "Unknown bearing method type [%d]", method); return 0;
+    }
+}
+double OVO::errorNormalisedBV(const Bearing& bva, const Bearing& bvb, const BEARING_ERROR method ){
     switch(method){
         case BVERR_OneMinusAdotB:  return 1.0 - bva.dot(bvb);
         case BVERR_ATAN2:          return atan2((bva.cross(bvb).norm()), bva.dot(bvb));
@@ -252,7 +291,8 @@ double OVO::px2degrees(const double px, const double horiFovDeg, const double wi
 }
 
 
-void OVO::relativeRotation(const Eigen::Matrix3d& ImuRotFrom,const Eigen::Matrix3d& ImuRotTo, Eigen::Matrix3d& rotRelative){
+// Returns a rotation R such that BV_from = R*BV_to
+void OVO::relativeRotation(const Eigen::Matrix3d& ImuRotFrom, const Eigen::Matrix3d& ImuRotTo, Eigen::Matrix3d& rotRelative){
     ROS_ASSERT_MSG(USE_IMU, "This function should probably not be called if we are not using an IMU");
     rotRelative = IMU2CAM.linear().transpose() * ImuRotFrom.transpose() * ImuRotTo * IMU2CAM.linear();
 
@@ -265,6 +305,7 @@ void OVO::relativeRotation(const Eigen::Matrix3d& ImuRotFrom,const Eigen::Matrix
 //            ROS_INFO_STREAM("f * kf'\n" << f->getImuRotation() * kf->getImuRotation().transpose());
 //            ROS_INFO_STREAM("f' * kf\n" << f->getImuRotation().transpose() * kf->getImuRotation());
 }
+
 
 
 

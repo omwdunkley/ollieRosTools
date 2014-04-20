@@ -1,9 +1,6 @@
 
 %% Plot movie
 
-SAVE = 1;
-PATH = '/media/Evo/Dropbox/Code/ROS/ollieRosTools/matlab/Data/exported';
-
 
 f=figure(1);
 % set(f,'position',[FX FY FX FY],'units','pixels')

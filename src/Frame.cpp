@@ -34,18 +34,18 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
 
     ros::WallTime t0 = ros::WallTime::now();
     cv::Mat imgProc = preproc->process(img);
+
+
     image = cameraModel->rectify(imgProc);
+
     timePreprocess = (ros::WallTime::now()-t0).toSec();
 
     /// Deal with IMU and Pose
     // reset pose
-    pose.setIdentity();
+    pose.setIdentity();    
     // get imu (convert from TF)
-    Eigen::Matrix3d imuAttitude;
     tf::matrixTFToEigen(imu.getBasis(), imuAttitude);
 
-    // get imu in cam frame
-    imuAttitude = IMU2CAM*imuAttitude;
 
     // just for printing
 
@@ -59,6 +59,9 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
 
     ROS_INFO("FRA < NEW FRAME CREATED [ID: %d]", id);
 }
+
+
+
 
 void Frame::addLandMarkRef(int id, LandmarkPtr lm){
     ROS_ASSERT(static_cast<uint>(id)<keypointsImg.size() && id>=0);

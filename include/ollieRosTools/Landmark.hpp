@@ -147,7 +147,7 @@ public:
     }
 
     const cv::Mat getClosestDescriptor(){
-        ROS_ASSERT_MSG(false, "[LMK] = NOT IMPLEMENTED");
+        ROS_ASSERT_MSG(false, "LMK = NOT IMPLEMENTED");
         return cv::Mat();
     }
 
