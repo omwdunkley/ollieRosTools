@@ -301,7 +301,9 @@ private:
 
     /// Attempts to estiamte the pose with 2d-3d estiamtes
     bool absolutePose(FramePtr& f){
-        //ROS_INFO("ODO [L] > Doing VO Pose Estimate Frame [%d|%d] vs KeyFrame [%d|%d] with [%lu] matches", f->getId(), f->getKfId(), kf->getId(), kf->getKfId(), matches.size());
+
+        FramePtr& kf = map.getLatestKF();
+        ROS_INFO("ODO [L] > Doing VO Pose Estimate Frame [%d|%d] vs KeyFrame [%d|%d] with [%lu] matches", f->getId(), f->getKfId(), kf->getId(), kf->getKfId(), matches.size());
 
         matchesVO.clear();
 
@@ -310,12 +312,14 @@ private:
             return false;
         }
 
-        ROS_ASSERT_MSG(0, "ODO [L] = NOT IMPLEMENTED absolutePose()");
-        /*
-        const Points3d& worldPtsKF = kf->getWorldPoints3d();
-        const Eigen::MatrixXd& bvf         = f->getBearings();
 
-        ROS_INFO("ODO = Before Alignment [%lu Matches] [%ld bearings] [%lu world points] [%lu kf vo inliers]", matches.size(), bvf.rows(), worldPtsKF.size(), kf->getVoInliers().size());
+        // TWO OPTIONS - get landmarks via frame
+        //             - get landmarks directly from map
+
+
+
+
+        //ROS_INFO("ODO = Before Alignment [%lu Matches] [%ld bearings] [%lu world points] [%lu kf vo inliers]", matches.size(), bvf.rows(), worldPtsKF.size(), kf->getVoInliers().size());
 
         /// Get bearing vectors from current frame aligned with 3d land marks from keyframe aligned with matches
         // Indicies
@@ -324,19 +328,20 @@ private:
 
         // Bearings
         Bearings bvFMatched;
-        OVO::matReduceInd(bvf, bvFMatched, fInd);
+        OVO::matReduceInd(f->getBearings(), bvFMatched, fInd);
 
         // 3d points
-        Points3d worldPtsKFMatched;
-        OVO::vecReduceInd<Points3d>(worldPtsKF, worldPtsKFMatched, kfInd);
+        Points3d worldPts;
+        const LandMarkPtrs& landmarks = kf->getLandmarkRefs();
+        OVO::landmarks2points(landmarks, worldPts, kfInd);
 
-        ROS_INFO("ODO = AFTER Alignment [%lu Matches] [%lu bearings] [%lu world points]", matches.size(), bvFMatched.size(), worldPtsKFMatched.size());
+        //ROS_INFO("ODO = AFTER Alignment [%lu Matches] [%lu bearings] [%lu world points]", matches.size(), bvFMatched.size(), worldPts.size());
 
 
 
         /// DO ransac stuff
         // ransac output
-        opengv::absolute_pose::CentralAbsoluteAdapter adapter(bvFMatched, worldPtsKFMatched);
+        opengv::absolute_pose::CentralAbsoluteAdapter adapter(bvFMatched, worldPts);
         Ints inliers;
 
 
@@ -346,19 +351,9 @@ private:
         if (voAbsPoseMethod==0){
             ROS_INFO("ODO = Using Relative Rotation Prior");
             /// Compute relative rotation using current and previous imu data
-            ///TODO: dont we need to apply the relative rotation to the previous pose?
-            //const tf::Transform absRotPrior = map.getKF(0).getImu().inverseTimes(frame.getImu()); //map[0] holds the previous frame (which holds previous imu)
-            // prev pose * imu_pose_differene
-
-            const opengv::rotation_t& imuF = f->getImuRotationCam();
-            const opengv::rotation_t& imuKF = kf->getImuRotationCam();
-            const Pose&    poseKF = kf->getPose();
-            // set absolute rotation
-            Eigen::Matrix3d imu2cam;
-            imu2cam << 0, 0, 1,
-                    -1, 0 ,0,
-                    0,-1, 0;
-            adapter.setR(poseKF * imu2cam * imuKF.transpose() * imuF * imu2cam.transpose());
+            Eigen::Matrix3d relRot;
+            OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relRot);
+            adapter.setR(kf->getPose().linear() * relRot);
         }
 
 
@@ -387,8 +382,6 @@ private:
             return false;
         } else {
             ROS_INFO("ODO < Absolute Ransac Done with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(), ransac.iterations_,  (ros::WallTime::now()-t0).toSec()*1000.);
-
-
         }
 
 
@@ -396,13 +389,17 @@ private:
             ROS_INFO("ODO > Doing NLO on Absolute Pose");
             adapter.sett(transWtoF.translation());
             adapter.setR(transWtoF.linear());
+            ros::WallTime tNLO = ros::WallTime::now();
+            Pose before = transWtoF;
             //Compute the pose of a viewpoint using nonlinear optimization. Using all available correspondences. Works for central and non-central case.
             //in:  adapter holding bearing vector to world point correspondences, the multi-camera configuration, plus the initial values.
             //out: Pose of viewpoint (position seen from world frame and orientation from viewpoint to world frame, transforms points from viewpoint to world frame).
-            ROS_INFO_STREAM("ODO = NLO Before:\n  " << transWtoF.matrix());
+
             transWtoF = opengv::absolute_pose::optimize_nonlinear(adapter, inliers) ;
-            ROS_INFO_STREAM("ODO < NLO Before:\n  " << transWtoF.matrix());
+            ROS_INFO("ODO < NLO Finished in [%.1fms]", (ros::WallTime::now()-tNLO).toSec()*1000);
+            ROS_INFO_STREAM("ODO = NLO Difference:\n  " << (before.inverse()*transWtoF).matrix());
         }
+
 
         f->setPose(transWtoF);
 
@@ -411,19 +408,18 @@ private:
 
         Bearings bvFVO;
         Points3d worldPtsKFVO;
-
         OVO::vecReduceInd<Bearings>(bvFMatched, bvFVO, inliers);
         OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
-        OVO::vecReduceInd<Points3d>(worldPtsKFMatched, worldPtsKFVO, inliers);
-
+        OVO::vecReduceInd<Points3d>(worldPts, worldPtsKFVO, inliers);
         const Eigen::VectorXd repjerr = OVO::reprojectErrPointsVsBV(f->getPose(), worldPtsKFVO, bvFVO );
         ROS_INFO("ODO = Min / Avg / Max RePrjErr  F = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
 
+        /*
         Ints FVOInd, KFVOInd;
         OVO::match2ind(matchesVO, FVOInd, KFVOInd);
         f->setWorldPoints(FVOInd, worldPtsKFVO, false); // No need for VO only mode
-
     */
+
         ROS_INFO("ODO [L] < Pose Estimated");
         return true;
     }
@@ -507,8 +503,8 @@ private:
             adapter.sett12(transKFtoF.translation());
             adapter.setR12(transKFtoF.linear());
             transKFtoF = opengv::relative_pose::optimize_nonlinear(adapter, inliers);
-            ROS_INFO_STREAM("ODO = NLO Difference:\n  " << (before.inverse()*transKFtoF).matrix());
             ROS_INFO("ODO < NLO Finished in [%.1fms]", (ros::WallTime::now()-tNLO).toSec()*1000);
+            ROS_INFO_STREAM("ODO = NLO Difference:\n  " << (before.inverse()*transKFtoF).matrix());            
         }
 
 
@@ -1015,7 +1011,8 @@ public:
         }
 
         if (frame->poseEstimated()){
-            const geometry_msgs::Pose pm = frame->getPoseMarker();
+            // pm points along x, which when plotting in the camera frame is useless, swap x and z
+            geometry_msgs::Pose pm = frame->getPoseMarker(false, true);
             trackPoses.poses.push_back(pm);
             trackLines.points.push_back(pm.position);
         }

@@ -186,7 +186,7 @@ namespace OVO {
     // Removes rows of Mat if index is not in ind. Can also change the order of elements.
     void matReduceInd (const cv::Mat& matIn, cv::Mat& matOut, const Ints& ind);
     void matReduceInd (cv::Mat& matInOut, const Ints& ind);
-    void matReduceInd (const Eigen::MatrixXd& bvm1, Bearings& bv1, const Ints& ind);
+    void matReduceInd (const Eigen::MatrixXd& bvm1, Bearings& bv1, const Ints& ind);    
     Bearings eigenBearing2Vector(const Eigen::MatrixXd& bvm);
     // align bearing vectors
     void alignedBV (const Eigen::MatrixXd& bvm1, const Eigen::MatrixXd& bvm2, const DMatches& ms, Bearings& bv1, Bearings& bv2);

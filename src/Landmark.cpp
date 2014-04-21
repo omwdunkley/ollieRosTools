@@ -13,3 +13,20 @@ double Landmark::distThresh      = 0.2; // 20cm tolerance allowed
 bool noRef(const LandmarkPtr& p){
     return !(*(p.refcount)>1);
 }
+
+
+// Converts landmarks to vector of eigen points
+void OVO::landmarks2points(const LandMarkPtrs& lms, Points3d& points, const Ints& ind){
+    points.clear();
+    if (ind.size()>0){
+        points.reserve(ind.size());
+        for (uint i=0; i<ind.size();++i){
+            points.push_back(lms[ind[i]]->getPosition());
+        }
+    } else {
+        points.reserve(lms.size());
+        for (uint i=0; i<ind.size();++i){
+            points.push_back(lms[i]->getPosition());
+        }
+    }
+}

@@ -314,26 +314,30 @@ class Frame{
         }
 
         // Convers the internal eigen pose to a TF pose
-        const tf::Pose getTFPose() const {
+        const tf::Pose getTFPose(bool imu=false) const {
             //TODO
             ROS_ASSERT(hasPoseEstimate);
             tf::Pose pose;
-            tf::poseEigenToTF(getPose(), pose);
+            tf::poseEigenToTF(getPose(imu), pose);
             return pose;
         }
 
         // return stamped transform with current time and pose in world frame
-         tf::StampedTransform getStampedTransform() const {             
+         tf::StampedTransform getStampedTransform(bool imu=false) const {
             if (kfId<0){
-                return tf::StampedTransform(getTFPose(), ros::Time::now(), WORLD_FRAME, "/F");
+                return tf::StampedTransform(getTFPose(imu), ros::Time::now(), WORLD_FRAME, "/Fimu");
             } else {
-                return tf::StampedTransform(getTFPose(), ros::Time::now(), WORLD_FRAME, "/KF_"+boost::lexical_cast<std::string>(kfId));
+                return tf::StampedTransform(getTFPose(imu), ros::Time::now(), WORLD_FRAME, "/KFimu_"+boost::lexical_cast<std::string>(kfId));
             }
         }
 
         // returns the eigen pose of this frame in the world frame
-        const Pose& getPose() const {
-            return pose;
+        Pose getPose(bool imu=false) const {
+            if (imu){
+                return pose * IMU2CAM.inverse();
+            } else {
+                return pose;
+            }
         }
 
         // Prepares the keyframe for removal
@@ -539,6 +543,10 @@ class Frame{
             return vo;
         }
 
+        const LandMarkPtrs& getLandmarkRefs() const {
+            return landmarkRefs;
+        }
+
         // Gets descriptors. Computes them if they are empty or the wrong type (determined from the current set extraxtor)
         const cv::Mat& getDescriptors(){
             if (descriptors.empty()) {
@@ -628,9 +636,14 @@ class Frame{
             return id;
         }
 
-        const geometry_msgs::Pose getPoseMarker() const {
+        // gets the pose of the camera ( orIMU)
+        const geometry_msgs::Pose getPoseMarker(bool imu=false, bool swapxz = false) const {
             geometry_msgs::Pose pm;
-            tf::poseTFToMsg(getTFPose(), pm);
+            tf::Pose p = getTFPose(imu);
+            if (swapxz){
+                p = p*tf::Transform(tf::Quaternion(0.5, -0.5, 0.5, 0.5));
+            }
+            tf::poseTFToMsg(p, pm);
             return pm;
         }
 

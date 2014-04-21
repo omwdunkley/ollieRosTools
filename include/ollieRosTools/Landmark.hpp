@@ -83,13 +83,13 @@ public:
     }
 
     // return descriptor of observation i
-    const cv::Mat getObservationDesc(const int i) const{
+    const cv::Mat getObservationDesc(const int i) const {
         ROS_ASSERT(i>0 && i<<static_cast<int>(seenFrom.size()));
         return seenFrom[i]->getDescriptor(pointIds[i]);
     }
 
     // return all descriptors
-    const cv::Mat getObservationDescs() const{
+    const cv::Mat getObservationDescs() const {
         cv::Mat descs;
         for (uint i=0; i<pointIds.size(); ++i){
             descs.push_back(seenFrom[i]->getDescriptor(pointIds[i]));
@@ -98,7 +98,7 @@ public:
     }
 
     // return the position this point is at
-    const Point3d& getPosition(){
+    const Point3d& getPosition() const {
         return xyz;
     }
 
@@ -110,7 +110,7 @@ public:
 
     // returns true if the given frame might provide a similar observation.
     // Frame must have an estiamted position in its pose member
-    bool visibleFrom(const FramePtr& f) const{
+    bool visibleFrom(const FramePtr& f) const {
         for (uint i=0; i<pointIds.size(); ++i){
             // Check Distance
             const Eigen::Vector3d xyz_kf = seenFrom[i]->getOpticalCenter();
@@ -191,5 +191,9 @@ public:
 
 
 };
+
+namespace OVO {
+    void landmarks2points(const LandMarkPtrs& lms, Points3d& points, const Ints& ind=Ints());
+}
 
 #endif // LANDMARK_HPP

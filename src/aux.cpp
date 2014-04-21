@@ -293,6 +293,8 @@ double OVO::px2degrees(const double px, const double horiFovDeg, const double wi
 }
 
 
+
+
 // Returns a rotation R such that BV_from = R*BV_to
 void OVO::relativeRotation(const Eigen::Matrix3d& ImuRotFrom, const Eigen::Matrix3d& ImuRotTo, Eigen::Matrix3d& rotRelative){
     ROS_ASSERT_MSG(USE_IMU, "This function should probably not be called if we are not using an IMU");
