@@ -252,7 +252,7 @@ Eigen::VectorXd OVO::reprojectErrPointsVsBV(
 
 
 double OVO::angle2error(const double angleDeg, const BEARING_ERROR method ){
-   Bearing bv1 = Eigen::Vector3d(1,0,0);
+   const Bearing bv1 = Eigen::Vector3d(1,0,0);
    Bearing bv2 = Eigen::Vector3d(0,0,0);
    bv2.head(2) = Eigen::Rotation2Dd(angleDeg*toRad)*Eigen::Vector2d(1,0);
    return errorBV(bv1, bv2, method);
@@ -270,6 +270,7 @@ double OVO::errorBV(const Bearing& bv1, const Bearing& bv2, const BEARING_ERROR 
         default: ROS_ASSERT_MSG(0, "Unknown bearing method type [%d]", method); return 0;
     }
 }
+// samae as above without the normalising step
 double OVO::errorNormalisedBV(const Bearing& bva, const Bearing& bvb, const BEARING_ERROR method ){
     switch(method){
         case BVERR_OneMinusAdotB:  return 1.0 - bva.dot(bvb);
@@ -286,7 +287,8 @@ double OVO::px2error(const double px, const double horiFovDeg, const double widt
 }
 
 double OVO::px2degrees(const double px, const double horiFovDeg, const double width){
-    const double focal_px = (horiFovDeg*toRad/2.) / atan(width/2.);
+    //const double focal_px = (horiFovDeg*toRad/2.) / atan(width/2.);
+    const double focal_px = width*0.5/tan((horiFovDeg/2)*toRad);
     return atan(px/focal_px)*toDeg;
 }
 

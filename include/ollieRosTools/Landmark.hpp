@@ -174,6 +174,12 @@ public:
         return stream;
     }
 
+    geometry_msgs::Point getMarker() const {
+        geometry_msgs::Point p;
+        tf::pointEigenToMsg(xyz, p);
+        return p;
+    }
+
     // Checks if the landmark is in a consistence state
     bool check() const {
         ROS_ASSERT(seenFrom.size()>0);

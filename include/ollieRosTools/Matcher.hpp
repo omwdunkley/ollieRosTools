@@ -150,7 +150,6 @@ class Matcher{
         // Set parameters
         void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
-
         // Match f against map withOUT pose estimate = WE ARE LOST
         void matchMap(const OdoMap& map, FramePtr& f, const Ints& fMask=Ints(), const FramePtr& fClose = FramePtr());
 

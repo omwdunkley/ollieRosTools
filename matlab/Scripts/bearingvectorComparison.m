@@ -33,3 +33,7 @@ f_px = (px_width/2)/tan(fov/2)
 
 plot(1.0 - cos(atan((0:180)./f_px)),':r.');
 legend('||(AxB)||', '1-A.B', '1-A*B"','atan2(||(AxB)||, A.B)', '||(A-B)||', 'SUM((A-B).^2)', ['Thresh_' num2str(f_px)], 'Thresh480')
+
+
+% pixels to degree
+

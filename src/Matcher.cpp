@@ -25,7 +25,7 @@ void Matcher::match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matc
     ros::WallTime m0 = ros::WallTime::now();
     matches.clear();
 
-    updateMatcher(dQuery.type(),dQuery.cols, false);
+    updateMatcher(dQuery.type(), dQuery.cols, false);
 
 
 
@@ -49,7 +49,6 @@ void Matcher::match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matc
     // R - ratio test
     DMatchesKNN matchesKNN;
     DMatchesKNN q2t, t2q;
-    cv::Mat mask2;
     ROS_INFO("MAT > Matching [%d vs %d] with [Case: %d]", dQuery.rows, dTrain.rows, idx);
     switch(idx){
 
@@ -65,13 +64,20 @@ void Matcher::match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matc
         case 2: // - S -
             // Symmetric matches
             // cross check should be enabled, so just use KNN=1
-            matcher->knnMatch(dQuery, dTrain, matchesKNN, 1, mask);
-            matchKnn2single(matchesKNN, matches, 1); //max 3 matches per query
+            //matcher->knnMatch(dQuery, dTrain, matchesKNN, 1, mask);
+            //matchKnn2single(matchesKNN, matches, 1); //max 3 matches per query
+            // above doesnt work with crosscheck due to masks...
+            matcher->knnMatch(dQuery,dTrain,q2t, 1, mask); //transpose mask as going the other way
+            matcher->knnMatch(dTrain,dQuery,t2q, 1, mask.t()); //transpose mask as going the other way
+            matchSymmetryTest(q2t, t2q, matches);
             break;
         case 3: // - S T
             // First do symmetric matching, then remove those above threshold
-            matcher->knnMatch(dQuery, dTrain, matchesKNN, 1, mask);
-            matchKnn2single(matchesKNN, matches, 1);
+            //matcher->knnMatch(dQuery, dTrain, matchesKNN, 1, mask);
+            //matchKnn2single(matchesKNN, matches, 1);
+            matcher->knnMatch(dQuery,dTrain,q2t, 1, mask); //transpose mask as going the other way
+            matcher->knnMatch(dTrain,dQuery,t2q, 1, mask.t()); //transpose mask as going the other way
+            matchSymmetryTest(q2t, t2q, matches);
             matchFilterThreshold(matches, m_thresh); /// presort??
             break;
         case 4: // U - -
@@ -85,15 +91,15 @@ void Matcher::match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matc
             matchFilterThreshold(matches, m_thresh); /// presort??
             break;
         case 6: // U S -
-            matcher->knnMatch(dQuery,dTrain,q2t, 2);
-            matcher->knnMatch(dTrain,dQuery,t2q, 2);
+            matcher->knnMatch(dQuery,dTrain,q2t, 2, mask);
+            matcher->knnMatch(dTrain,dQuery,t2q, 2, mask.t()); //transpose mask as going the other way
             matchFilterUnique(q2t, m_unique);
             matchFilterUnique(t2q, m_unique);
             matchSymmetryTest(q2t, t2q, matches);
             break;
         case 7: // U S T
-            matcher->knnMatch(dQuery,dTrain,q2t, 2);
-            matcher->knnMatch(dTrain,dQuery,t2q, 2);
+            matcher->knnMatch(dQuery,dTrain,q2t, 2, mask); //transpose mask as going the other way
+            matcher->knnMatch(dTrain,dQuery,t2q, 2, mask.t()); //transpose mask as going the other way
             matchFilterUnique(q2t, m_unique);
             matchFilterUnique(t2q, m_unique);
             matchSymmetryTest(q2t, t2q, matches);
@@ -262,19 +268,20 @@ void Matcher::updateMatcher(const int type, const int size, const bool update){
     descType=type;
     descSize=size;
 
-    bool sym = m_doSym && !m_doUnique; // cannot do KNN matching if this flag is set;
+    //bool sym = m_doSym && !m_doUnique; // can only do KNN=1 matching if cross check is True
+    bool sym = false; // For now hardcode off. We will mostly likely use masks and this doesnt allow them
     if (type==CV_8U){ // BINARY DESCRIPTOR
         if (orb34){
             // orb 3,4:
             matcher = new cv::BFMatcher(cv::NORM_HAMMING2, sym); //2bit
-            ROS_INFO("MAT = Updated Matcher: BRUTEFORCE [BINARY 2 bit%s]", sym?" Sym":"");
+            ROS_INFO("MAT [H] = Updated Matcher: BRUTEFORCE [BINARY 2 bit%s]", sym?" Sym":"");
         } else {
             matcher = new cv::BFMatcher(cv::NORM_HAMMING, sym); //1bit
             ROS_INFO("MAT [H] = Updated Matcher: BRUTEFORCE [BINARY 1 bit %s]", sym?" Sym":"");
         }
     } else if (type==CV_32F){ // FLOAT DESCRIPTOR
         matcher = new cv::BFMatcher(m_norm, sym);
-        ROS_INFO("MAT [H] = Updated Matcher: BRUTEFORCE [FLOAT L%d]", m_norm==2?1:2 );
+        ROS_INFO("MAT [H] = Updated Matcher: BRUTEFORCE [FLOAT L%d %s]", m_norm==2?1:2 , sym?" Sym":"");
     } else {
         ROS_ERROR("MAT [H] = Unknown Desc Type: %d", type);
     }
@@ -294,6 +301,7 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
     m_max               = config.match_max;
     m_bvDisparityThresh = OVO::px2error(config.match_bvDisparityThresh);
     m_pred              = static_cast<Prediction>(config.match_prediction);
+    ROS_INFO("MAT [H] = Disparity theshold: %f Pixels = %f Degrees = %f error", config.match_bvDisparityThresh, OVO::px2degrees(config.match_bvDisparityThresh), m_bvDisparityThresh );
 
     if(!USE_IMU){
         if ( m_pred == PRED_KF_IMU || m_pred == PRED_POSE_IMU)
@@ -627,7 +635,7 @@ void matchSymmetryTest(const DMatchesKNN& ms1,const DMatchesKNN& ms2, DMatches& 
             for (int i=0; i<size; ++i){
                 const DMatches& m2v = ms2[i];
                 if(m2v.size()>0){
-                    const DMatches& m1v = ms1[i];
+                    const DMatches& m1v = ms1[ms2[i][0].trainIdx];
                     if(m1v.size()>0){
                         if (m2v[0].queryIdx == m1v[0].trainIdx){
                             // using matches going from f1 to f2, so reverse trainIdx and queryidx

@@ -22,8 +22,7 @@
 #include <g2o/solvers/structure_only/structure_only_solver.h>
 
 
-
-
+#include <geometry_msgs/PoseArray.h>
 
 #include <opengv/sac/Ransac.hpp>
 #include <opengv/sac_problems/absolute_pose/AbsolutePoseSacProblem.hpp>
@@ -89,6 +88,9 @@ private:
     DMatches matches;
     // last computed disparity
     double disparity;
+    // for outputting to tviz
+    geometry_msgs::PoseArray trackPoses;
+    visualization_msgs::Marker trackLines;
 
 
     /// SETTINGS
@@ -151,8 +153,6 @@ private:
     State getState() const {
         return state;
     }
-
-
 
 
 
@@ -435,7 +435,7 @@ private:
 
 
         Points3d points3d;
-        DMatches matchesVO;
+        matchesVO.clear();
 
         /// Get unit features aligned
         Bearings bvF;
@@ -525,6 +525,15 @@ private:
 
         /// Scale Pose
         baselineInitial = transKFtoF.translation().norm();
+
+        if (USE_SYNTHETIC){
+            ROS_WARN("ODO [SYN] = Manually adjusting the baseline");
+            const FrameSynthetic* fSyn  = static_cast<FrameSynthetic*>(&*f); //ugly - has to be a better way..
+            const FrameSynthetic* kfSyn = static_cast<FrameSynthetic*>(&*kf);
+            Pose transKFtoFSyn = kfSyn->getGroundTruthCamPose().inverse() * fSyn->getGroundTruthCamPose();
+            double baselineSyn =  transKFtoFSyn.translation().norm();
+            transKFtoF.translation() *= 1.0/baselineInitial * baselineSyn;
+        }
 
         /// TRIANGULATE points in the keyframe frame
         ROS_INFO("ODO = Generating new point cloud. Relative Pose baseline [%f]", baselineInitial);
@@ -623,6 +632,8 @@ private:
         //map.reset();
         matchesVO.clear();
         matches.clear();
+        trackPoses.poses.clear();
+        trackLines.points.clear();
         ROS_INFO("ODO [M] < RESET");
     }
 
@@ -649,28 +660,25 @@ private:
         ROS_ASSERT(state==ST_WAIT_INIT || state == ST_TRACKING);
         // track against initial keyframe
         disparity = -1;
-        ROS_WARN("ODO [M] = NOT IMPLEMENTED tracking");
-
-        map.match2KF(frame, matches, timeMA, false);
-
+        ROS_INFO("ODO [M] > TrackVO - Tracking gainst [%s] Keyframe", state==ST_WAIT_INIT? "FIRST":"LAST");
 
         if (state == ST_WAIT_INIT){
             // tracking against first keyframe
-            // disparity = match(...)
+            disparity = map.match2KF(frame, matches, timeMA, false);
             // matches = ....
             // TODO
         } else {
             // normal tracking against last keyframe
-            // disparity = match(...)
+            disparity = map.match2KF(frame, matches, timeMA, true);
             // matches = ....
             // TODO
         }
 
         if (disparity>=0){
-            ROS_INFO("ODO [M] = Tracking Success. Disparity = [%f]", disparity);
+            ROS_INFO("ODO [M] < Tracking Success. Disparity = [%f]", disparity);
             return true;
         } else {
-            ROS_INFO("ODO [M] = Tracking Failure. Disparity = [%f]", disparity);
+            ROS_INFO("ODO [M] < Tracking Failure. Disparity = [%f]", disparity);
             return false;
         }
 
@@ -681,20 +689,21 @@ private:
     bool initialiseVO(FramePtr& frame){
         ROS_ASSERT(state==ST_WAIT_INIT);
         ROS_INFO("ODO [M] > ATTEMPTING INITIALISATION");
+        timeVO = (ros::WallTime::now()-t0).toSec();
 
-         bool okay = false; //initialise(map.getCurrentFrame()); // should add the keyframe
-        //addKFVO();
 
-         /// RANSAC
-         /// TRIANGULATE
-         /// ADD KF
-         /// UPDATE MAP
+        /// RANSAC
+        /// TRIANGULATE
+        /// ADD KF
+        /// UPDATE MAP
+        bool okay = relativePoseInitialisation(frame, map.getLatestKF(), matches);
+        ros::WallTime t0 = ros::WallTime::now();
 
         if (okay){
-            ROS_INFO("ODO [M] < INITIALISATION SUCCESS");
+            ROS_INFO("ODO [M] < INITIALISATION SUCCESS [%.1fms]", timeVO*1000.);
             return true;
         } else {
-            ROS_WARN("ODO [M] < INITIALISATION FAIL");
+            ROS_WARN("ODO [M] < INITIALISATION FAIL [%.1fms]", timeVO*1000.);
             return false;
         }
     }
@@ -808,7 +817,7 @@ private:
         /// Add KF, Triangulate, initialise Map?
         if (control == CTR_DO_ADDKF || disparity >= voInitDisparity){
             control = CTR_DO_NOTHING;
-            ROS_INFO("ODO [H] > Initialising [Disparity = %f/%f]", disparity, voInitDisparity);
+            ROS_INFO(OVO::colorise("ODO [H] > Initialising [Disparity = %f/%f]",OVO::FG_MAGNETA).c_str(), disparity, voInitDisparity);
             if (initialiseVO(frame)){
                 // Initialisation okay, start tracking
                 setState(ST_TRACKING);
@@ -953,6 +962,22 @@ public:
         frameQualityThreshold = 0.2;
         keyFrameQualityThreshold = 0.6;
 
+        /// Set up output markers
+        trackLines.ns = "TrackLines";
+        trackLines.id = 0;
+        trackLines.header.frame_id = WORLD_FRAME;
+        trackLines.type = visualization_msgs::Marker::LINE_STRIP;
+        trackLines.action = visualization_msgs::Marker::ADD;
+        trackLines.scale.x = 0.01;
+        trackLines.frame_locked = true;
+        std_msgs::ColorRGBA col;
+        const CvScalar RGB = CV_RGB(255,0,60);
+        col.a = 0.7;
+        col.r = RGB.val[2]/255;
+        col.g = RGB.val[1]/255;
+        col.b = RGB.val[0]/255;
+        trackLines.color = col;
+
 
     }
 
@@ -988,6 +1013,12 @@ public:
                 break;
         }
 
+        if (frame->poseEstimated()){
+            const geometry_msgs::Pose pm = frame->getPoseMarker();
+            trackPoses.poses.push_back(pm);
+            trackLines.points.push_back(pm.position);
+        }
+
         ROS_INFO("ODO < PROCESSED FRAME [%d]", frame->getId());
 
     }
@@ -1002,9 +1033,12 @@ public:
             image = cv::Mat::zeros(720,576,CV_8UC3);
             OVO::drawTextCenter(image, "NO IMG", CV_RGB(255,0,0), 4, 3);
             return image;
-        } else {
-            cv::drawMatches(map.getCurrentFrame()->getVisualImage(), KeyPoints(0), map.getLatestKF()->getVisualImage(), KeyPoints(0), DMatches(0), image);
         }
+
+        const FramePtr& f = map.getCurrentFrame();
+        const FramePtr& kf = map.getLatestKF();
+        cv::drawMatches(f->getVisualImage(), KeyPoints(0),kf->getVisualImage(), KeyPoints(0), DMatches(0), image);
+
 
         // Draw state
         OVO::drawTextCenter(image.colRange(0,image.cols/2).rowRange(20,50), getStateName(), CV_RGB(200, 200, 0), 1.5, 2);
@@ -1017,19 +1051,38 @@ public:
         if (baselineCorrected>=0){
             OVO::putInt(image, baselineCorrected, cv::Point(10,10*25), CV_RGB(0,96*2,0), false , "BLC:");
         }
-        if (disparity>0){
-            OVO::putInt(image, timeVO*1000., cv::Point(10,image.rows-2*25), CV_RGB(200,0,200), false, "O:");
-        }
+
+        OVO::putInt(image, map.getKeyframeNr(), cv::Point2f(image.cols-95,6*25), CV_RGB(120,80,255), true,  "KFS:");
+        OVO::putInt(image, map.getLandmarkNr(), cv::Point2f(image.cols-95,7*25), CV_RGB(120,80,255), true,  "LMS:");
 
 
         /// THESE ONLY WORK WHEN THE CURRENT MATCHES WERE VS THE CURRENT KEYFRAME!
-        if (matches.size()>0){
-            OVO::drawFlow(image, map.getCurrentFrame()->getPoints(), map.getLatestKF()->getPoints(), matches, CV_RGB(0,128,0), 1.1);
-            OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,128,0),  true,"MA:");
-        }
-        if (matchesVO.size()>0){
-            OVO::drawFlow(image, map.getCurrentFrame()->getPoints(), map.getLatestKF()->getPoints(), matchesVO, CV_RGB(200,0,200));
-            OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
+        if (kf->getId()==f->getId()){
+            // THis is the case when we have just updated the map, so the current keyframe is actually also the latest kf
+
+            if (map.getKeyframeNr()>1){
+                const FramePtr& prekf = map.getLatestKF(1);
+                if (matches.size()>0){
+                    OVO::drawFlow(image, f->getPoints(), prekf->getPoints(), matches, CV_RGB(0,200,0), 1.1);
+                    OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,200,0),  true,"MA:");
+                }
+                if (matchesVO.size()>0){
+                    OVO::drawFlow(image, f->getPoints(), prekf->getPoints(), matchesVO, CV_RGB(200,0,200),1.1);
+                    OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
+                }
+            }
+
+
+
+        } else {
+            if (matches.size()>0){
+                OVO::drawFlow(image, f->getPoints(), kf->getPoints(), matches, CV_RGB(0,200,0), 1.1);
+                OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,200,0),  true,"MA:");
+            }
+            if (matchesVO.size()>0){
+                OVO::drawFlow(image, f->getPoints(), kf->getPoints(), matchesVO, CV_RGB(200,0,200),1.1);
+                OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
+            }
         }
 
         // Project in world points
@@ -1048,6 +1101,15 @@ public:
         if (timeVO>0){
             OVO::putInt(image, timeVO*1000., cv::Point(10,image.rows-2*25), CV_RGB(200,0,200), false, "O:");
         }
+
+        if (disparity>0){
+            if (state==ST_WAIT_INIT){
+                OVO::putInt(image,disparity/voInitDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voInitDisparity,disparity),  true,"DI:","%");
+            } else {
+                OVO::putInt(image,disparity/voKfDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voKfDisparity,disparity),  true,"DI:","%");
+            }
+        }
+
 
         // show user controls
         // show flow
@@ -1070,24 +1132,52 @@ public:
         return map.getCurrentFrame();
     }
 
+    // Get all the landmarks as markers for rviz
+    const visualization_msgs::Marker getMapMarkers(){
+        return map.getLandmarkMarkers();
+    }
+
+    const geometry_msgs::PoseArray& getTrackPoseMarker(){
+        trackPoses.header.frame_id = WORLD_FRAME;
+        trackPoses.header.stamp = ros::Time::now();
+        ++trackPoses.header.seq;
+        return trackPoses;
+    }
+    const visualization_msgs::Marker& getTrackLineMarker(){
+        trackLines.header.stamp = ros::Time::now();
+        ++trackLines.header.seq;
+        return trackLines;
+    }
+
+
+
+
     // Set paramters with dynamic reconfigure
     void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
         ROS_INFO("ODO > [U] SETTING PARAMS");
 
         // Settings
-        voRelRansacIter   = config.vo_relRansacIter;
-        voRelRansacThresh = OVO::px2error(config.vo_relRansacThresh); //1.0 - cos(atan(config.vo_relRansacThresh*sqrt(2.0)*0.5/720.0));
+        voRelRansacIter   = config.vo_relRansacIter;        
         voRelPoseMethod   = config.vo_relPoseMethod;
         voTriangulationMethod = config.vo_triMethod;
-        voRelNLO          = config.vo_relNLO;
-        voInitDisparity   = config.vo_initDisparity;
-        voKfDisparity     = config.vo_kfDisparity;
+        voRelNLO          = config.vo_relNLO;        
         voBaselineMethod  = static_cast<BaselineMethod>(config.vo_relBaselineMethod);
         voBaseline        = config.vo_relBaseline;
         voAbsPoseMethod   = config.vo_absPoseMethod;
-        voAbsRansacIter   = config.vo_absRansacIter;
-        voAbsRansacThresh = OVO::px2error(config.vo_absRansacThresh);// 1.0 - cos(atan(config.vo_absRansacThresh*sqrt(2.0)*0.5/720.0));
+        voAbsRansacIter   = config.vo_absRansacIter;        
         voAbsNLO          = config.vo_absNLO;
+
+
+        voRelRansacThresh = OVO::px2error(config.vo_relRansacThresh); //1.0 - cos(atan(config.vo_relRansacThresh*sqrt(2.0)*0.5/720.0));
+        voAbsRansacThresh = OVO::px2error(config.vo_absRansacThresh);// 1.0 - cos(atan(config.vo_absRansacThresh*sqrt(2.0)*0.5/720.0));
+        voInitDisparity   = OVO::px2error(config.vo_initDisparity); //now in angles!
+        voKfDisparity     = OVO::px2error(config.vo_kfDisparity); // now in angles!
+        ROS_INFO("ODO [U] = VO Init Intialisation Disparity theshold: [%.1f] Pixels = [%.2f] Degrees = [%.6f] error", config.vo_initDisparity, OVO::px2degrees(config.vo_initDisparity), voInitDisparity );
+        ROS_INFO("ODO [U] = VO Init New Keyframe Disparity theshold: [%.1f] Pixels = [%.2f] Degrees = [%.6f] error", config.vo_kfDisparity, OVO::px2degrees(config.vo_kfDisparity), voKfDisparity );
+        ROS_INFO("ODO [U] = VO Absolute Disparity theshold: [%.1f] Pixels = [%.2f] Degrees = [%.6f] error", config.vo_absRansacThresh, OVO::px2degrees(config.vo_absRansacThresh), voAbsRansacThresh );
+        ROS_INFO("ODO [U] = VO Relative Disparity theshold: [%.1f] Pixels = [%.2f] Degrees = [%.6f] error", config.vo_relRansacThresh, OVO::px2degrees(config.vo_relRansacThresh), voRelRansacThresh );
+
+
 
 
         // User controls
@@ -1104,7 +1194,7 @@ public:
         }
 
         if (config.writeCSV){
-            ROS_ERROR("NOT IMPLEMENTED WRITE CSV FUNCTIONALITY - NON CRITICAL");
+            ROS_ERROR("ODO [U] = NOT IMPLEMENTED WRITE CSV FUNCTIONALITY - NON CRITICAL");
             config.writeCSV = false;
         }
 
@@ -1112,7 +1202,7 @@ public:
 
         map.setParameter(config, level);
 
-        ROS_INFO("ODO < PARAMS SET");
+        ROS_INFO("ODO [U] < PARAMS SET");
     }
 };
 #endif // ODOMETRY_HPP

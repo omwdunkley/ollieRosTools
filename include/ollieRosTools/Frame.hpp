@@ -70,6 +70,7 @@ class Frame{
 
         /// If a keyframe, this contains references to map points
         LandMarkPtrs landmarkRefs;
+        int landmarkCounter; // just for stats
 
         /// cached?
 //        KeyPoints             mapKeyPoints;
@@ -100,6 +101,7 @@ class Frame{
             clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
             detector->detect(image, keypointsImg, detectorId, mask);
+            landmarkRefs.resize(keypointsImg.size());
             timeDetect = (ros::WallTime::now()-t0).toSec();
             ROS_INFO("FRA < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
         }
@@ -132,6 +134,9 @@ class Frame{
         Frame() : initialised(false){
             ROS_INFO("FRA = NEW UNINITIALISED FRAME");
         }
+        virtual ~Frame(){
+            ROS_INFO(OVO::colorise("FRA = Destroying frame [%d|%d]",OVO::FG_LGRAY).c_str(),getId(), getKfId());
+        }
 
         Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask=cv::Mat());
 
@@ -140,7 +145,7 @@ class Frame{
         void static setPreProc (cv::Ptr<PreProc>    pp){preproc=pp;    }
 
 
-        void addLandMarkRef(const int id, LandmarkPtr lm);
+        void addLandMarkRef(const int id, const LandmarkPtr& lm);
         void removeLandMarkRef(const int id);
 
         void computeSBI();
@@ -162,7 +167,8 @@ class Frame{
             } else {
                 // replace points
                 clearAllPoints();
-                std::swap(keypointsImg, kps);
+                landmarkRefs.resize(kps.size());
+                std::swap(keypointsImg, kps);                
                 ROS_INFO("FRA = Replaced [%lu] old Keypoints with new [%lu] ones for frame [%d]", kps.size(), keypointsImg.size(), getId());
             }
         }
@@ -317,7 +323,7 @@ class Frame{
         }
 
         // return stamped transform with current time and pose in world frame
-         tf::StampedTransform getStampedTransform() const {
+         tf::StampedTransform getStampedTransform() const {             
             if (kfId<0){
                 return tf::StampedTransform(getTFPose(), ros::Time::now(), WORLD_FRAME, "/F");
             } else {
@@ -400,8 +406,11 @@ class Frame{
 
             // if a kf, draw id
             if (kfId>=0){
-                OVO::putInt(img, kfId, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,110,255), true,  "KID:");
+                OVO::putInt(img, kfId, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,110,255), true,  "KID:");                
+                OVO::putInt(img, landmarkCounter, cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,110,255), true,  "LMs:");
             }
+
+
 
             /// draw depth points
 /*            if (worldPoints3d.size()>0){
@@ -483,7 +492,7 @@ class Frame{
             keypointsImg.clear();
             bearings = Eigen::MatrixXd();
             descriptors = cv::Mat();
-            landmarkRefs.clear();
+            landmarkRefs.clear();            
             //descId = -1;
             //detId = -2; // unknown type
         }
@@ -521,11 +530,11 @@ class Frame{
 
         Ints getIndLM() const {
             Ints vo;
-            vo.reserve(landmarkRefs.size());
+            vo.reserve(landmarkCounter);
             for (uint i=0; i<landmarkRefs.size(); ++i){
                 if (!landmarkRefs[i].empty()){
                     vo.push_back(i);
-                }
+                }                
             }
             return vo;
         }
@@ -619,6 +628,13 @@ class Frame{
             return id;
         }
 
+        const geometry_msgs::Pose getPoseMarker() const {
+            geometry_msgs::Pose pm;
+            tf::poseTFToMsg(getTFPose(), pm);
+            return pm;
+        }
+
+
         int getKfId() const {
             return kfId;
         }
@@ -657,7 +673,7 @@ class Frame{
                    << "[ D:"  << std::setw(4) << std::setfill(' ') << frame.descriptors.rows << "]"
                    << "[BV:"  << std::setw(4) << std::setfill(' ') << frame.bearings.rows() << "]"
                    << "[RE:"  << std::setw(4) << std::setfill(' ') << frame.pointsRect.rows() << "]"
-                   << "[LM:"  << std::setw(4) << std::setfill(' ') << frame.landmarkRefs.size() << "]"
+                   << "[LM:"  << std::setw(4) << std::setfill(' ') << frame.landmarkCounter << "]"
                    << "[TP:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timePreprocess << "]"
                    << "[TD:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeDetect << "]"
                    << "[TE:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeExtract << "]";
@@ -709,6 +725,7 @@ class FrameSynthetic : public Frame {
             descriptorId = -1;
 
             this->mask = mask;
+            landmarkCounter = 0;
 
             ros::WallTime t0 = ros::WallTime::now();
             cv::Mat imgProc = preproc->process(img);
@@ -744,6 +761,13 @@ class FrameSynthetic : public Frame {
             ROS_INFO("FRA [SYN] < GroundTruth Injected into Frame [ID: %d]", id);
         }
 
+        const Pose& getGroundTruthCamPose() const {
+            return groundTruthCamTransform;
+        }
+        const Pose& getGroundTruthIMUPose() const {
+            return groundTruthImuTransform;
+        }
+
         void extractDescriptors(){
             getKeypoints(); // updates them if required
             uint kpsize = keypointsImg.size();
@@ -770,8 +794,8 @@ class FrameSynthetic : public Frame {
             clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
             detector->detect(synKPDesc, image, keypointsImg, detectorId, mask);
+            landmarkRefs.resize(keypointsImg.size());
             timeDetect = (ros::WallTime::now()-t0).toSec();
-
             ROS_INFO("FRA [SYN] < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
         }
 
@@ -785,11 +809,14 @@ class FrameSynthetic : public Frame {
             hasPoseEstimate = true;
         }
 
+        virtual ~FrameSynthetic(){
+            ROS_INFO(OVO::colorise("FRA = Destroying Synthetic frame [%d|%d]",OVO::FG_LGRAY).c_str(),getId(), getKfId());
+        }
+
 
     private:
-        Eigen::Affine3d groundTruthCamTransform;
-
-        Eigen::Affine3d groundTruthImuTransform;
+        Pose groundTruthCamTransform;
+        Pose groundTruthImuTransform;
         const std::vector<geometry_msgs::Point> synKPDesc; //x,y = kp, z = desc
 
 

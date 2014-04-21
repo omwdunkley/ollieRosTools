@@ -57,6 +57,7 @@ class VoNode{
         image_transport::Subscriber subImage;
         ros::Subscriber subSynthetic;
         ros::Publisher pubMarker;
+        ros::Publisher pubTrack;
         tf::TransformBroadcaster pubTF;
         tf::TransformListener subTF;
 
@@ -101,19 +102,31 @@ class VoNode{
 
 
 
+            // Publish Landmarks
+            pubMarker.publish(odometry.getMapMarkers());
+
+            // Publish Track (ie all path and poses estimated)
+            pubMarker.publish(odometry.getTrackLineMarker());
+            pubTrack.publish(odometry.getTrackPoseMarker());
 
 
-            /// Publish TF for each KF
+
+            // Publish TF for each KF
             ROS_INFO("NOD = Publishing TF for each KF");
             const FramePtrs& kfs = odometry.getKeyFrames();
+            const FramePtr& kf = kfs[0];
             for(uint i=0; i<kfs.size(); ++i){
                 pubTF.sendTransform(kfs[i]->getStampedTransform());
             }
 
-            // test bearing vectors with projection
-
+            // Publish TF for current frame
             const FramePtr& f = odometry.getLastFrame();
-            const FramePtr& kf = kfs[0];
+            if (f->poseEstimated()){
+                pubTF.sendTransform(f->getStampedTransform());
+            }
+
+
+
 
 
 

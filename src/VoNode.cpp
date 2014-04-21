@@ -38,6 +38,7 @@ VoNode::VoNode(ros::NodeHandle& _n):
     pubCamera  = imTransport.advertiseCamera("/vo/image_raw", 1);
     pubImage   = imTransport.advertise("/vo/debug_image_raw", 1);
     pubMarker  = n.advertise<visualization_msgs::Marker>("vo/worldPointsMarker", 1);
+    pubTrack  = n.advertise<geometry_msgs::PoseArray>("vo/track", 1);
 
     /// Dynamic Reconfigure
     nodeOn = true;

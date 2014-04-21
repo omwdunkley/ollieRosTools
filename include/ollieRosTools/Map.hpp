@@ -93,17 +93,25 @@ class OdoMap {
             return landmarks;
         }
 
-        // Get last keyframe
-        FramePtr& getLatestKF(){
-            ROS_ASSERT(getKeyframeNr()>0);
-            return keyframes.back();
+        // Get last keyframe If recent = 1, gets last-1, etc
+        FramePtr& getLatestKF(uint last=0){
+            ROS_ASSERT(getKeyframeNr()>last);
+            if (last==0){
+                return keyframes.back();
+            } else {
+                return keyframes[keyframes.size()-1-last];
+            }
         }
 
-        // Get last keyframe CONST version
+        // Get last keyframe CONST version. If recent = 1, gets last-1, etc
         /// TODO: should this return the latest or the most recently used??
-        const FramePtr& getLatestKF() const{
-            ROS_ASSERT(getKeyframeNr()>0);
+        const FramePtr& getLatestKF(uint last=0) const{
+            ROS_ASSERT(getKeyframeNr()>last);
+            if (last==0){
             return keyframes.back();
+            } else {
+                return keyframes[keyframes.size()-1-last];
+            }
         }
 
         // Gets Latest frame matches vs map
@@ -149,22 +157,20 @@ class OdoMap {
         /// Matching Functions frame-frame points, frame-map points, frame->closest frames,
 
 
-        // Matches against a keyframe. If voOnly = true, only match against points that have associsated land marks
-        void match2KF(FramePtr& f, DMatches& matches, double& time, bool voOnly=false){
+        // Matches against a keyframe. If voOnly = true, only match against points that have associsated land marks. Returns disparity
+        double match2KF(FramePtr& f, DMatches& matches, double& time, bool voOnly=false){
             /// TODO Match against last N keyframes
             /// TODO Match against closest N keyframes
             ROS_ASSERT(keyframes.size()>0);
             FramePtr& kf = getLatestKF();
             currentFrame = f;
-            ROS_INFO("MAP > Matching Frame [%d|%d] against KeyFrame [%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId() );
-
+            ROS_INFO("MAP = Matching Frame [%d|%d] against KeyFrame [%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId() );
             if (voOnly){
-                //matcher.match();
-                matcher.matchFrame(f, kf, matches, time, Ints(0), kf->getIndLM());
+                // Create a mask where we only match against KF points that have associated landmarks
+                return matcher.matchFrame(f, kf, matches, time, Ints(0), kf->getIndLM());
             } else {
-                matcher.matchFrame(f, kf, matches, time);
+                return matcher.matchFrame(f, kf, matches, time);
             }
-
 
         }
 
@@ -449,6 +455,34 @@ class OdoMap {
             cv::Mat img;
             //cv::Mat img = tracker.getVisualImage();
             return img;
+        }
+
+
+
+
+        const visualization_msgs::Marker getLandmarkMarkers(int id=0, const std::string& name="Landmarks", const std::string frame ="/world", double size=1.0, const CvScalar RGB = CV_RGB(100,0,100)) const{
+            visualization_msgs::Marker markers;
+            markers.header.stamp = ros::Time::now();
+            markers.ns = name;
+            markers.id = id;
+            markers.header.frame_id = frame;
+            markers.type = visualization_msgs::Marker::SPHERE_LIST;
+            markers.action = visualization_msgs::Marker::ADD;
+            markers.scale.x = 0.1*size;
+            markers.scale.x = 0.1*size;
+            markers.scale.x = 0.1*size;
+            markers.frame_locked = true;
+
+            std_msgs::ColorRGBA col;
+            col.a = 0.7;
+            col.r = RGB.val[2]/255;
+            col.g = RGB.val[1]/255;
+            col.b = RGB.val[0]/255;
+            markers.color = col;
+            for (uint i=0; i< landmarks.size(); ++i){
+                markers.points.push_back(landmarks[i]->getMarker());
+            }
+            return markers;
         }
 
 
