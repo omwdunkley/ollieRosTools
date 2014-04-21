@@ -689,7 +689,7 @@ private:
     bool initialiseVO(FramePtr& frame){
         ROS_ASSERT(state==ST_WAIT_INIT);
         ROS_INFO("ODO [M] > ATTEMPTING INITIALISATION");
-        timeVO = (ros::WallTime::now()-t0).toSec();
+        ros::WallTime t0 = ros::WallTime::now();
 
 
         /// RANSAC
@@ -697,7 +697,8 @@ private:
         /// ADD KF
         /// UPDATE MAP
         bool okay = relativePoseInitialisation(frame, map.getLatestKF(), matches);
-        ros::WallTime t0 = ros::WallTime::now();
+
+        timeVO = (ros::WallTime::now()-t0).toSec();
 
         if (okay){
             ROS_INFO("ODO [M] < INITIALISATION SUCCESS [%.1fms]", timeVO*1000.);
