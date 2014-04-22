@@ -82,12 +82,16 @@ private:
     State state;
     // control state set by user
     Control control;
+    // Counts successive frames we could not do pose estimation on, when its abvoe a certain threshold we consider ourselves "lost"
+    int lostCounter;
     // VO matches between last frame and key frame
     DMatches matchesVO;
     // all matches between last frame and key frame
     DMatches matches;
-    // last computed disparity
+    // last computed disparity f vs f
     double disparity;
+    // last computed disparity f vs map
+    double disparityMap;
     // for outputting to tviz
     geometry_msgs::PoseArray trackPoses;
     visualization_msgs::Marker trackLines;
@@ -102,6 +106,7 @@ private:
     int voRelPoseMethod;    
     int voAbsPoseMethod;
     int voAbsRansacIter;
+    int lostThresh;
     double voAbsRansacThresh;
     bool voAbsNLO;
     double voInitDisparity;   // disparity required to trigger initialisation
@@ -191,7 +196,7 @@ private:
     }
 
 
-
+/*
     Ints reprojectFilter(const Bearings& bv, const Points3d& pts3dFrame, OVO::BEARING_ERROR method = OVO::BVERR_NormAminusB){
         /// If the angle between bv[i] and pts3dFrame[i] is close enough, return i
         // bv is the bearing vector of a frame F
@@ -213,7 +218,7 @@ private:
         return inliers;
 
     }
-
+*/
 
 
 
@@ -228,23 +233,52 @@ private:
 
     /// adds a keyframe to the map
     // returns true on success
-    bool addKf(FramePtr& frame){
+    bool addKf(FramePtr& f){
         /// Start timer, show messages, check quality
         ros::WallTime t0 = ros::WallTime::now();
-
-
-
-
-        FramePtr f = map.getCurrentFrame();
-        FramePtr kf = map.getLatestKF();
-        /*
-        ROS_WARN("ODO > ATTEMPTING TO MAKE FRAME [%d] KEYFRAME", f->getId());
-
+        ROS_INFO(OVO::colorise("ODO > ATTEMPTING TO MAKE FRAME [%d] KEYFRAME",OVO::FG_MAGNETA).c_str(), f->getId());
         const float quality = f->getQuality();
         if (quality < keyFrameQualityThreshold && quality>=0){
             ROS_WARN("ODO < FAILED TO ADD KEYFRAME, quality too bad [%f]", quality);
             return false;
         }
+
+
+        FramePtr kf = map.getLatestKF();
+
+
+
+
+
+        // we have a position estiamte, use it to
+        // Match against map (ie over multiple keyframes)
+        // try to add new map points
+        // bundle adjust
+
+
+        //map.match2Map(frame, );
+
+        // for each keyframe we found landmarks for, match agaist all keyframes and triangulate new points
+        // throw out points which are too weird
+        // add land marks to map
+        // and land marks to current frame
+        // and current frame to map
+        // bundle adjust
+
+        //frame->addLandMarkRef();
+        //map.pushKF(frame);
+
+
+
+
+
+        //map.bundleAdjust();
+
+
+
+
+/*
+
 
 //        // only keep points that worked with vo
 //        f->reducePointsToWorldPoints();
@@ -290,7 +324,7 @@ private:
         timeVO += time;
         bool okay = true;
         if (okay){
-            ROS_INFO("ODO < KEYFRAME ADDED [ID: %d, KF: %d] in [%1.fms]", f->getId(), f->getKfId(), time*1000);
+            ROS_INFO("ODO < KEYFRAME ADDED [%d|%d] in [%1.fms]", f->getId(), f->getKfId(), time*1000);
         } else {
             ROS_WARN("ODO < FAILED TO ADD KEYFRAME in [%1.fms]", time*1000.);
         }
@@ -348,8 +382,9 @@ private:
 
 
         ros::WallTime t0 = ros::WallTime::now();
-        if (voAbsPoseMethod==0){
+        if (voAbsPoseMethod==0){            
             ROS_INFO("ODO = Using Relative Rotation Prior");
+            ROS_ASSERT_MSG(USE_IMU, "Cannot use p2pIMU without IMU measurements!");
             /// Compute relative rotation using current and previous imu data
             Eigen::Matrix3d relRot;
             OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relRot);
@@ -367,7 +402,7 @@ private:
         ransac.threshold_ = voAbsRansacThresh;
         ransac.max_iterations_ = voAbsRansacIter;
 
-        ROS_INFO("ODO > Computing RANSAC pose estimate over [%lu matches] with [threshold = %f] ", matches.size(), ransac.threshold_);
+        ROS_INFO("ODO > Computing RANSAC absolute pose estimate over [%lu matches] with [threshold = %f] ", matches.size(), ransac.threshold_);
         ransac.computeModel(1);
 
 
@@ -375,6 +410,7 @@ private:
         Pose transWtoF;
         transWtoF = ransac.model_coefficients_;
         std::swap(inliers, ransac.inliers_);
+        OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
 
 
         if (inliers.size()<10){
@@ -403,16 +439,57 @@ private:
 
         f->setPose(transWtoF);
 
+
+        /// Compute disparity of VO inliers
+
+
+
+        // Compute disparity of previous frame vs current frame inliers
+        Doubles errorF;
+        // this is disparity vs map inliers
+//        Doubles errorM;
+//        const Eigen::Affine3d inverseSolution = transWtoF.inverse();
+        errorF.reserve(matchesVO.size());
+//        errorM.reserve(matchesVO.size());
+        Eigen::MatrixXd qBV =  f->getBearings();
+        const Eigen::MatrixXd& tBV = kf->getBearings();
+
+
+//        // Error between measured bearing vector and estimated bearing vector
+//        for(uint i=0; i<matchesVO.size(); ++i){
+//            errorM.push_back(OVO::errorNormalisedBV(qBV.block<1,3>(matchesVO[i].queryIdx,0), (inverseSolution * worldPts[matchesVO[i].trainIdx]).normalized(), OVO::BVERR_OneMinusAdotB));
+//        }
+
+        // Unrotate bearing vectors to get mroe accurate disparity reading
+        if (USE_IMU){
+            Eigen::Matrix3d relRot;
+            OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relRot); // BV_kf = R*BV_f = BV_f'*R'
+            qBV *= relRot.transpose();
+        }
+
+        // Error between F and KF bearing vectors
+        for(uint i=0; i<matchesVO.size(); ++i){
+            errorF.push_back(OVO::errorNormalisedBV(qBV.block<1,3>(matchesVO[i].queryIdx,0),tBV.block<1,3>(matchesVO[i].trainIdx,0), OVO::BVERR_OneMinusAdotB));
+        }
+//        disparityMap = OVO::medianApprox<double>(errorM);
+        disparity = OVO::medianApprox<double>(errorF);
+
+
+
+
+
+
+
         /// JUST FOR VIS!
         /// Align inliers
 
-        Bearings bvFVO;
-        Points3d worldPtsKFVO;
-        OVO::vecReduceInd<Bearings>(bvFMatched, bvFVO, inliers);
-        OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
-        OVO::vecReduceInd<Points3d>(worldPts, worldPtsKFVO, inliers);
-        const Eigen::VectorXd repjerr = OVO::reprojectErrPointsVsBV(f->getPose(), worldPtsKFVO, bvFVO );
-        ROS_INFO("ODO = Min / Avg / Max RePrjErr  F = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
+//        Bearings bvFVO;
+//        Points3d worldPtsKFVO;
+//        OVO::vecReduceInd<Bearings>(bvFMatched, bvFVO, inliers);
+
+//        OVO::vecReduceInd<Points3d>(worldPts, worldPtsKFVO, inliers);
+//        const Eigen::VectorXd repjerr = OVO::reprojectErrPointsVsBV(f->getPose(), worldPtsKFVO, bvFVO );
+//        ROS_INFO("ODO = Min / Avg / Max RePrjErr  F = [%f, %f, %f]", repjerr.minCoeff(), repjerr.mean(), repjerr.maxCoeff());
 
         /*
         Ints FVOInd, KFVOInd;
@@ -420,7 +497,7 @@ private:
         f->setWorldPoints(FVOInd, worldPtsKFVO, false); // No need for VO only mode
     */
 
-        ROS_INFO("ODO [L] < Pose Estimated");
+        ROS_INFO(OVO::colorise("ODO [L] < Pose Estimated [%lu/%lu] inliers, Disparity FvsKF: [%f]" /*" FvsMap: [%f]"*/,OVO::FG_BLUE).c_str(), matches.size(), matchesVO.size(), disparity/*, disparityMap*/);
         return true;
     }
 
@@ -445,7 +522,7 @@ private:
         Pose transKFtoF;
 
         ros::WallTime t0 = ros::WallTime::now();
-        if (voRelPoseMethod==5){
+        if (voRelPoseMethod==4){
             /// Use IMU for rotation, compute translation
             ROS_INFO("Using IMU for relative rotation");
             // compute relative rotation
@@ -595,7 +672,9 @@ private:
         f->setPose(transWtoF);
 
         /// print reprojection error stats
-        reprojectFilter(bvKFinlier, points3d);
+        //reprojectFilter(bvKFinlier, points3d);
+        Doubles errors = OVO::reprojectErrPointsVsBV(points3d, bvKFinlier);
+        disparityMap = OVO::medianApprox<double>(errors); //WARNING: median partially sorts, so the container is acutally changed
 
         /// put points from KF->Points frame to World->Points frame
         OVO::transformPoints(kf->getPose(), points3d);
@@ -625,11 +704,13 @@ private:
         timeVO = -1;
         timeMA = -1;
         disparity = -1;
+        disparityMap = -1;
         //map.reset();
         matchesVO.clear();
         matches.clear();
         trackPoses.poses.clear();
         trackLines.points.clear();
+        lostCounter = 0;
         ROS_INFO("ODO [M] < RESET");
     }
 
@@ -685,6 +766,7 @@ private:
     bool initialiseVO(FramePtr& frame){
         ROS_ASSERT(state==ST_WAIT_INIT);
         ROS_INFO("ODO [M] > ATTEMPTING INITIALISATION");
+        disparityMap = -1;
         ros::WallTime t0 = ros::WallTime::now();
 
 
@@ -707,22 +789,23 @@ private:
 
 
     /// Estiamte pose vs latest KF using predetermined 2d-3d matches
-    bool estimatePoseVO(){
+    bool estimatePoseVO(FramePtr& frame){
         ROS_INFO("ODO [M] > DOING POSE ESTIMATION");
         ROS_ASSERT(state==ST_TRACKING);
+
         ros::WallTime t0 = ros::WallTime::now();
 
-
-        bool okay = false;
-        ROS_ASSERT_MSG(0, "NOT IMPLEMENTED");
-
+        // compute inlier only disparity
+        disparity = -1;
+        disparityMap = -1;
+        bool okay = absolutePose(frame);
 
         timeVO = (ros::WallTime::now()-t0).toSec();
         if (okay){
-            ROS_INFO("ODO [M] < POSE ESTIMATION SUCCESS [%.1fms]", timeVO*1000.);
+            ROS_INFO("ODO [M] < POSE ESTIMATION SUCCESS [%.1fms]", timeVO*1000.);            
             return true;
         } else {
-            ROS_WARN("ODO [M] < POSE ESTIMATION FAIL [%.1fms]", timeVO*1000.);
+            ROS_WARN("ODO [M] < POSE ESTIMATION FAIL [%.1fms]", timeVO*1000.);            
             return false;
         }
     }
@@ -735,6 +818,12 @@ private:
         ros::WallTime t0 = ros::WallTime::now();
 
         ROS_ASSERT_MSG(0, "NOT IMPLEMENTED");
+
+
+        lostCounter = 0; // found
+
+
+        ++ lostCounter; // still lost
 
 
         ROS_WARN("ODO [M] < RELOCALISATION FAILED [%.1fms]", 1000* (ros::WallTime::now()-t0).toSec());
@@ -787,8 +876,7 @@ private:
     //    RESET  -> Resets
     //    ADD_KF -> Force Keyframe addition
     // Transition States
-    //    Tracking   <- If disparity was big enough and we successfully initialised (and added our second keyframe)
-    //    Lost       <- If we fail to localise or fail to add a keyframe
+    //    Tracking   <- If disparity was big enough and we successfully initialised (and added our second keyframe)    
     //    FirstFrame <- If control==RESET
     void voFirstFrameTrack(FramePtr& frame){
         ROS_INFO("ODO [H] > Tracking against first KF");
@@ -855,20 +943,32 @@ private:
         /// Do tracking vs last keyframe
         if (!trackVO(frame)) {
             // Failed to track
-            setState(ST_LOST);
-            ROS_WARN("ODO [H] < Tracking Failed: Failed to track");
+            lostCounter++;
+            if (lostCounter>lostThresh){
+                setState(ST_LOST);
+            }
+            ROS_WARN("ODO [H] < Tracking Failed: Failed to track [%d] last frames", lostCounter);
             control = CTR_DO_NOTHING;
             return;
         }
 
         /// Compute pose
-        if (!absolutePose(frame)){
+        if (!estimatePoseVO(frame)){
             // Failed to compute pose
-            setState(ST_LOST); /// TODO: are we lost? Or just failed to compute pose?
-            ROS_WARN("ODO [H] < Tracking fail: Failed to compute pose");
+            ++lostCounter;
+            if (lostCounter>lostThresh){
+                setState(ST_LOST);
+            }
+            ROS_WARN("ODO [H] < Tracking fail: Failed to compute pose of [%d] last frames", lostCounter);
             control = CTR_DO_NOTHING;
             return;
+        } else {
+            if (lostCounter>0){
+                ROS_INFO("ODO [H] Recovered after being lost for [%d] frames", lostCounter);
+                lostCounter = 0;
+            }
         }
+
 
         /// Add KF and and update Map
         if (control == CTR_DO_ADDKF || disparity >= voKfDisparity){
@@ -880,15 +980,14 @@ private:
                 ROS_INFO("ODO [H] < KF added");
             } else {
                 // Failed to add KF
-                setState(ST_LOST); /// TODO: are we lost?
+                /// TODO: are we lost?
+                //setState(ST_LOST);
                 ROS_WARN("ODO [H] < Failed to add KF");
                 ROS_WARN("ODO [H] < Tracking fail: Matching okay but KF could not be added");
                 return;
             }
         }
-
         ROS_WARN("ODO [H] < Tracking Success");
-
     }
 
 
@@ -902,7 +1001,7 @@ private:
     //    FirstFrame <- If control==RESET
     void voRelocate(FramePtr& frame){
         ROS_ASSERT(state==ST_LOST);
-        ROS_WARN("ODO > LOST");
+        ROS_WARN("ODO > We are LOST, trying to recover");
 
         /// Check Global Reset
         if (control == CTR_DO_RESET){
@@ -911,7 +1010,7 @@ private:
         }
 
         if (control == CTR_DO_ADDKF){
-            ROS_WARN("ODO = Cannot add Keyframe while lost");
+            ROS_ERROR("ODO = Cannot add Keyframe while lost");
             control = CTR_DO_NOTHING;
         }
 
@@ -919,10 +1018,11 @@ private:
         if (relocateVO(frame)){
             // Successfully relocated and added KF
             setState(ST_TRACKING);
-            ROS_INFO("ODO = Relocalisation Success");
+            lostCounter = 0;
+            ROS_INFO("ODO < Relocalisation Success");
         } else {
             setState(ST_LOST);
-            ROS_INFO("ODO = Relocalisation Failure");
+            ROS_INFO("ODO < Relocalisation Failure");
         }
     }
 
@@ -940,7 +1040,7 @@ public:
         init_g2o_types();
         control = CTR_DO_NOTHING;
         state   = ST_WAIT_FIRST_FRAME;
-        disparity = 1;
+        disparity = -1;
         matchesVO.clear();
         matches.clear();
 
@@ -951,13 +1051,17 @@ public:
         timeVO = -1;
 
         /// settings
-        voRelRansacIter = 300;
-        voRelRansacThresh = 1;
+        voRelRansacIter = 800;
+        voRelRansacThresh = 4;
         voRelPoseMethod = 0;
         voTriangulationMethod = 1;
-        voInitDisparity = 100;
+        voInitDisparity = 40;
+        voAbsPoseMethod = 1;
+        voAbsRansacIter = 800;
+        voAbsRansacThresh = 4;
         frameQualityThreshold = 0.2;
         keyFrameQualityThreshold = 0.6;
+        lostThresh = 10; // lost if 10 frames fail
 
         /// Set up output markers
         trackLines.ns = "TrackLines";
@@ -1039,8 +1143,7 @@ public:
 
 
         // Draw state
-        OVO::drawTextCenter(image.colRange(0,image.cols/2).rowRange(20,50), getStateName(), CV_RGB(200, 200, 0), 1.5, 2);
-
+        OVO::drawTextCenter(image.colRange(0,image.cols/2).rowRange(0,60), getStateName(), CV_RGB(200, 200, 0), 1.5, 2);
 
         // Overlay baseline
         if (baselineInitial>=0){
@@ -1052,6 +1155,10 @@ public:
 
         OVO::putInt(image, map.getKeyframeNr(), cv::Point2f(image.cols-95,6*25), CV_RGB(120,80,255), true,  "KFS:");
         OVO::putInt(image, map.getLandmarkNr(), cv::Point2f(image.cols-95,7*25), CV_RGB(120,80,255), true,  "LMS:");
+
+        if (lostCounter>0){
+            OVO::putInt(image, static_cast<float>(lostCounter)/lostThresh*100.f, cv::Point2f(image.cols/2-95,8*25), OVO::getColor(-lostCounter*2,lostThresh, lostCounter), true,  "LOST:","%");
+        }
 
 
         /// THESE ONLY WORK WHEN THE CURRENT MATCHES WERE VS THE CURRENT KEYFRAME!
@@ -1102,10 +1209,14 @@ public:
 
         if (disparity>0){
             if (state==ST_WAIT_INIT){
-                OVO::putInt(image,disparity/voInitDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voInitDisparity,disparity),  true,"DI:","%");
+                OVO::putInt(image,disparity/voInitDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voInitDisparity,disparity),  true,"DF:","%");
             } else {
-                OVO::putInt(image,disparity/voKfDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voKfDisparity,disparity),  true,"DI:","%");
+                OVO::putInt(image,disparity/voKfDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voKfDisparity,disparity),  true,"DF:","%");
             }
+        }
+        if (disparityMap>0){
+            OVO::putInt(image,disparityMap/voAbsRansacThresh*100, cv::Point(10,5*25), OVO::getColor(0,voAbsRansacThresh,disparityMap),  true,"DM:","%");
+
         }
 
 
@@ -1155,13 +1266,34 @@ public:
         ROS_INFO("ODO > [U] SETTING PARAMS");
 
         // Settings
-        voRelRansacIter   = config.vo_relRansacIter;        
-        voRelPoseMethod   = config.vo_relPoseMethod;
+        voRelRansacIter   = config.vo_relRansacIter;
+
+
+        switch (config.vo_relPoseMethod){
+            case 0: voRelPoseMethod = opengv::sac_problems::relative_pose::CentralRelativePoseSacProblem::STEWENIUS; break;
+            case 1: voRelPoseMethod = opengv::sac_problems::relative_pose::CentralRelativePoseSacProblem::NISTER; break;
+            case 2: voRelPoseMethod = opengv::sac_problems::relative_pose::CentralRelativePoseSacProblem::SEVENPT; break;
+            case 3: voRelPoseMethod = opengv::sac_problems::relative_pose::CentralRelativePoseSacProblem::EIGHTPT; break;
+            case 4: voRelPoseMethod = 4; break;
+            default: ROS_ASSERT(0); break;
+        }
+
+        switch (config.vo_absPoseMethod){
+            case 0: voAbsPoseMethod = opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem::TWOPT; break; // central, with rotation prior
+            case 1: voAbsPoseMethod = opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem::KNEIP; break;
+            case 2: voAbsPoseMethod = opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem::GAO; break;
+            case 3: voAbsPoseMethod = opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem::EPNP; break;
+            default: ROS_ASSERT(0); break;
+        }
+
+
+
+
+
         voTriangulationMethod = config.vo_triMethod;
         voRelNLO          = config.vo_relNLO;        
         voBaselineMethod  = static_cast<BaselineMethod>(config.vo_relBaselineMethod);
         voBaseline        = config.vo_relBaseline;
-        voAbsPoseMethod   = config.vo_absPoseMethod;
         voAbsRansacIter   = config.vo_absRansacIter;        
         voAbsNLO          = config.vo_absNLO;
 
@@ -1170,6 +1302,7 @@ public:
         voAbsRansacThresh = OVO::px2error(config.vo_absRansacThresh);// 1.0 - cos(atan(config.vo_absRansacThresh*sqrt(2.0)*0.5/720.0));
         voInitDisparity   = OVO::px2error(config.vo_initDisparity); //now in angles!
         voKfDisparity     = OVO::px2error(config.vo_kfDisparity); // now in angles!
+
         ROS_INFO("ODO [U] = VO Init Intialisation Disparity theshold: [%.1f] Pixels = [%.2f] Degrees = [%.6f] error", config.vo_initDisparity, OVO::px2degrees(config.vo_initDisparity), voInitDisparity );
         ROS_INFO("ODO [U] = VO Init New Keyframe Disparity theshold: [%.1f] Pixels = [%.2f] Degrees = [%.6f] error", config.vo_kfDisparity, OVO::px2degrees(config.vo_kfDisparity), voKfDisparity );
         ROS_INFO("ODO [U] = VO Absolute Disparity theshold: [%.1f] Pixels = [%.2f] Degrees = [%.6f] error", config.vo_absRansacThresh, OVO::px2degrees(config.vo_absRansacThresh), voAbsRansacThresh );

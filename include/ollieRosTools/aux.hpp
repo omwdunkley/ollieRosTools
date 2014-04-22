@@ -108,7 +108,8 @@ namespace OVO {
         FG_LCYAN    = 36,
         FG_LGRAY    = 37,
         FG_DGRAY    = 90,
-        FG_DEFAULT  = 39
+        FG_DEFAULT  = 39,
+        FG_WHITE    = 97
     };
     enum BG {
         BG_RED      = 41,
@@ -150,10 +151,10 @@ namespace OVO {
 
 
     /// Reprojection Functions
-    // points in world frame, model in world frame, bv in model frame
-    Eigen::VectorXd reprojectErrPointsVsBV(const Pose& model, const Points3d& points,const Bearings& bv, const BEARING_ERROR method = BVERR_DEFAULT);
-    // Same as above but points are already in frame of bv
-    Eigen::VectorXd reprojectErrPointsVsBV(const Points3d& points, const Bearings& bv, const BEARING_ERROR method = BVERR_DEFAULT);
+    // points in world frame, model in world frame, bv in model frame. Optional Dmatches
+    Doubles reprojectErrPointsVsBV(const Pose& model, const Points3d& points,const Bearings& bv, const DMatches& ms=DMatches(), const BEARING_ERROR method = BVERR_DEFAULT);
+    // Same as above but points are already in frame of bv. Optional Dmatches
+    Doubles reprojectErrPointsVsBV(const Points3d& points, const Bearings& bv, const DMatches& ms=DMatches(), const BEARING_ERROR method = BVERR_DEFAULT);
     // Computes an error given an angular difference (between two bearing vectors)
     double angle2error(const double angleDeg, const BEARING_ERROR method = BVERR_DEFAULT );
     // Compute the error between bearing vectors

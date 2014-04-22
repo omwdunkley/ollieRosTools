@@ -315,8 +315,7 @@ class Frame{
 
         // Convers the internal eigen pose to a TF pose
         const tf::Pose getTFPose(bool imu=false) const {
-            //TODO
-            ROS_ASSERT(hasPoseEstimate);
+            //TODO            
             tf::Pose pose;
             tf::poseEigenToTF(getPose(imu), pose);
             return pose;
@@ -325,14 +324,15 @@ class Frame{
         // return stamped transform with current time and pose in world frame
          tf::StampedTransform getStampedTransform(bool imu=false) const {
             if (kfId<0){
-                return tf::StampedTransform(getTFPose(imu), ros::Time::now(), WORLD_FRAME, "/Fimu");
+                return tf::StampedTransform(getTFPose(imu), ros::Time::now(), WORLD_FRAME, imu?"/Fimu":"/F");
             } else {
-                return tf::StampedTransform(getTFPose(imu), ros::Time::now(), WORLD_FRAME, "/KFimu_"+boost::lexical_cast<std::string>(kfId));
+                return tf::StampedTransform(getTFPose(imu), ros::Time::now(), WORLD_FRAME, (imu?"/KFimu":"/KF")+boost::lexical_cast<std::string>(kfId));
             }
         }
 
         // returns the eigen pose of this frame in the world frame
         Pose getPose(bool imu=false) const {
+            ROS_ASSERT(hasPoseEstimate);
             if (imu){
                 return pose * IMU2CAM.inverse();
             } else {
@@ -764,13 +764,13 @@ class FrameSynthetic : public Frame {
             /// TODO: estiamte quality of imageu using acceleromter, gyro and blurriness estiamtion
             estimateImageQuality();
             hasPoseEstimate = false;
-
+            /*
             IOFormat CleanFmt(4, 0, ", ", "\n", "[", "]");
             ROS_INFO_STREAM("---------------------\nFRA [SYN] IMU2CAM:\n" << IMU2CAM.matrix().format(CleanFmt));
             //ROS_INFO_STREAM("\nFRA [SYN] IMU:\n " << imuAttitude.format(CleanFmt));
             ROS_INFO_STREAM("\nFRA [SYN] POSE IMU:\n" << groundTruthImuTransform.matrix().format(CleanFmt));
             ROS_INFO_STREAM("\nFRA [SYN] POSE CAM:\n" << groundTruthCamTransform.matrix().format(CleanFmt) <<"\n---------------------\n");
-
+            */
             ROS_INFO("FRA [SYN] < GroundTruth Injected into Frame [ID: %d]", id);
         }
 

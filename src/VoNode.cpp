@@ -129,7 +129,7 @@ void VoNode::initImu2Cam(){
 
 
 void VoNode::incomingSynthetic(const ollieRosTools::synthFrameConstPtr& msg){
-    ROS_INFO("\n===========================================================================\n=== = FRAME %d",msg->frameId);
+    ROS_INFO((std::string("\n")+OVO::colorise("============================================================================== FRAME %d ",OVO::FG_WHITE, OVO::BG_BLUE)).c_str(),msg->frameId);
 
     /// Measure HZ, Processing time, Image acquisation time
     ros::WallTime t0 = ros::WallTime::now();

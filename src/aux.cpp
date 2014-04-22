@@ -80,7 +80,7 @@ void OVO::testColorMap(){
 
 std::string OVO::colorise(const std::string& str, const FG& fg, const BG& bg){
     std::stringstream ss;
-    ss<<"\033["<<fg<<"m"<<str<<"\033["<<bg<<"m";
+    ss<<"\033["<<fg<<"m"<<"\033["<<bg<<"m"<<str;
     return ss.str();
 }
 
@@ -219,32 +219,54 @@ void OVO::drawFlowAligned(cv::Mat img, const Points2f& fPts, const Points2f& kfP
 
 
 
-Eigen::VectorXd OVO::reprojectErrPointsVsBV(
+Doubles OVO::reprojectErrPointsVsBV(
         const Pose& model,
         const Points3d& points,
         const Bearings& bv,
+        const DMatches& ms,
         const BEARING_ERROR method){
     /// model -> bearing vectors are in this frame which is in the world frame (same as points)
     /// points -> world points
 
     Eigen::Affine3d inverseSolution;
     inverseSolution = model.inverse();
-    Eigen::VectorXd scores(points.size());
-    for(uint i = 0; i < points.size(); ++i){
-        scores[i] = errorBV(inverseSolution * points[i], bv[i], method);
+    Doubles scores;
+
+    if (ms.size()==0){
+        ROS_ASSERT(bv.size() == points.size());
+        scores.reserve(points.size());
+        for(uint i = 0; i < points.size(); ++i){
+            scores.push_back(errorBV(inverseSolution * points[i], bv[i], method));
+        }
+    } else {
+        scores.reserve(ms.size());
+        for(uint i = 0; i < ms.size(); ++i){
+             scores.push_back(errorBV(inverseSolution * points[ms[i].queryIdx], bv[ms[i].trainIdx], method));
+        }
     }
     return scores;
 }
 
-Eigen::VectorXd OVO::reprojectErrPointsVsBV(
+
+Doubles OVO::reprojectErrPointsVsBV(
         const Points3d& points,
         const Bearings& bv,
+        const DMatches& ms,
         const BEARING_ERROR method){
     /// points -> points in the frame of bv
 
-    Eigen::VectorXd scores(points.size());
-    for(uint i = 0; i < points.size(); ++i){
-        scores[i] = errorBV(points[i], bv[i], method);
+    Doubles scores;
+    if (ms.size()==0){
+        ROS_ASSERT(bv.size() == points.size());
+        scores.reserve(points.size());
+        for(uint i = 0; i < points.size(); ++i){
+            scores.push_back(errorBV(points[i], bv[i], method));
+        }
+    } else {
+        scores.reserve(ms.size());
+        for(uint i = 0; i < ms.size(); ++i){
+            scores[i] = errorBV(points[ms[i].queryIdx], bv[ms[i].trainIdx], method);
+        }
     }
     return scores;
 }

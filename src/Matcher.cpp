@@ -152,7 +152,7 @@ double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double&
     /// Get descriptors, possibly masking out some
     const cv::Mat& qD =  f->getDescriptors();
     const cv::Mat& tD = kf->getDescriptors();
-    const Eigen::MatrixXd& qBV =  f->getBearings();
+    Eigen::MatrixXd qBV =  f->getBearings();
     const Eigen::MatrixXd& tBV = kf->getBearings();
     cv::Mat mask;
 
@@ -165,13 +165,15 @@ double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double&
         // use the kf-f imu difference to unrotate bearings
         Eigen::Matrix3d relRot;
         OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relRot); // BV_kf = R*BV_f = BV_f'*R'
-        mask = makeDisparityMask(qD.rows, tD.rows, qBV*relRot.transpose(),  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
+        qBV *= relRot.transpose();
+        mask = makeDisparityMask(qD.rows, tD.rows, qBV, tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
     } else if (m_pred==PRED_POSE) {
         ROS_ASSERT(!fClose.empty());
         ROS_ASSERT(fClose->poseEstimated());
         // Use Rotation from close frame as estimate
         Eigen::Matrix3d relRot = kf->getPose().linear().transpose() * fClose->getPose().linear(); // Rotation difference between KF and Fclose
-        mask = makeDisparityMask(qD.rows, tD.rows, qBV*relRot.transpose(),  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
+        qBV *= relRot.transpose();
+        mask = makeDisparityMask(qD.rows, tD.rows, qBV,  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
         ROS_ERROR("NOT TESTED");
     } else if (m_pred==PRED_POSE_IMU) {
         // use the kf->closeFrame transformation + closeFrame-f imu difference to unrotate bearings
@@ -182,7 +184,8 @@ double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double&
         OVO::relativeRotation(fClose->getImuRotation(), f->getImuRotation(), relRot); // BV_kf = R*BV_f = BV_f'*R'
         // KF -> FClose via known Transform
         relRot = relRot*kf->getPose().linear().transpose()*fClose->getPose().linear(); //Apply rotation difference between KF and Fclose
-        mask = makeDisparityMask(qD.rows, tD.rows, qBV*relRot.transpose(),  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
+        qBV *= relRot.transpose();
+        mask = makeDisparityMask(qD.rows, tD.rows, qBV,  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
         ROS_ERROR("NOT TESTED");
     } else {
         // default - match everything with everyting
@@ -201,13 +204,15 @@ double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double&
         }
         // Compute disparity of matches
         Doubles error;
-        error.reserve(matches.size());
+        error.reserve(matches.size());        
+
         for(uint i=0; i<matches.size(); ++i){
             //double d =1.0-(qBV.row(matches[i].queryIdx) * tBV.row(matches[i].trainIdx).transpose());
             double d = OVO::errorNormalisedBV(qBV.block<1,3>(matches[i].queryIdx,0),tBV.block<1,3>(matches[i].trainIdx,0), OVO::BVERR_OneMinusAdotB);
             disparitySum+=d;
             error.push_back(d);
         }
+
         disparity = OVO::medianApprox<double>(error);
     }
     ROS_INFO(OVO::colorise("MAT [H] < Matched [%lu] matches with [%f][%f] disparity in [%.1fms]", OVO::FG_BLUE).c_str(), matches.size(), disparity, disparitySum/matches.size(),1000.*(ros::WallTime::now()-t0).toSec());

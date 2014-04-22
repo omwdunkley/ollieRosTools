@@ -161,7 +161,7 @@ class OdoMap {
         double match2KF(FramePtr& f, DMatches& matches, double& time, bool voOnly=false){
             /// TODO Match against last N keyframes
             /// TODO Match against closest N keyframes
-            ROS_ASSERT(keyframes.size()>0);
+            ROS_ASSERT(keyframes.size()>0);            
             FramePtr& kf = getLatestKF();
             currentFrame = f;
             ROS_INFO("MAP = Matching Frame [%d|%d] against KeyFrame [%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId() );

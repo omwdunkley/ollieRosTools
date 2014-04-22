@@ -81,27 +81,6 @@ class VoNode{
         void publishStuff(){
 
 
-//            Eigen::Matrix3d relRot;
-//            OVO::relativeRotation( odometry.getKeyFrames()[0]->getImuRotation(), odometry.getLastFrame()->getImuRotation(), relRot); // R * v <-> v * R'
-
-//            Eigen::Affine3d t =  odometry.getKeyFrames()[0]->getPose();
-//            t.linear() = relRot*t.linear();
-
-
-//            tf::Pose pose;
-//            tf::poseEigenToTF(t, pose);
-
-
-//            pubTF.sendTransform(tf::StampedTransform(odometry.getKeyFrames()[0]->getStampedTransform(), ros::Time::now(), WORLD_FRAME, "/F_est"));
-//            pubTF.sendTransform(tf::StampedTransform(pose, ros::Time::now(), WORLD_FRAME, "/F_est"));
-
-
-//            t.linear() = odometry.getLastFrame()->getImuRotation();
-//            tf::poseEigenToTF(t, pose);
-//            pubTF.sendTransform(tf::StampedTransform(pose, ros::Time::now(), WORLD_FRAME, "/F_imu"));
-
-
-
             // Publish Landmarks
             pubMarker.publish(odometry.getMapMarkers());
 
@@ -145,27 +124,6 @@ class VoNode{
 //            pubMarker.publish(f->getBearingsMarker(2,"FinKF","/KF_0", 2.0, 4.0, CV_RGB(200,0,0), relRot));
 
 
-
-
-
-            // test relative rotation
-
-
-
-
-            /// Publish TF of last frame
-
-
-            /// Publish MAP
-
-
-
-
-
-//            pubTF.sendTransform(odometry.getLastFrame()->getStampedTransform());
-//            pubMarker.publish(kfs.back()->getWorldPointsMarker(0,1.2,0.5));
-//            pubMarker.publish(odometry.getLastFrame()->getWorldPointsMarker(1,0.8,1.0));
-            ROS_ERROR("NOT IMPLEMENTED VoNode.publishStuff()");
         }
 
 
