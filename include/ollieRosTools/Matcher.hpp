@@ -83,6 +83,8 @@ cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk=Ints(), c
 
 // Makes a mask that prefilters potential matches by using a predicted bearing vector - optimise eigen version that only works with BVERR_OneMinusAdotB
 cv::Mat makeDisparityMask(int qSize, int tSize, const MatrixXd& queryBearings, const MatrixXd& trainBearings, const double maxBVError, const OVO::BEARING_ERROR methodR = OVO::BVERR_DEFAULT, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+//cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryBearings, const Bearings& trainBearings, const double maxBVError, const OVO::BEARING_ERROR methodR = OVO::BVERR_DEFAULT, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+
 
 
 
@@ -150,10 +152,10 @@ class Matcher{
         // Set parameters
         void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
-        // Match f against map withOUT pose estimate = WE ARE LOST
-        void matchMap(const OdoMap& map, FramePtr& f, const Ints& fMask=Ints(), const FramePtr& fClose = FramePtr());
+        // Match f against map. Returns angular disparity error
+        double matchMap(const cv::Mat& mapD, const Points3d& mapPts, FramePtr& f, DMatches& matches, double& time, const Ints& fMask=Ints());
 
-        // Match f against kframe withOUT pose estimate = WE ARE LOST, or initialising. Returns angular disparity error
+        // Match f against kframe. Returns angular disparity error
         double matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask=Ints(), const Ints& kfMask=Ints(), const FramePtr& fClose = FramePtr());
 
 

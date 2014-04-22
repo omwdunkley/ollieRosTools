@@ -485,13 +485,6 @@ cv::Ptr<cv::Algorithm> Detector::getAlgo(const int id, const float thresh){
 void Detector::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
     ROS_INFO("DET > SETTING PARAMS");
 
-    if(USE_SYNTHETIC){
-        // Some hardcoded Values
-        config.detector = -10;
-        config.extractor = -10;
-        config.kp_grid = 0;
-    }
-
     // maxKp == 0 means dont cap size
     if (config.kp_max!=0){
         // make sure max>=min

@@ -547,6 +547,11 @@ class Frame{
             return landmarkRefs;
         }
 
+        uint getLandmarkRefNr() const {
+            return landmarkRefs.size();
+        }
+
+
         // Gets descriptors. Computes them if they are empty or the wrong type (determined from the current set extraxtor)
         const cv::Mat& getDescriptors(){
             if (descriptors.empty()) {

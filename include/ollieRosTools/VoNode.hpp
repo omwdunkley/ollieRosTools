@@ -83,6 +83,7 @@ class VoNode{
 
             // Publish Landmarks
             pubMarker.publish(odometry.getMapMarkers());
+            pubMarker.publish(odometry.getMapObservations());
 
             // Publish Track (ie all path and poses estimated)
             pubMarker.publish(odometry.getTrackLineMarker());

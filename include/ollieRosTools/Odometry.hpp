@@ -244,85 +244,13 @@ private:
         }
 
 
-        FramePtr kf = map.getLatestKF();
+        double t=0;
+        bool okay = map.match2Map(f, matchesVO, t);
+        timeMA += t;
 
-
-
-
-
-        // we have a position estiamte, use it to
-        // Match against map (ie over multiple keyframes)
-        // try to add new map points
-        // bundle adjust
-
-
-        //map.match2Map(frame, );
-
-        // for each keyframe we found landmarks for, match agaist all keyframes and triangulate new points
-        // throw out points which are too weird
-        // add land marks to map
-        // and land marks to current frame
-        // and current frame to map
-        // bundle adjust
-
-        //frame->addLandMarkRef();
-        //map.pushKF(frame);
-
-
-
-
-
-        //map.bundleAdjust();
-
-
-
-
-/*
-
-
-//        // only keep points that worked with vo
-//        f->reducePointsToWorldPoints();
-
-        // Triangulate all matches, hopefully adding more points
-
-
-        /// Force redection between both frames from all detections (ie not filtered by vo)
-        const DMatches& ms = map.getF2KFMatches(true);
-        ROS_INFO_STREAM("ODO = FRAME F \n" << *f);
-        ROS_INFO_STREAM("ODO = FRAME KF\n" << *kf);
-
-        // Lets do everything in KF frame
-        // get kf->f transform
-        Pose kf2f = kf->getPose().inverse() * f->getPose();
-
-        ROS_WARN("ODO = Triangulating all [%lu] matches", ms.size());
-        // triangulate points
-        Bearings bv_f, bv_kf;
-        OVO::alignedBV(f->getBearings(), kf->getBearings(), ms, bv_f, bv_kf);
-        Points3d points_tri;
-        triangulate(kf2f, bv_kf, bv_f, points_tri);
-
-        // keep those within reprojection error
-        Ints inliers;
-        inliers = reprojectFilter(bv_kf, points_tri); // points are in kf frame here
-        OVO::vecReduceInd<Points3d>(points_tri, inliers);
-        OVO::vecReduceInd<DMatches>(ms, matchesVO, inliers);
-
-        // Put points in world frame (was in kf frame)
-        OVO::transformPoints(kf->getPose(), points_tri);
-
-        // remove outliers from f
-        Ints fIn, kfIn;
-        OVO::match2ind(matchesVO, fIn, kfIn);
-        f->setWorldPoints(fIn, points_tri, true);
-
-        // add f to map
-        map.pushKF(f);
-
-*/
         double time = (ros::WallTime::now()-t0).toSec();
         timeVO += time;
-        bool okay = true;
+
         if (okay){
             ROS_INFO("ODO < KEYFRAME ADDED [%d|%d] in [%1.fms]", f->getId(), f->getKfId(), time*1000);
         } else {
@@ -817,10 +745,10 @@ private:
         ROS_ASSERT(state==ST_LOST);
         ros::WallTime t0 = ros::WallTime::now();
 
-        ROS_ASSERT_MSG(0, "NOT IMPLEMENTED");
+        ROS_ERROR("NOT IMPLEMENTED");
 
 
-        lostCounter = 0; // found
+        //lostCounter = 0; // found
 
 
         ++ lostCounter; // still lost
@@ -1244,6 +1172,9 @@ public:
     // Get all the landmarks as markers for rviz
     const visualization_msgs::Marker getMapMarkers(){
         return map.getLandmarkMarkers();
+    }
+    const visualization_msgs::Marker getMapObservations(){
+        return map.getLandmarkObservations();
     }
 
     const geometry_msgs::PoseArray& getTrackPoseMarker(){

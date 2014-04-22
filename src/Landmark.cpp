@@ -4,11 +4,18 @@ typedef cv::Ptr<Landmark> LandmarkPtr;
 typedef std::deque<LandmarkPtr> LandMarkPtrs;
 
 int Landmark::pIdCounter = 0;
-double Landmark::angleConeThresh = OVO::px2error(4); // default error within +- 4px
-double Landmark::angleFOVThresh  = OVO::px2error(4); // default error within +- 4px
-double Landmark::distThreshRatio = 0.3; // default distance error within +-30% tolerance of original distance allowed
-double Landmark::distThresh      = 0.2; // 20cm tolerance allowed
+/// TODO: should be in dynamic reconfigure
+double Landmark::angleConeThresh = OVO::angle2error(45); // default error within +- 8px
+double Landmark::angleFOVThresh  = OVO::angle2error(55); // default error within +- 8px
+double Landmark::distThreshRatio = 0.7; // default distance error within +-70% tolerance of original distance allowed
+double Landmark::distThresh      = 2.0; // 2m tolerance allowed
 
+
+uint Landmark::visible     = 0;
+uint Landmark::failedDist  = 0;
+uint Landmark::failedAngle = 0;
+uint Landmark::failedFov   = 0;
+uint Landmark::totalObs    = 0;
 
 bool noRef(const LandmarkPtr& p){
     return !(*(p.refcount)>1);

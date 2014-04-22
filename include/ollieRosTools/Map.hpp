@@ -4,6 +4,7 @@
 
 
 #include <deque>
+#include <map>
 
 
 #include <Eigen/StdVector>
@@ -132,6 +133,31 @@ class OdoMap {
             return landmarks.size();
         }
 
+        // Gets all the descriptors most likely to be observable from the given frame
+        uint getAllPossibleObservations(const FramePtr& f, cv::Mat& desc, Points3d& points, Ints& obsIds, Ints& LmIds) const{
+            ROS_INFO("MAP > Getting all possible observations of [%lu] landmarks from frame [%d|%d]", landmarks.size(), f->getId(), f->getKfId());
+            ros::WallTime t0 = ros::WallTime::now();
+            desc = cv::Mat();
+            points.clear();
+            obsIds.clear();
+            LmIds.clear();
+
+            // add points
+            for (uint i=0; i<landmarks.size(); ++i){
+                const LandmarkPtr& lm = landmarks[i];
+                int obsId = lm->visibleFrom(f);
+                if (obsId>=0){
+                    desc.push_back(lm->getObservationDesc(obsId));
+                    points.push_back(lm->getPosition());
+                    obsIds.push_back(obsId);
+                    LmIds.push_back(i);
+                }
+            }
+            Landmark::printStats();
+            ROS_INFO(OVO::colorise("MAP < Found [%lu/%lu] possible observations from frame [%d|%d] in [%.1fms]", OVO::FG_MAGNETA).c_str(),points.size(), landmarks.size(), f->getId(), f->getKfId(), (ros::WallTime::now()-t0).toSec()*1000.);
+            return points.size();
+        }
+
 
 
 
@@ -157,11 +183,74 @@ class OdoMap {
         /// Matching Functions frame-frame points, frame-map points, frame->closest frames,
 
 
+        // Matches against the map
+        double match2Map(FramePtr& f, DMatches& matches, double& time/*, Points3d points, DMatches& ms*/){
+            ROS_ASSERT(landmarks.size()>0);
+            ROS_ASSERT(keyframes.size()>0);
+
+            /// Get landmarks that are potentially visible
+            cv::Mat descs;
+            Points3d mapPts;
+            Ints obsIds;
+            Ints lmIds;
+            getAllPossibleObservations(f, descs, mapPts, obsIds, lmIds);
+
+
+
+            /// Do Matching vs Map
+
+
+            double disparity = matcher.matchMap(descs, mapPts, f, matches, time, Ints() );
+
+            /// AT THIS POINT WE SHOULD RETURN TO ODOMETRY; RECOMPUTE POSE USING RANSAC; KEEP INLIERS, TRIANAGULATE NEW POINTS, then return here, add observations, kf, bundle adjust
+
+
+
+            /// todo, should we do an additional VO RANSAC before? PROBABLY
+
+
+            /// add observations to landmarks and frame f
+            ROS_INFO("MAP = Adding [%lu] landmark observations from frame [%d|%d]", matches.size(), f->getId(), f->getKfId());
+            std::map<int,int> kfObsCounter;
+            for (uint i=0; i<matches.size(); ++i){
+                LandmarkPtr& lm = landmarks[lmIds[matches[i].trainIdx]];
+                f ->addLandMarkRef(matches[i].queryIdx, lm);
+                lm->addObservation( f, matches[i].queryIdx);
+                ++kfObsCounter[landmarks[lmIds[i]]->getObservationFrame(obsIds[i])->getId()]; //histogram, count which kfs we f shared observations which
+            }
+
+            ROS_INFO("MAP = Shared Observation Matches:");
+            ROS_INFO(" KEYFRAME  | OBS NR");
+            for(std::map<int,int>::const_iterator it=kfObsCounter.begin(); it!=kfObsCounter.end(); ++it) {
+                ROS_INFO("[%3d|%4d] | %3d/%d",it->first, keyframes[it->first]->getKfId(), it->second,  keyframes[it->first]->getLandmarkRefNr());
+            }
+
+
+
+
+
+            /// Add KF to map
+            pushKF(f);
+
+
+            /// optimise
+            bundleAdjust();
+
+
+
+            /// Triangulate new points
+            return disparity;
+
+
+
+        }
+
+
         // Matches against a keyframe. If voOnly = true, only match against points that have associsated land marks. Returns disparity
         double match2KF(FramePtr& f, DMatches& matches, double& time, bool voOnly=false){
             /// TODO Match against last N keyframes
             /// TODO Match against closest N keyframes
-            ROS_ASSERT(keyframes.size()>0);            
+            ROS_ASSERT(keyframes.size()>0);
             FramePtr& kf = getLatestKF();
             currentFrame = f;
             ROS_INFO("MAP = Matching Frame [%d|%d] against KeyFrame [%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId() );
@@ -174,19 +263,13 @@ class OdoMap {
 
         }
 
-        // Matches against the map
-        void match2Map(FramePtr& f, Points3d points, DMatches& ms){
-            ROS_ASSERT(landmarks.size()>0);
-            ROS_ASSERT(keyframes.size()>0);
-            ROS_ASSERT_MSG(0, "NOT IMPLEMENTED");
-        }
-
 
 
 
 
         /// /////////////////////////////////////////////////////////////////////////////////
         /// Keyframe Functions frame->closest frames, add kf, remove kf, etc
+
 
         void pushKF(FramePtr& frame, const bool first=false){
             ROS_INFO("MAP > ADDING%s KF TO MAP", first?" FIRST":"");
@@ -469,21 +552,56 @@ class OdoMap {
             markers.type = visualization_msgs::Marker::SPHERE_LIST;
             markers.action = visualization_msgs::Marker::ADD;
             markers.scale.x = 0.1*size;
-            markers.scale.x = 0.1*size;
-            markers.scale.x = 0.1*size;
+            markers.scale.y = 0.1*size;
+            markers.scale.z = 0.1*size;
             markers.frame_locked = true;
 
             std_msgs::ColorRGBA col;
             col.a = 0.7;
-            col.r = RGB.val[2]/255;
-            col.g = RGB.val[1]/255;
-            col.b = RGB.val[0]/255;
+            col.r = RGB.val[2]/255.;
+            col.g = RGB.val[1]/255.;
+            col.b = RGB.val[0]/255.;
             markers.color = col;
             for (uint i=0; i< landmarks.size(); ++i){
                 markers.points.push_back(landmarks[i]->getMarker());
             }
             return markers;
         }
+
+        // draws lines from the landmark to the place it was seen from
+        const visualization_msgs::Marker getLandmarkObservations(int id=0, const std::string& name="Observations", const std::string frame ="/world", double size=1.0, const CvScalar RGB = CV_RGB(0,0,255)) const{
+            visualization_msgs::Marker markers;
+            markers.header.stamp = ros::Time::now();
+            markers.ns = name;
+            markers.id = id;
+            markers.header.frame_id = frame;
+            markers.type = visualization_msgs::Marker::LINE_LIST;
+            markers.action = visualization_msgs::Marker::ADD;
+            markers.scale.x = 0.005*size;
+            markers.frame_locked = true;
+
+            std_msgs::ColorRGBA col;
+            col.a = 0.55;
+            col.r = RGB.val[2]/255.;
+            col.g = RGB.val[1]/255.;
+            col.b = RGB.val[0]/255.;
+            markers.color = col;
+            for (uint i=0; i< landmarks.size(); ++i){
+                const LandmarkPtr& lm = landmarks[i];
+                for (uint o=0; o< lm->getObservationsNr(); ++o){
+                    geometry_msgs::Point p;
+
+                    tf::pointEigenToMsg(lm->getObservationFrame(o)->getPose().translation(), p);
+                    markers.points.push_back(p);
+
+
+                    tf::pointEigenToMsg(lm->getPosition(),p);
+                    markers.points.push_back(p);
+                }
+            }
+            return markers;
+        }
+
 
 
         // print id, xyz, nr of ovservations, and observations

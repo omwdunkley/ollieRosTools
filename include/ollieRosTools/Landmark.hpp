@@ -41,6 +41,13 @@ private:
     static double distThreshRatio; //ratio from 0,1. Eg 0.3 = error should be within 30% of original distance
     static double distThresh;      //distance error should be within this distance, in meters
 
+
+    static uint visible;
+    static uint failedDist;
+    static uint failedAngle;
+    static uint failedFov;
+    static uint totalObs;
+
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -48,6 +55,19 @@ public:
     Landmark(const Eigen::Vector3d& point){
         xyz = point;
         id = ++pIdCounter;
+    }
+
+    static void resetStats(){
+        visible=0;
+        failedDist=0;
+        failedAngle=0;
+        failedFov=0;
+        totalObs=0;
+    }
+
+    static void printStats(){
+        ROS_INFO("LMK = LM Projection States: \n\t[%4d] Observations\n\t[%4d] Visible\n\t[%4d] Failed Dist\n\t[%4d] Failed Angle\n\t[%4d] failed FOV", totalObs, visible, failedDist, failedAngle, failedFov);
+        resetStats();
     }
 
     // returns the unique landmark ID
@@ -67,13 +87,13 @@ public:
 
     // get the frame at observation i
     const FramePtr& getObservationFrame(const int i) const {
-        ROS_ASSERT(i>0 && i<static_cast<int>(seenFrom.size()));
+        ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
         return seenFrom[i];
     }
 
     // get the bearing vector to this point from observation i
     const Bearing getObservationBearing(const int i) const {
-        ROS_ASSERT(i>0 && i<<static_cast<int>(seenFrom.size()));
+        ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
         return seenFrom[i]->getBearing(pointIds[i]);
     }
 
@@ -84,7 +104,7 @@ public:
 
     // return descriptor of observation i
     const cv::Mat getObservationDesc(const int i) const {
-        ROS_ASSERT(i>0 && i<<static_cast<int>(seenFrom.size()));
+        ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
         return seenFrom[i]->getDescriptor(pointIds[i]);
     }
 
@@ -108,42 +128,57 @@ public:
         pointIds.push_back(id);
     }
 
-    // returns true if the given frame might provide a similar observation.
+    // returns an id>=0 if the given frame might provide a similar observation from observation i
     // Frame must have an estiamted position in its pose member
-    bool visibleFrom(const FramePtr& f) const {
-        for (uint i=0; i<pointIds.size(); ++i){
+    int visibleFrom(const FramePtr& f) const {
+        // go in reverese, more likely that newer ones are more visible
+
+        const Eigen::Vector3d xyz_f  = f->getOpticalCenter(); //position we are observing from
+        const Eigen::Vector3d bvFOptAxis = f->getOpticalAxisBearing(); // camera axis we are observing along
+
+        for (int i=static_cast<int>(pointIds.size())-1; i>=0; --i){
+        //for (uint i=0; i<pointIds.size(); ++i){
             // Check Distance
+            ++totalObs;
             const Eigen::Vector3d xyz_kf = seenFrom[i]->getOpticalCenter();
-            const Eigen::Vector3d xyz_f  = f->getOpticalCenter();
-            Eigen::Vector3d bvKF2P = (xyz-xyz_kf);   // normalised later
-            Eigen::Vector3d bvF2P  = (xyz-xyz_f);    // normalised later
-            const double distP2KF  = bvKF2P.norm();
-            const double distP2F   = bvF2P.norm();
-            const double dist_diff = abs(distP2KF-distP2F);
+
+            Eigen::Vector3d bvKF2P = (xyz-xyz_kf);   // vector: seen from -> this point (normalised later)
+            Eigen::Vector3d bvF2P  = (xyz-xyz_f);    // vector: seeing from -> this point (normalised later)
+            const double distP2KF  = bvKF2P.norm();  // distance originally seen from
+            const double distP2F   = bvF2P.norm();   // distance we might see it from now
+            const double dist_diff = abs(distP2KF-distP2F); // difference in distance
 
 
             // Check P similar distance to F as from where it was observered
             if (dist_diff<distThreshRatio*distP2KF || dist_diff<distThresh){
                 // Check F in FOV of P from which it was seen
-                bvKF2P.normalize();
-                bvF2P.normalize();
+                bvKF2P/=distP2KF; //.normalize();
+                bvF2P/=distP2F; //.normalize();
                 const double angleCone = 1.0 - bvF2P.dot(bvKF2P);
                 if (angleCone<angleConeThresh){
                     // check P in FOV of F
-                    const Eigen::Vector3d bvFOptAxis = f->getOpticalAxisBearing();
+
                     const double angleFOV = 1.0 - bvF2P.dot(bvFOptAxis);
                     if (angleFOV<angleFOVThresh){
-                        return true;
+                        ++visible;
+                        return i; //return the first one
+
                         // Point is in FOV of camera,
                         // being seen from a similar distance,
                         // from a similar side
+                    } else {
+                        ++failedFov;
                     }
+                } else {
+                    ++failedAngle;
                 }
+            } else {
+                ++failedDist;
             }
         }
 
         // Looked at all possible observations, none are similar
-        return false;
+        return -1;
     }
 
     const cv::Mat getClosestDescriptor(){

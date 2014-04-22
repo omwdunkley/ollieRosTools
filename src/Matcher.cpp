@@ -134,13 +134,58 @@ void Matcher::match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matc
 
 
 
-// Match f against map withOUT pose estimate = WE ARE LOST
-void Matcher::matchMap(const OdoMap& map, FramePtr& f, const Ints& fMask, const FramePtr& fClose){
-    if (USE_IMU){
+// Match f against map. F should have a decent post estimate. mapPts and mapD should be prefiltered based on frame-landmark observability
+double Matcher::matchMap(const cv::Mat& mapD, const Points3d& mapPts, FramePtr& f, DMatches& matches, double& time, const Ints& fMask){
+    ROS_ASSERT(f->poseEstimated());
+    ros::WallTime t0 = ros::WallTime::now();
 
-    } else {
+    /// Get descriptors, possibly masking out some
+    const cv::Mat& qD =  f->getDescriptors();
+    Eigen::MatrixXd qBV =  f->getBearings();
 
+    ROS_INFO("MAT [H] > Matching Frame[%d|%d] with [%d] bearing against [%lu] Map points", f->getId(), f->getKfId(), qD.rows, mapPts.size());
+
+
+    /// Get map points as bearings in frame f
+    Eigen::Affine3d inverseSolution;
+    inverseSolution = f->getPose().inverse();
+    Eigen::MatrixXd tBV(mapPts.size(),3);
+    for(int i=0; i<tBV.rows(); ++i){
+        // change to frame f
+        tBV.row(i) = inverseSolution * mapPts[i];
     }
+    // Normalise to unit vectors
+    tBV.rowwise().normalize();
+
+
+    cv::Mat mask = makeDisparityMask(qD.rows, mapD.rows, qBV, tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask); /// TODO: should be a different disparity thresh, a much smaller one
+
+    /// Do the actual matching
+    match(qD, mapD, matches, time, mask);
+
+    double disparity = -1;
+    double disparitySum = 0;
+    if (matches.size()>0){
+//        /// TODO: implemente klt over image patches
+//        // Optional KLT refinement
+//        if (klt_refine  ){
+//            kltRefine(f, kf, matches, time);
+//        }
+        // Compute disparity of matches
+        Doubles error;
+        error.reserve(matches.size());
+
+        for(uint i=0; i<matches.size(); ++i){
+            //double d =1.0-(qBV.row(matches[i].queryIdx) * tBV.row(matches[i].trainIdx).transpose());
+            double d = OVO::errorNormalisedBV(qBV.block<1,3>(matches[i].queryIdx,0),tBV.block<1,3>(matches[i].trainIdx,0), OVO::BVERR_OneMinusAdotB);
+            disparitySum+=d;
+            error.push_back(d);
+        }
+
+        disparity = OVO::medianApprox<double>(error);
+    }
+    ROS_INFO(OVO::colorise("MAT [H] < Matched [%lu] matches with [%f][%f] disparity in [%.1fms]", OVO::FG_BLUE).c_str(), matches.size(), disparity, disparitySum/matches.size(),1000.*(ros::WallTime::now()-t0).toSec());
+    return disparity;
 }
 
 
@@ -818,6 +863,80 @@ cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryBearings, c
 
 
 
+/*
+// Makes a mask that prefilters potential matches by using a predicted bearing vector
+cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryBearings, const Bearings& trainBearings, const double maxBVError, const OVO::BEARING_ERROR method, const Ints& queryOk, const Ints& trainOk){
+    // We do the opposite first and then invert
+
+    // kd tree would be nice...worth the overhead?
+    ros::WallTime t0 = ros::WallTime::now();
+
+    ROS_ASSERT_MSG(method==OVO::BVERR_OneMinusAdotB, "Optimised eigen version only works for method=BVERR_OneMinusAdotB");
+    uint counter=0;
+    cv::Mat mask = cv::Mat::zeros(qSize, tSize, CV_8U);
+    int total;
+
+    if (queryOk.empty()){
+        if (trainOk.empty()){
+            // loop over all
+            total = queryBearings.size()*trainBearings.size();
+            ROS_INFO("MAT [U] > Premasking 3d Disparities for [%ld vs %ld] = %.1e combinations [Thresh = %f]",queryBearings.size(), trainBearings.size(), static_cast<double>(total),maxBVError);
+            for(uint q=0; q<queryBearings.size(); ++q){
+                for(uint t=0; t<trainBearings.size(); ++t){
+                    if ( (1.0-(queryBearings[q] * trainBearings[t].transpose())) < maxBVError){
+                       mask.at<uchar>(q,t) = 1;
+                       ++counter;
+                    }
+                }
+            }
+        } else {
+            total = queryBearings.size()*trainOk.size();
+            ROS_INFO("MAT [U] > Premasking 3d Disparities for [%ld vs %lu] = %.1e combinations [Thresh = %f]",queryBearings.size(), trainOk.size(), static_cast<double>(total),maxBVError  );
+            // Compute over full width and use index for height
+            for(uint q=0; q<queryBearings.size(); ++q){
+                for(uint t=0; t<trainOk.size(); ++t){
+                    if ( (1.0-(queryBearings[q] * trainBearings[trainOk[t]].transpose())) < maxBVError){
+                       mask.at<uchar>(q,trainOk[t]) = 1;
+                       ++counter;
+                    }
+                }
+            }
+
+        }
+    } else {
+
+        if (trainOk.empty()){
+            total = queryOk.size()*trainBearings.size();
+            ROS_INFO("MAT [U] > Premasking 3d Disparities for [%lu vs %ld] = %.1e combinations [Thresh = %f]",queryOk.size(), trainBearings.size(), static_cast<double>(total),maxBVError  );
+            // use full height, use indicies for width
+            for(uint q=0; q<queryOk.size(); ++q){
+                for(uint t=0; t<trainBearings.size(); ++t){
+                    if ( (1.0-(queryBearings[queryOk[q]] * trainBearings[t].transpose())) < maxBVError){
+                       mask.at<uchar>(queryOk[q],t) = 1;
+                       ++counter;
+                    }
+                }
+            }
+
+        } else {
+            // Use indicies for both
+            total = queryOk.size()*trainOk.size();
+            ROS_INFO("MAT [U] > Premasking 3d Disparities for [%lu vs %lu] = %.1e combinations [Thresh = %f]", queryOk.size(), trainOk.size(), static_cast<double>(total),maxBVError  );
+            for(uint q=0; q<queryOk.size(); ++q){
+                for(uint t=0; t<trainOk.size(); ++t){
+                    if ( (1.0-(queryBearings[queryOk[q]] * trainBearings[trainOk[t]].transpose())) < maxBVError){
+                       mask.at<uchar>(queryOk[q],trainOk[t]) = 1;
+                       ++counter;
+                    }
+                }
+            }
+        }
+    }
+
+    ROS_INFO("MAT [U] < Marked [%d/%d] matches, reduced by [%.1f%%] in [%.1fms]", counter, total, 100.f*(1.f-(static_cast<float>(counter)/total)), (ros::WallTime::now()-t0).toSec()*1000.);
+    return mask;
+}
+*/
 
 
 // Makes a mask that prefilters potential matches by using a predicted bearing vector

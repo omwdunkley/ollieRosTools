@@ -40,11 +40,7 @@ VoNode::VoNode(ros::NodeHandle& _n):
     pubMarker  = n.advertise<visualization_msgs::Marker>("vo/worldPointsMarker", 1);
     pubTrack  = n.advertise<geometry_msgs::PoseArray>("vo/track", 1);
 
-    /// Dynamic Reconfigure
-    nodeOn = true;
-    dynamic_reconfigure::Server<ollieRosTools::VoNode_paramsConfig>::CallbackType f;
-    f = boost::bind(&VoNode::setParameter, this,  _1, _2);
-    srv.setCallback(f);
+
 
     /// Set default values
     n.param("synth", USE_SYNTHETIC, false);
@@ -55,6 +51,12 @@ VoNode::VoNode(ros::NodeHandle& _n):
     } else {
         ROS_INFO("Not Using imu!");
     }
+
+    /// Dynamic Reconfigure
+    nodeOn = true;
+    dynamic_reconfigure::Server<ollieRosTools::VoNode_paramsConfig>::CallbackType f;
+    f = boost::bind(&VoNode::setParameter, this,  _1, _2);
+    srv.setCallback(f);
 
 
     if (USE_SYNTHETIC){
@@ -86,6 +88,8 @@ VoNode::VoNode(ros::NodeHandle& _n):
 
 
     }
+
+
 
 
 
@@ -309,11 +313,12 @@ ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_p
 
     if (USE_SYNTHETIC){
         // Hard code settings for synthetic data
-        config.fx = 1.0;
-        config.fy = 1.0;
-        config.cx = 0.5;
-        config.cy = 0.5;
-        //config.s  = 1.0;
+
+        // Some hardcoded Values
+        config.detector = -10;
+        config.extractor = -10;
+
+
 
     }
 
@@ -344,7 +349,7 @@ ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_p
                      config.kernelSize,
                      config.sigmaX,
                      config.sigmaY,
-                     config. brightness,
+                     config.brightness,
                      config.contrast);
 
 
@@ -356,6 +361,7 @@ ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_p
                            config.fx, config.fy,
                            config.cx, config.cy,
                            config.s);
+
     detector->setParameter(config, level);
 
     odometry.setParameter(config, level);
