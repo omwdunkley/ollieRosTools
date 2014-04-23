@@ -173,6 +173,7 @@ SET(SBA_FILES
 )
 #rosbuild_add_executable(sba_demo ${SBA_FILES} )
 #target_link_libraries(sba_demo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS})
+
 #common commands for building c++ executables and libraries
 #rosbuild_add_library(${PROJECT_NAME} src/example.cpp)
 #target_link_libraries(${PROJECT_NAME} another_library)

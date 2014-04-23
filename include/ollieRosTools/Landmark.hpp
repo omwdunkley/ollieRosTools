@@ -32,6 +32,7 @@ private:
     /// Meta
     static int pIdCounter;
     int id;
+    int currentObs; // This can be set to get default observation related stuff. Usually set to which kf saw it last
 
 
     /// Visibility settings
@@ -55,6 +56,7 @@ public:
     Landmark(const Eigen::Vector3d& point){
         xyz = point;
         id = ++pIdCounter;
+        currentObs = -1;
     }
 
     static void resetStats(){
@@ -66,13 +68,17 @@ public:
     }
 
     static void printStats(){
-        ROS_INFO("LMK = LM Projection States: \n\t[%4d] Observations\n\t[%4d] Visible\n\t[%4d] Failed Dist\n\t[%4d] Failed Angle\n\t[%4d] failed FOV", totalObs, visible, failedDist, failedAngle, failedFov);
+        ROS_INFO("LMK = LM Projection States: \n\t[%4d] Observations\n\t[%4d] Visible\n\t[%4d] Failed Dist\n\t[%4d] Failed Angle\n\t[%4d] Failed FOV", totalObs, visible, failedDist, failedAngle, failedFov);
         resetStats();
     }
 
     // returns the unique landmark ID
     int getId() const {
         return id;
+    }
+
+    int getCurrentObs() const {
+        return currentObs;
     }
 
     void setPosition(const Point3d& pos){
@@ -86,13 +92,19 @@ public:
     }
 
     // get the frame at observation i
-    const FramePtr& getObservationFrame(const int i) const {
+    const FramePtr& getObservationFrame(int i=-1) const {
+        if (i<0){
+            i=currentObs;
+        }
         ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
         return seenFrom[i];
     }
 
     // get the bearing vector to this point from observation i
-    const Bearing getObservationBearing(const int i) const {
+    const Bearing getObservationBearing(int i=-1) const {
+        if (i<0){
+            i=currentObs;
+        }
         ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
         return seenFrom[i]->getBearing(pointIds[i]);
     }
@@ -103,7 +115,10 @@ public:
     }
 
     // return descriptor of observation i
-    const cv::Mat getObservationDesc(const int i) const {
+    const cv::Mat getObservationDesc(int i=-1) const {
+        if (i<0){
+            i=currentObs;
+        }
         ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
         return seenFrom[i]->getDescriptor(pointIds[i]);
     }
@@ -126,11 +141,21 @@ public:
     void addObservation(const FramePtr& f, const int id){
         seenFrom.push_back(f);
         pointIds.push_back(id);
+        //setCurrentObs(seenFrom.size()-1);
+    }
+
+    // Sets the current observation, ie the frame which is currently base suited to see it
+    // this is used when maching against the map and we are guessing which observation is the
+    // best common one
+    void setCurrentObs(const int i){
+        ROS_ASSERT(static_cast<int>(seenFrom.size())>i);
+        currentObs = i;
     }
 
     // returns an id>=0 if the given frame might provide a similar observation from observation i
     // Frame must have an estiamted position in its pose member
-    int visibleFrom(const FramePtr& f) const {
+    // Also sets the current observation to the first candidate found (check in reverse chronological order)
+    bool visibleFrom(const FramePtr& f) {
         // go in reverese, more likely that newer ones are more visible
 
         const Eigen::Vector3d xyz_f  = f->getOpticalCenter(); //position we are observing from
@@ -161,7 +186,8 @@ public:
                     const double angleFOV = 1.0 - bvF2P.dot(bvFOptAxis);
                     if (angleFOV<angleFOVThresh){
                         ++visible;
-                        return i; //return the first one
+                        setCurrentObs(i);
+                        return true; //return the first one
 
                         // Point is in FOV of camera,
                         // being seen from a similar distance,
@@ -178,13 +204,13 @@ public:
         }
 
         // Looked at all possible observations, none are similar
-        return -1;
+        return false;
     }
 
-    const cv::Mat getClosestDescriptor(){
-        ROS_ASSERT_MSG(false, "LMK = NOT IMPLEMENTED");
-        return cv::Mat();
-    }
+//    const cv::Mat getClosestDescriptor(){
+//        ROS_ASSERT_MSG(false, "LMK = NOT IMPLEMENTED");
+//        return cv::Mat();
+//    }
 
     // simply reset the id counter
     static void reset(){
@@ -193,16 +219,20 @@ public:
     }
 
     // print id, xyz, nr of ovservations, and observations
-    friend std::ostream& operator<< (std::ostream& stream, const Landmark& point) {
-        stream << "LANDMARK [ID:" << std::setw(5) << std::setfill(' ') << point.id << "]"
+    friend std::ostream& operator<< (std::ostream& stream, const Landmark& lm) {
+        stream << "LANDMARK [ID:" << std::setw(5) << std::setfill(' ') << lm.id << "]"
                << "[XYZ:"
-               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << point.xyz[0] << ","
-               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << point.xyz[1] << ","
-               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << point.xyz[1] << "]"
-               << "[Obs: " << std::setw(3) << std::setfill(' ') << point.seenFrom.size() << " = ";
+               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[0] << ","
+               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[1] << ","
+               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[1] << "]"
+               << "[Obs: " << std::setw(3) << std::setfill(' ') << lm.seenFrom.size() << " = ";
 
-        for (uint i=0; i<point.pointIds.size(); ++i){
-            stream << "(" << std::setw(5) << std::setfill(' ') << point.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << point.seenFrom[i]->getKfId() << ")";
+        for (uint i=0; i<lm.pointIds.size(); ++i){
+            if (i==static_cast<uint>(lm.getCurrentObs())){
+                stream << "(**" << std::setw(5) << std::setfill(' ') << lm.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << lm.seenFrom[i]->getKfId() << "**)";
+            } else {
+                stream << "(" << std::setw(5) << std::setfill(' ') << lm.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << lm.seenFrom[i]->getKfId() << ")";
+            }
         }
 
         stream << " ]";
@@ -219,6 +249,7 @@ public:
     bool check() const {
         ROS_ASSERT(seenFrom.size()>0);
         ROS_ASSERT(pointIds.size()==seenFrom.size());
+        ROS_ASSERT(static_cast<int>(seenFrom.size())>getCurrentObs());
         return true;
 
     }
@@ -227,8 +258,15 @@ public:
 
 };
 
+// useful for using KF in a map
+//bool operator <(LandmarkPtr const& lhs, LandmarkPtr const& rhs);
+
+
 namespace OVO {
     void landmarks2points(const LandMarkPtrs& lms, Points3d& points, const Ints& ind=Ints());
 }
+
+
+
 
 #endif // LANDMARK_HPP

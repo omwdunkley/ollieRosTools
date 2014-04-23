@@ -94,7 +94,7 @@ class VoNode{
             // Publish TF for each KF
             ROS_INFO("NOD = Publishing TF for each KF");
             const FramePtrs& kfs = odometry.getKeyFrames();
-            const FramePtr& kf = kfs[0];
+            //const FramePtr& kf = kfs[0];
             for(uint i=0; i<kfs.size(); ++i){
                 pubTF.sendTransform(kfs[i]->getStampedTransform());
             }

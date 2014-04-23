@@ -8,6 +8,7 @@
 #include "g2o/core/cache.h"
 
 const static double DEFAULT_COORDINATE_SIZE = 1.5;
+const static double DEFAULT_COORDINATE_WIDTH = 1.5;
 
 VertexPose::VertexPose() :
     g2o::BaseVertex<6, Eigen::Isometry3d>(),
@@ -61,8 +62,10 @@ bool VertexPoseDrawAction::refreshPropertyPtrs(HyperGraphElementAction::Paramete
 
     if (_previousParams) {
         _coordinate_size = _previousParams->makeProperty<g2o::FloatProperty>(_typeName + "::COORDINATE_FRAME_SIZE", DEFAULT_COORDINATE_SIZE);
+        _coordinate_size = _previousParams->makeProperty<g2o::FloatProperty>(_typeName + "::DEFAULT_COORDINATE_WIDTH", DEFAULT_COORDINATE_WIDTH);
     } else {
         _coordinate_size = 0;
+        _coordinate_width = 0;
     }
 
     return true;
@@ -96,14 +99,17 @@ g2o::HyperGraphElementAction* VertexPoseDrawAction::operator()(g2o::HyperGraph::
     glMultMatrixd(that->estimate().matrix().data());
 
     // check param is not null pointer
-    float coordinate_size = _coordinate_size == 0 ? DEFAULT_COORDINATE_SIZE : _coordinate_size->value();
+    float coordinate_size  = _coordinate_size  == 0 ? DEFAULT_COORDINATE_SIZE  : _coordinate_size->value();
+    float coordinate_width = _coordinate_width == 0 ? DEFAULT_COORDINATE_WIDTH : _coordinate_width->value();
 
-    //make the first frame bigger
-    if (that->id() == 0) {
-        coordinate_size *= 3;
+    //make fixed frames bigger
+    if (that->fixed()) {
+        coordinate_size *= 1.5f;
+        coordinate_width *= 3.f;
     }
 
-    drawCoordinateSys(coordinate_size);
+
+    drawCoordinateSys(coordinate_size, coordinate_width);
 
     g2o::CacheContainer* caches=that->cacheContainer();
 

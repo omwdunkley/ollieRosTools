@@ -37,3 +37,9 @@ void OVO::landmarks2points(const LandMarkPtrs& lms, Points3d& points, const Ints
         }
     }
 }
+
+//// useful for std::map<LandmarkPtr, ...> myMap();
+//bool operator <(LandmarkPtr const& lhs, LandmarkPtr const& rhs){
+//    return lhs->getId() < rhs->getId();
+//}
+

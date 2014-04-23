@@ -29,8 +29,8 @@ inline void drawTriangle(float xSize, float ySize) {
     glEnd();
 }
 
-inline void drawCoordinateSys(float size) {
-    glLineWidth(3.5);
+inline void drawCoordinateSys(float size, float width=3.5) {
+    glLineWidth(width);
     glDisable(GL_LIGHTING);
 
 // X axis

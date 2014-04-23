@@ -12,6 +12,8 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+#include <ros/package.h>
+
 #include <g2o/core/sparse_optimizer.h>
 #include <g2o/core/block_solver.h>
 #include <g2o/core/solver.h>
@@ -135,28 +137,25 @@ class OdoMap {
         }
 
         // Gets all the descriptors most likely to be observable from the given frame
-        uint getAllPossibleObservations(const FramePtr& f, cv::Mat& desc, Points3d& points, Ints& obsIds, Ints& LmIds) const{
+        uint getAllPossibleObservations(const FramePtr& f, cv::Mat& desc, std::vector<LandmarkPtr>& lms){
             ROS_INFO("MAP > Getting all possible observations of [%lu] landmarks from frame [%d|%d]", landmarks.size(), f->getId(), f->getKfId());
             ros::WallTime t0 = ros::WallTime::now();
             desc = cv::Mat();
-            points.clear();
-            obsIds.clear();
-            LmIds.clear();
 
-            // add points
+            lms.clear();
+            lms.reserve(landmarks.size());
+
+            // add points that are visible. Also sets within the LM from which frame it was visible
             for (uint i=0; i<landmarks.size(); ++i){
-                const LandmarkPtr& lm = landmarks[i];
-                int obsId = lm->visibleFrom(f);
-                if (obsId>=0){
-                    desc.push_back(lm->getObservationDesc(obsId));
-                    points.push_back(lm->getPosition());
-                    obsIds.push_back(obsId);
-                    LmIds.push_back(i);
+                LandmarkPtr& lm = landmarks[i];
+                if (lm->visibleFrom(f)){
+                    lms.push_back(lm);
+                    desc.push_back(lm->getObservationDesc());
                 }
             }
             Landmark::printStats();
-            ROS_INFO(OVO::colorise("MAP < Found [%lu/%lu] possible observations from frame [%d|%d] in [%.1fms]", OVO::FG_MAGNETA).c_str(),points.size(), landmarks.size(), f->getId(), f->getKfId(), (ros::WallTime::now()-t0).toSec()*1000.);
-            return points.size();
+            ROS_INFO(OVO::colorise("MAP < Found [%lu/%lu] possible observations from frame [%d|%d] in [%.1fms]", OVO::FG_MAGNETA).c_str(),lms.size(), landmarks.size(), f->getId(), f->getKfId(), (ros::WallTime::now()-t0).toSec()*1000.);
+            return lms.size();
         }
 
 
@@ -184,67 +183,22 @@ class OdoMap {
         /// Matching Functions frame-frame points, frame-map points, frame->closest frames,
 
 
-        // Matches against the map
-        double match2Map(FramePtr& f, DMatches& matches, double& time/*, Points3d points, DMatches& ms*/){
+        // Matches against the map. Returns matches, corresponding points, and the identifiers
+        double match2Map(FramePtr& f, DMatches& matches, std::vector<LandmarkPtr>& lms, double& time/*, Points3d points, DMatches& ms*/){
+            ROS_INFO("MAP > Matching Frame [%d|%d] against MAP with [%lu] landmarks", f->getId(), f->getKfId(), landmarks.size() );
             ROS_ASSERT(landmarks.size()>0);
             ROS_ASSERT(keyframes.size()>0);
             matches.clear();
 
-            /// Get landmarks that are potentially visible
+            //TODO: shouldnt we also time this?
+            /// Get landmarks that are potentially visible. descs and LMS are now aligned
             cv::Mat descs;
-            Points3d mapPts;
-            Ints obsIds;
-            Ints lmIds;
-            getAllPossibleObservations(f, descs, mapPts, obsIds, lmIds);
+            getAllPossibleObservations(f, descs, lms);
 
-
-
-            /// Do Matching vs Map
-
-
-            double disparity = matcher.matchMap(descs, mapPts, f, matches, time, Ints() );
-
-            /// AT THIS POINT WE SHOULD RETURN TO ODOMETRY; RECOMPUTE POSE USING RANSAC; KEEP INLIERS, TRIANAGULATE NEW POINTS, then return here, add observations, kf, bundle adjust
-
-
-
-            /// todo, should we do an additional VO RANSAC before? PROBABLY
-
-
-            /// add observations to landmarks and frame f
-            ROS_INFO("MAP = Adding [%lu] landmark observations from Frame [%d|%d]", matches.size(), f->getId(), f->getKfId());
-            std::map<int,int> kfObsCounter;
-            for (uint i=0; i<matches.size(); ++i){
-                LandmarkPtr& lm = landmarks[lmIds[matches[i].trainIdx]];
-                f ->addLandMarkRef(matches[i].queryIdx, lm);
-                lm->addObservation( f, matches[i].queryIdx);
-                ++kfObsCounter[landmarks[lmIds[i]]->getObservationFrame(obsIds[i])->getKfId()]; //histogram, count which kfs we f shared observations which
-            }
-
-            ROS_INFO(OVO::colorise("MAP = Shared Observations with with Frame [%d|%d]:", OVO::FG_BLUE).c_str(), f->getId(), f->getKfId());
-            ROS_INFO("   KEYFRAME   | OBS NR");
-            for(std::map<int,int>::const_iterator it=kfObsCounter.begin(); it!=kfObsCounter.end(); ++it) {
-                ROS_INFO("   [%3d|%4d] | %3d/%d",it->first, keyframes[it->first]->getKfId(), it->second,  keyframes[it->first]->getLandmarkRefNr());
-            }
-
-
-
-
-
-            /// Add KF to map
-            pushKF(f);
-
-
-            /// optimise
-            bundleAdjust();
-
-
-
-            /// Triangulate new points
+            /// Do Matching vs Map. Aligns lms with matches
+            const double disparity =  matcher.matchMap(descs, lms, f, matches, time, Ints() );
+            ROS_INFO("MAP < Found [%lu/%lu] matches for Frame [%d|%d] vs MAP with disparity [%f]", matches.size(), lms.size(), f->getId(), f->getKfId(), disparity);
             return disparity;
-
-
-
         }
 
 
@@ -285,6 +239,10 @@ class OdoMap {
                 keyframes.push_back(frame);
                 currentFrame = frame;
                 ROS_INFO("MAP < KF PUSHED [KFS = %lu]", getKeyframeNr());
+
+                // optimise
+                bundleAdjust();
+
                 // Check we dont have too many keyframes
                 shirnkKFs();
             }
@@ -498,7 +456,7 @@ class OdoMap {
                 }
                 structure_only_ba.calc(points, g2oIter);
             }
-            optimizer.save("map_ba.g2o");
+            optimizer.save((ros::package::getPath("ollieRosTools")+"/data/map_ba.g2o").c_str());
             ROS_INFO("g2o > Performing full BA:");
             optimizer.optimize(g2oIter);
             ros::WallTime tOpt = ros::WallTime::now();
@@ -613,7 +571,7 @@ class OdoMap {
         // print id, xyz, nr of ovservations, and observations
         friend std::ostream& operator<< (std::ostream& stream, const OdoMap& map) {
             stream << "\nMap Statistics"
-                   << "\n    Keyframes:       [" << std::setw(3) << std::setfill(' ') << map.keyframes.size() << "]"
+                   << "\n    Keyframes:       [" << std::setw(5) << std::setfill(' ') << map.keyframes.size() << "]"
                    << "\n    Landmarks:       [" << std::setw(5) << std::setfill(' ') << map.landmarks.size() << "]"
                    << "\n    Latest KeyFrame: ["
                    << std::setw(5) << std::setfill(' ') << map.getLatestKF()->getId() << "|"

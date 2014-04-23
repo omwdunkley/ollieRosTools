@@ -150,3 +150,9 @@ float Frame::compareSBI(FramePtr& f) {
 
     return value;
 }
+
+
+// useful for using KF in a map
+bool operator <(FramePtr const& lhs, FramePtr const& rhs){
+    return lhs->getId() < rhs->getId();
+}

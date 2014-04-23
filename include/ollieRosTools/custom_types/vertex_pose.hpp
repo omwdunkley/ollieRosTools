@@ -72,6 +72,7 @@ public:
 protected:
     virtual bool refreshPropertyPtrs(g2o::HyperGraphElementAction::Parameters* params_);
     g2o::FloatProperty* _coordinate_size;
+    g2o::FloatProperty* _coordinate_width;
 };
 #endif
 

@@ -245,18 +245,88 @@ private:
 
 
         double t=0;
-        bool okay = map.match2Map(f, matchesVO, t);
-        timeMA += t;
+
+
+        /// match against map, getting possible observations
+        std::vector<LandmarkPtr> lms;
+
+        disparity = map.match2Map(f, matches, lms, t); timeMA += t;
+
+        // Show common observations
+        std::map<FramePtr,int> kfObsCounter;
+        for (uint i=0; i<matches.size(); ++i){
+            ++kfObsCounter[lms[matches[i].trainIdx]->getObservationFrame()]; //histogram, count which kfs we f shared observations which
+        }
+        ROS_INFO(OVO::colorise("MAP = MATCHED Shared Observations with with Frame [%d|%d]:", OVO::FG_BLUE).c_str(), f->getId(), f->getKfId());
+        ROS_INFO("   KEYFRAME   | OBS NR");
+        for(std::map<FramePtr,int>::const_iterator it=kfObsCounter.begin(); it!=kfObsCounter.end(); ++it) {
+            ROS_INFO("   [%3d|%4d] | %3d/%d",it->first->getId(), it->first->getKfId(), it->second,  it->first->getLandmarkRefNr());
+        }
+
+
+
+
+        // Check we could match enough
+        if (matches.size()<5){
+             ROS_WARN("ODO < FAILED TO ADD KEYFRAME, Not enough matches [%lu] after [%.1fms]", matches.size(),(ros::WallTime::now()-t0).toSec()*1000.);
+             return false;
+        }
+
+        /// RECOMPUTE POSE USING RANSAC; KEEP INLIERS
+        /// THIS IS OPTIONAL!
+        bool reprojectMapMatches = false;
+        if (reprojectMapMatches){
+            ROS_INFO("ODO > Filtering [%lu] Matches with Ransac", matches.size());
+
+            /// TODO: filter using RANSAC
+            ROS_INFO("ODO < Kept [%lu/%lu] = %f%% after ransac filtering", matchesVO.size(), matches.size(), static_cast<float>(matchesVO.size())/matches.size()*100.f);
+         } else {// optional reprojectMapMatches
+             matchesVO = matches;
+         }
+
+
+        // Check we have enough matches left
+        if (matchesVO.size()<5){
+             ROS_WARN("ODO < FAILED TO ADD KEYFRAME, Not enough matchesVO after filtering [%lu] after [%.1fms]", matchesVO.size(),(ros::WallTime::now()-t0).toSec()*1000.);
+             return false;
+        }
+
+
+
+
+        /// TRIANAGULATE NEW POINTS
+        /// TODO
+
+
+
+        /// THIS SHOULD PROBABLY BE DONE INSIDE THE MAP CLASS!
+        /// Add observations to landmarks
+        ROS_INFO("MAP = Adding [%lu] landmark observations from Frame [%d|%d]", matchesVO.size(), f->getId(), f->getKfId());
+        std::map<FramePtr,int> kfObsCounterVO; //TODO: use std::map<FramePtr,int> kfObsCounter; // with key ->getId()
+        for (uint i=0; i<matchesVO.size(); ++i){
+            LandmarkPtr& lm = lms[matchesVO[i].trainIdx];
+            f ->addLandMarkRef(matchesVO[i].queryIdx, lm);
+            lm->addObservation( f, matchesVO[i].queryIdx);
+            ++kfObsCounterVO[lm->getObservationFrame()]; //histogram, count which kfs we f shared observations which
+        }
+
+        ROS_INFO(OVO::colorise("ODO = ACTUAL Shared Observations with with Frame [%d|%d]:", OVO::FG_BLUE).c_str(), f->getId(), f->getKfId());
+        ROS_INFO("   KEYFRAME   | OBS NR");
+        for(std::map<FramePtr,int>::const_iterator it=kfObsCounterVO.begin(); it!=kfObsCounterVO.end(); ++it) {
+            ROS_INFO("   [%3d|%4d] | %3d/%3d (%3d)",it->first->getId(), it->first->getKfId(), it->second, kfObsCounter[it->first], it->first->getLandmarkRefNr());
+        }
+
+
+        /// Add KF to map
+        map.pushKF(f);
+
+
 
         double time = (ros::WallTime::now()-t0).toSec();
         timeVO += time;
 
-        if (okay){
-            ROS_INFO("ODO < KEYFRAME ADDED [%d|%d] in [%1.fms]", f->getId(), f->getKfId(), time*1000);
-        } else {
-            ROS_WARN("ODO < FAILED TO ADD KEYFRAME in [%1.fms]", time*1000.);
-        }
-        return okay;
+        ROS_INFO("ODO < KEYFRAME ADDED [%d|%d] in [%1.fms]", f->getId(), f->getKfId(), time*1000);
+        return true;
 
     }
 

@@ -6,10 +6,10 @@
 #include <opencv2/opencv.hpp>
 
 #include <ollieRosTools/VoNode_paramsConfig.h>
-//#include <ollieRosTools/Map.hpp>
-class OdoMap;
 #include <ollieRosTools/Frame.hpp>
+#include <ollieRosTools/Landmark.hpp>
 #include <ollieRosTools/aux.hpp>
+
 
 
 
@@ -153,7 +153,7 @@ class Matcher{
         void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
         // Match f against map. Returns angular disparity error
-        double matchMap(const cv::Mat& mapD, const Points3d& mapPts, FramePtr& f, DMatches& matches, double& time, const Ints& fMask=Ints());
+        double matchMap(const cv::Mat& mapD, std::vector<LandmarkPtr>& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask=Ints());
 
         // Match f against kframe. Returns angular disparity error
         double matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask=Ints(), const Ints& kfMask=Ints(), const FramePtr& fClose = FramePtr());

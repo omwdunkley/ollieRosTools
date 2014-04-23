@@ -135,7 +135,7 @@ class Frame{
             ROS_INFO("FRA = NEW UNINITIALISED FRAME");
         }
         virtual ~Frame(){
-            ROS_INFO(OVO::colorise("FRA = Destroying frame [%d|%d]",OVO::FG_LGRAY).c_str(),getId(), getKfId());
+            ROS_INFO(OVO::colorise("FRA = Destroying frame [%d|%d]",OVO::FG_DGRAY).c_str(),getId(), getKfId());
         }
 
         Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask=cv::Mat());
@@ -828,7 +828,7 @@ class FrameSynthetic : public Frame {
         }
 
         virtual ~FrameSynthetic(){
-            ROS_INFO(OVO::colorise("FRA = Destroying Synthetic frame [%d|%d]",OVO::FG_LGRAY).c_str(),getId(), getKfId());
+            ROS_INFO(OVO::colorise("FRA = Destroying Synthetic frame [%d|%d]",OVO::FG_DGRAY).c_str(),getId(), getKfId());
         }
 
 
@@ -840,6 +840,9 @@ class FrameSynthetic : public Frame {
 
 };
 
+
+// useful for using KF in a map
+bool operator <(FramePtr const& lhs, FramePtr const& rhs);
 
 
 #endif // FRAME_HPP

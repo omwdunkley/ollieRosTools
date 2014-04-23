@@ -134,8 +134,8 @@ void Matcher::match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matc
 
 
 
-// Match f against map. F should have a decent post estimate. mapPts and mapD should be prefiltered based on frame-landmark observability
-double Matcher::matchMap(const cv::Mat& mapD, const Points3d& mapPts, FramePtr& f, DMatches& matches, double& time, const Ints& fMask){
+// Match f against map. F should have a decent post estimate. lms and mapD should be prefiltered based on frame-landmark observability
+double Matcher::matchMap(const cv::Mat& mapD, std::vector<LandmarkPtr>& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask){
     ROS_ASSERT(f->poseEstimated());
     ros::WallTime t0 = ros::WallTime::now();
 
@@ -143,16 +143,16 @@ double Matcher::matchMap(const cv::Mat& mapD, const Points3d& mapPts, FramePtr& 
     const cv::Mat& qD =  f->getDescriptors();
     Eigen::MatrixXd qBV =  f->getBearings();
 
-    ROS_INFO("MAT [H] > Matching Frame[%d|%d] with [%d] bearing against [%lu] Map points", f->getId(), f->getKfId(), qD.rows, mapPts.size());
+    ROS_INFO("MAT [H] > Matching Frame[%d|%d] with [%d] bearing against [%lu] Map points", f->getId(), f->getKfId(), qD.rows, lms.size());
 
 
     /// Get map points as bearings in frame f
     Eigen::Affine3d inverseSolution;
     inverseSolution = f->getPose().inverse();
-    Eigen::MatrixXd tBV(mapPts.size(),3);
+    Eigen::MatrixXd tBV(lms.size(),3);
     for(int i=0; i<tBV.rows(); ++i){
         // change to frame f
-        tBV.row(i) = inverseSolution * mapPts[i];
+        tBV.row(i) = inverseSolution * lms[i]->getPosition();
     }
     // Normalise to unit vectors
     tBV.rowwise().normalize();
