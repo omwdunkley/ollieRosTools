@@ -231,8 +231,7 @@ int main(int argc, const char* argv[]){
                     z += Vector2d(Sample::gaussian(PIXEL_NOISE), Sample::gaussian(PIXEL_NOISE));
                     g2o::EdgeProjectXYZ2UV * e = new g2o::EdgeProjectXYZ2UV();
                     e->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_p));
-                    e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>
-                                 (optimizer.vertices().find(j)->second));
+                    e->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertices().find(j)->second));
                     e->setMeasurement(z);
                     e->information() = Matrix2d::Identity();
                     if (ROBUST_KERNEL) {

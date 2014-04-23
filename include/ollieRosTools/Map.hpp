@@ -5,6 +5,7 @@
 
 #include <deque>
 #include <map>
+#include <stdio.h>
 
 
 #include <Eigen/StdVector>
@@ -187,6 +188,7 @@ class OdoMap {
         double match2Map(FramePtr& f, DMatches& matches, double& time/*, Points3d points, DMatches& ms*/){
             ROS_ASSERT(landmarks.size()>0);
             ROS_ASSERT(keyframes.size()>0);
+            matches.clear();
 
             /// Get landmarks that are potentially visible
             cv::Mat descs;
@@ -210,19 +212,19 @@ class OdoMap {
 
 
             /// add observations to landmarks and frame f
-            ROS_INFO("MAP = Adding [%lu] landmark observations from frame [%d|%d]", matches.size(), f->getId(), f->getKfId());
+            ROS_INFO("MAP = Adding [%lu] landmark observations from Frame [%d|%d]", matches.size(), f->getId(), f->getKfId());
             std::map<int,int> kfObsCounter;
             for (uint i=0; i<matches.size(); ++i){
                 LandmarkPtr& lm = landmarks[lmIds[matches[i].trainIdx]];
                 f ->addLandMarkRef(matches[i].queryIdx, lm);
                 lm->addObservation( f, matches[i].queryIdx);
-                ++kfObsCounter[landmarks[lmIds[i]]->getObservationFrame(obsIds[i])->getId()]; //histogram, count which kfs we f shared observations which
+                ++kfObsCounter[landmarks[lmIds[i]]->getObservationFrame(obsIds[i])->getKfId()]; //histogram, count which kfs we f shared observations which
             }
 
-            ROS_INFO("MAP = Shared Observation Matches:");
-            ROS_INFO(" KEYFRAME  | OBS NR");
+            ROS_INFO(OVO::colorise("MAP = Shared Observations with with Frame [%d|%d]:", OVO::FG_BLUE).c_str(), f->getId(), f->getKfId());
+            ROS_INFO("   KEYFRAME   | OBS NR");
             for(std::map<int,int>::const_iterator it=kfObsCounter.begin(); it!=kfObsCounter.end(); ++it) {
-                ROS_INFO("[%3d|%4d] | %3d/%d",it->first, keyframes[it->first]->getKfId(), it->second,  keyframes[it->first]->getLandmarkRefNr());
+                ROS_INFO("   [%3d|%4d] | %3d/%d",it->first, keyframes[it->first]->getKfId(), it->second,  keyframes[it->first]->getLandmarkRefNr());
             }
 
 
@@ -380,6 +382,7 @@ class OdoMap {
         // DO bundle adjustment over all points and observations
         void bundleAdjust(){
             ROS_INFO("MAP > Doing G2O Bundle adjustment with [%lu] KeyFrames and [%lu] LandMarks", keyframes.size(), landmarks.size());
+            ROS_INFO_STREAM(*this);
             ros::WallTime tStart = ros::WallTime::now();
 
             /// create solver
@@ -397,7 +400,7 @@ class OdoMap {
 
             // Some meta data to print with
             bool ok;
-            int edgeCount = 0;
+            int obsCount  = 0;
             int lmCount    = 0;
             int poseCount  = 0;
 
@@ -425,7 +428,7 @@ class OdoMap {
                     v_pose->setFixed(true);
                     ROS_INFO("g2o = Fixing [%s] Keyframe [%d|%d] pose", i==0 ? "First" : "Last", kf->getId(), kf->getKfId());
                 }
-                v_pose->setId(kf->getKfId());
+                v_pose->setId(kf->getKfId()); //set id using unique statid id of keyframe class
                 poseCount++;
 
                 ok = optimizer.addVertex(v_pose);
@@ -440,10 +443,12 @@ class OdoMap {
             ROS_INFO("g2o = Adding up to [%lu landmarks], adding observations", landmarks.size());
             for (uint i=0; i<landmarks.size(); ++i){
                 LandmarkPtr& lm = landmarks[i];
-                uint obsNr = lm->getObservationsNr();
+                uint obsNr = lm->getObservationsNr();                               
+
+                // Make sure we can still triangulate, need at least two observations
                 if (obsNr>1){
                     VertexLandmarkXYZ * v_lm = new VertexLandmarkXYZ();
-                    v_lm->setId(lm->getId()+MAX_KF);
+                    v_lm->setId(lm->getId()+MAX_KF); //set id using unique static id of landmark class + offset
                     v_lm->setMarginalized(true);
                     v_lm->setFixed(false);
                     v_lm->setEstimate(lm->getPosition());
@@ -453,26 +458,27 @@ class OdoMap {
 
                     /// Setup add observations
                     for (uint fid=0; fid<obsNr; ++fid){
-                        const FramePtr& kf = lm->getObservationFrame(fid);
-                        const Bearing&  bv = lm->getObservationBearing(fid);
+                        // Add each observation of this landmark. The landmark knows from which KFs it is visible and we use these kf IDS to associate the edge to the correct KF
+                        const FramePtr& kf = lm->getObservationFrame(fid); //reference to the frame that observes this land mark
+                        const Bearing&  bv = lm->getObservationBearing(fid); //reference to observation
                         EdgePoseLandmarkReprojectBV * ef = new EdgePoseLandmarkReprojectBV();
-                        ef->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(kf->getId())));
+                        ef->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(kf->getKfId()))); //get association via KF id
                         ef->setVertex(1, dynamic_cast<g2o::OptimizableGraph::Vertex*>(v_lm));
-                        ef->setMeasurement(Eigen::Vector2d(bv[0]/bv[2], bv[1]/bv[2]));
+                        ef->setMeasurement(Eigen::Vector2d(bv[0]/bv[2], bv[1]/bv[2])); //bearing vector -> image plane (from norm==1 to depth==1)
                         ef->setInformation(Eigen::Matrix2d::Identity());
                         if (g2oHuber) {
                             g2o::RobustKernelHuber* rk = new g2o::RobustKernelHuber;
                             ef->setRobustKernel(rk);
                         }
                         ok = optimizer.addEdge(ef);
-                        ++edgeCount;
+                        ++obsCount;
                         ROS_ASSERT_MSG(ok, "g2o = Could not add edge between Landmark [%d] and frame [%d|%d] to pose graph", lm->getId(), kf->getId(), kf->getKfId());
                     }
                 }
 
             }
             ROS_INFO("g2o = Added [%d/%lu] landmarks", lmCount, landmarks.size());
-            ROS_INFO("g2o = Added [%d] pose-landmark edges", edgeCount);
+            ROS_INFO("g2o = Added [%d] pose-landmark edges", obsCount);
             ros::WallTime tSetup = ros::WallTime::now();
             ROS_INFO("g2o = Finished setting up [%.1fms]", (tSetup-tStart).toSec()*1000.);
 
@@ -504,7 +510,7 @@ class OdoMap {
             ROS_INFO("g2o = Updating [%d] Keyframe poses", poseCount);
             for (uint i=0; i<keyframes.size();++i){
                 FramePtr& kf = keyframes[i];
-                Pose poseEstimate = dynamic_cast<VertexPose*>(optimizer.vertex(kf->getId()))->estimate();
+                Pose poseEstimate = dynamic_cast<VertexPose*>(optimizer.vertex(kf->getKfId()))->estimate();
                 kf->setPose(poseEstimate);
             }
 
@@ -606,15 +612,25 @@ class OdoMap {
 
         // print id, xyz, nr of ovservations, and observations
         friend std::ostream& operator<< (std::ostream& stream, const OdoMap& map) {
-            stream << "Map "
-                   << "[KFs:" << std::setw(3) << std::setfill(' ') << map.keyframes.size() << "]"
-                   << "[LMs:" << std::setw(5) << std::setfill(' ') << map.landmarks.size() << "]"
-                   << "[Latest KeyFrame: "
+            stream << "\nMap Statistics"
+                   << "\n    Keyframes:       [" << std::setw(3) << std::setfill(' ') << map.keyframes.size() << "]"
+                   << "\n    Landmarks:       [" << std::setw(5) << std::setfill(' ') << map.landmarks.size() << "]"
+                   << "\n    Latest KeyFrame: ["
                    << std::setw(5) << std::setfill(' ') << map.getLatestKF()->getId() << "|"
                    << std::setw(3) << std::setfill(' ') << map.getLatestKF()->getKfId() << "]"
-                   << "[Current Frame:"
+                   << "\n    Current Frame:   ["
                    << std::setw(5) << std::setfill(' ') << map.currentFrame->getId() << "|"
                    << std::setw(3) << std::setfill(' ') << map.currentFrame->getKfId() << "]" ;
+             stream << "\nMAP KF Details";
+             for (uint i=0; i<map.keyframes.size(); ++i){
+                 char buffer [128]; //yeah yeah i know
+                 snprintf(buffer, 128, "\n    %3u: KF [%4d|%3d] -> %4d/%4lu observations", i, map.keyframes[i]->getId(),map.keyframes[i]->getKfId(), map.keyframes[i]->getLandmarkRefNr(), map.getLandmarkNr() );
+                 stream << buffer;
+             }
+
+
+
+
             return stream;
         }
 

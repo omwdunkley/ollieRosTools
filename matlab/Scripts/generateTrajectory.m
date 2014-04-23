@@ -6,7 +6,8 @@ generateTrajectorySettings
 
 
 %% Get points
-features = get_features(99, NR_F);
+%features = get_features(99, NR_F);
+features = get_featuresCircle(99, NR_F);
 nr_f = size(features,2);
 
 %% Get Traj
@@ -74,7 +75,7 @@ end
 
 
 % Plot Scene
-% plot_scene
+plot_scene
 
 % Plot Movie 2d-3d
 % plot_movie

@@ -548,7 +548,7 @@ class Frame{
         }
 
         uint getLandmarkRefNr() const {
-            return landmarkRefs.size();
+            return landmarkCounter; //landmarkRefs.size();
         }
 
 

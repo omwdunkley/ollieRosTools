@@ -14,8 +14,8 @@ plot_frame(WORLD, 1,'World')
 % Plot Coords
 for step=1:nr_t
 %     plot_frame(W2OBJ(:,:,step),0.2,'CR');
-    plot_frame(W2C(:,:,step),0.2,'C');
-    plot_frame(W2IMU(:,:,step),0.1,'IMU');
+    plot_frame(W2C(:,:,step),0.6,'C');
+    plot_frame(W2IMU(:,:,step),0.2,'IMU');
     plot3([trajcam_xyz(1,step) trajimu_xyz(1,step)], ...
           [trajcam_xyz(2,step) trajimu_xyz(2,step)], ...
           [trajcam_xyz(3,step) trajimu_xyz(3,step)], ':m' );

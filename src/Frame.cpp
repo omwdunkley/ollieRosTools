@@ -64,10 +64,10 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
 
 
 
-void Frame::addLandMarkRef(int id, const LandmarkPtr& lm){
-    ++landmarkCounter;
+void Frame::addLandMarkRef(int id, const LandmarkPtr& lm){    
     ROS_ASSERT(static_cast<uint>(id)<keypointsImg.size() && id>=0);
     ROS_ASSERT_MSG(landmarkRefs[id].empty(), "FRA = Landmark [%d] insertion failed, Landmark [%d] already in position [%d]!", lm->getId(), landmarkRefs[id]->getId(), id);
+    ++landmarkCounter;
     landmarkRefs[id] = lm;
 }
 

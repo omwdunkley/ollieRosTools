@@ -47,6 +47,22 @@ if ID==4
     rpy = deg2rad(rpy);
 end
 
+% turn all directions at same time
+if ID==5
+        
+    
+    [x,y]=pol2cart(linspace(0,2*pi,NR)+2+sin(linspace(0,4*pi,NR))./3, 5+sin(linspace(0,6*pi,NR)));    
+    z=1.5+sin(linspace(0,3*pi,NR)).*sin(linspace(0,4.5*pi,NR));%     
+%     plot3(x,y,z,':*'); axis equal; hold on;
+%     plot3(x(1:2),y(1:2),z(1:2),'-rd');
+%     plot3(x(1),y(1),z(1),'-gp');
+%     hold off;    
+    xyz = [x' y' z'];
+    rpy = [40*sin(linspace(0,6*pi,NR))' 20*cos(linspace(0,4*pi,NR))' linspace(360,0,NR)'-120-30.*sin(linspace(0,4*pi,NR))'];        % up down up roll_w pitch_c
+    rpy = deg2rad(rpy);
+    figure(2); clf; hold on; plot(rpy)
+end
+
 
 
 
