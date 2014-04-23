@@ -218,11 +218,13 @@ class synthData:
         # Looping / exit condition
         self.step += self.stepSize*self.forwards
         if self.step>=self.nr or self.step<0:
-            if self.options.loop:
+            if self.options.rev:
                 self.forwards *= -1;
                 rospy.loginfo("Looping data")
                 self.pub_marker.publish(self.CLOUD) 
                 self.step += self.stepSize * self.forwards
+            elif self.options.loop:
+                self.step =0
             else:
                 rospy.loginfo("Finished sending all data")
                 rospy.signal_shutdown("Finished sending all data")
@@ -372,7 +374,12 @@ def run(args=None):
                         dest='loop',
                         action="store_true",
                         default=False,
-                        help='Keep looping the file')      
+                        help='Keep looping the file')
+    parser.add_option('--rev',
+                        dest='rev',
+                        action="store_true",
+                        default=False,
+                        help='Play in reverse if you reach the ends')
     parser.add_option('--visualise', '-v',
                         dest='vis',
                         action="store_true",
