@@ -361,7 +361,7 @@ private:
 
 
         /// Add observations to landmarks
-        ROS_INFO("MAP = Adding [%lu] landmark observations from Frame [%d|%d]", matchesVO.size(), f->getId(), f->getKfId());
+        ROS_INFO("ODO = Adding [%lu] landmark observations from Frame [%d|%d]", matchesVO.size(), f->getId(), f->getKfId());
         std::map<FramePtr,int> kfObsCounterVO; //TODO: use std::map<FramePtr,int> kfObsCounter; // with key ->getId()
         for (uint i=0; i<matchesVO.size(); ++i){
             LandmarkPtr& lm = lms[matchesVO[i].trainIdx];
@@ -375,15 +375,46 @@ private:
             ROS_INFO("   [%3d|%4d] | %3d/%3d (%3d)",it->first->getId(), it->first->getKfId(), it->second, kfObsCounter[it->first], it->first->getLandmarkRefNr());
         }
 
-        /// Add KF to map
-        map.pushKF(f);
-
 
         /// TRIANAGULATE NEW POINTS
-        /// TODO
+        /// TODO (check baseline)
+        // TODO: if this is fast enough we could loop through kfs
 
+        ROS_INFO("ODO = Attempting to introduce new points");
+        // match vs current kf
+        DMatches matchesTri;
+        double matchesTriTime;
+        FramePtr& kf = map.getLatestKF();
+        double disparityTri = map.matchTriangulate(f, kf,matchesTri, matchesTriTime);
 
+        // triangulate
+        Points3d points3d;
+        Bearings bvF;
+        Bearings bvKF;
+        OVO::alignedBV(f->getBearings(), kf->getBearings(), matchesTri, bvF, bvKF);
+        /// TODO: check baseline
+        triangulate(kf->getPose().inverse()*f->getPose(), bvF, bvKF, points3d);
 
+        // Reproject
+        Doubles error = OVO::reprojectErrPointsVsBV(points3d, bvKF, DMatches());
+        DMatches matchesTriInlier;
+        Ints inliers;
+        for (uint i= 0; i<error.size(); ++i){
+            if (error[i]<voAbsRansacThresh){ /// TODO: own dynamic reconf var here
+                inliers.push_back(i);
+            }
+        }
+
+        // Extract inliers
+        OVO::vecReduceInd(points3d, inliers);
+        OVO::vecReduceInd(matchesTri, matchesTriInlier, inliers);
+        OVO::transformPoints(kf->getPose(), points3d);
+        map.pushKFWithLandmarks(f, points3d, matchesTriInlier);
+
+        /// FOr every candidate keyframe, project map points and try to match. If successful, add observations
+        /// Repeat with different keyframe pair
+
+        // Add to map
         double time = (ros::WallTime::now()-t0).toSec();
         timeVO += time;
 

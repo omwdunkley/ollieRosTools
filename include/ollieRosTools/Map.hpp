@@ -152,6 +152,8 @@ class OdoMap {
                     desc.push_back(lm->getObservationDesc());
                 }
             }
+
+
             Landmark::printStats();
             ROS_INFO(OVO::colorise("MAP < Found [%lu/%lu] possible observations from frame [%d|%d] in [%.1fms]", OVO::FG_MAGNETA).c_str(),lms.size(), landmarks.size(), f->getId(), f->getKfId(), (ros::WallTime::now()-t0).toSec()*1000.);
             return lms.size();
@@ -218,6 +220,15 @@ class OdoMap {
 
         }
 
+
+        // Matches keyframe vs keyframe for triangulation. Does not match kps taht have already been matches. Returns disparity
+        /// TODO: for now very naiive
+        double matchTriangulate(FramePtr& f1, FramePtr& f2, DMatches& matches, double& time){
+            ROS_ASSERT(f1->poseEstimated());
+            ROS_ASSERT(f2->poseEstimated());
+            ROS_INFO("MAP = Matching Frame [%d|%d] against KeyFrame [%d|%d]", f1->getId(), f1->getKfId(), f2->getId(), f2->getKfId() );
+            return matcher.matchFrame(f1, f2,  matches, time, f1->getIndLM(), f2->getIndLM(), FramePtr(), true);
+        }
 
 
 
@@ -300,6 +311,35 @@ class OdoMap {
         }
 
 
+
+
+        // Insert landmarks triangulaed between f and getLatestKf(). Points must be in the world frame
+        void pushKFWithLandmarks(FramePtr& f, const Points3d& points, const DMatches& ms){
+            // we just triangulated points between f and getLatestKf()
+            FramePtr& kf = getLatestKF();
+            ROS_INFO("MAP = Insering [%lu] new landmarks triangulated between frame [%d|%d] and keyframe [%d|%d]", ms.size(), f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
+            ROS_ASSERT(points.size() == ms.size());
+
+            ROS_ASSERT(kf->poseEstimated());
+            ROS_ASSERT(f->poseEstimated());
+
+            // Add frame
+            pushKF(f);
+
+            // add points
+            for (uint i=0; i<points.size(); ++i){
+                LandmarkPtr lm = new Landmark(points[i]);
+                // add frames to points
+                lm->addObservation( f, ms[i].queryIdx);
+                lm->addObservation(kf, ms[i].trainIdx);
+                // add points to frames
+                f ->addLandMarkRef(ms[i].queryIdx, lm);
+                kf->addLandMarkRef(ms[i].trainIdx, lm);
+                // add point to map
+                landmarks.push_back(lm);
+            }
+        }
+
         // Initialise the map. Must have an initial keyframe already, and this should then
         // add the second one. vomatches associate them and must be aligned to points (in world frame)
         void initialiseMap(FramePtr& f, const Points3d& points, const DMatches& voMatches){
@@ -308,29 +348,9 @@ class OdoMap {
             ROS_ASSERT(points.size() == voMatches.size());
             ROS_ASSERT(keyframes.size()==1);
             ROS_ASSERT(landmarks.size()==0);
-            ROS_ASSERT(f->poseEstimated());
 
+            pushKFWithLandmarks(f, points, voMatches);
 
-            // Short cut to current key frame
-            FramePtr& kf = getLatestKF();
-            ROS_ASSERT(kf->poseEstimated());
-
-            // Add frame
-            pushKF(f);
-
-
-            // add points
-            for (uint i=0; i<points.size(); ++i){
-                LandmarkPtr lm = new Landmark(points[i]);
-                // add frames to points
-                lm->addObservation( f, voMatches[i].queryIdx);
-                lm->addObservation(kf, voMatches[i].trainIdx);
-                // add points to frames
-                f ->addLandMarkRef(voMatches[i].queryIdx, lm);
-                kf->addLandMarkRef(voMatches[i].trainIdx, lm);
-                // add point to map
-                landmarks.push_back(lm);
-            }
             ROS_INFO_STREAM("MAP < Map Initialised. " << *this);
         }
 

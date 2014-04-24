@@ -191,7 +191,7 @@ double Matcher::matchMap(const cv::Mat& mapD, LandMarkPtrs& lms, FramePtr& f, DM
 
 // MATCHING AGAINST KEYFRAME
 /// TODO - instead of using kf bearing points, use the maskKF for the descriptors and use corresponding world points for bearings! (dont forget to normalise)
-double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask, const Ints& kfMask, const FramePtr& fClose){
+double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask, const Ints& kfMask, const FramePtr& fClose, bool triangulation){
     ROS_INFO("MAT [H] > matchFrame QueryFrame[%d|%d] vs TrainFrame[%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
 
     /// Get descriptors, possibly masking out some
@@ -203,38 +203,48 @@ double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double&
 
     ros::WallTime t0 = ros::WallTime::now();
 
-    /// Do masking predictions on masked bearing vectors
-    if (m_pred==PRED_KF){
-        mask = makeDisparityMask(qD.rows, tD.rows, qBV, tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
-    } else if (m_pred==PRED_KF_IMU){
-        // use the kf-f imu difference to unrotate bearings
-        Eigen::Matrix3d relRot;
-        OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relRot); // BV_kf = R*BV_f = BV_f'*R'
-        qBV *= relRot.transpose();
-        mask = makeDisparityMask(qD.rows, tD.rows, qBV, tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
-    } else if (m_pred==PRED_POSE) {
-        ROS_ASSERT(!fClose.empty());
-        ROS_ASSERT(fClose->poseEstimated());
-        // Use Rotation from close frame as estimate
-        Eigen::Matrix3d relRot = kf->getPose().linear().transpose() * fClose->getPose().linear(); // Rotation difference between KF and Fclose
-        qBV *= relRot.transpose();
-        mask = makeDisparityMask(qD.rows, tD.rows, qBV,  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
-        ROS_ERROR("NOT TESTED");
-    } else if (m_pred==PRED_POSE_IMU) {
-        // use the kf->closeFrame transformation + closeFrame-f imu difference to unrotate bearings
-        ROS_ASSERT(!fClose.empty());
-        ROS_ASSERT(fClose->poseEstimated());
-        // Fclose -> F via imu
-        Eigen::Matrix3d relRot;
-        OVO::relativeRotation(fClose->getImuRotation(), f->getImuRotation(), relRot); // BV_kf = R*BV_f = BV_f'*R'
-        // KF -> FClose via known Transform
-        relRot = relRot*kf->getPose().linear().transpose()*fClose->getPose().linear(); //Apply rotation difference between KF and Fclose
-        qBV *= relRot.transpose();
-        mask = makeDisparityMask(qD.rows, tD.rows, qBV,  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
-        ROS_ERROR("NOT TESTED");
+    if (triangulation){
+        /// We are matching to triangulate. In this case we invert the mask to only get matches between points without landmarks associated
+        /// TODO: should be ros parameters!
+        ROS_INFO("MAT [H] = Masking permissible 2d-2d matches for triangulation between frames with known poses");
+        const double minDis = OVO::angle2error(5);
+        const double maxDis = OVO::angle2error(90);
+        /// Put bearings in world frameTODO: is this the right way around? Transpose?
+        mask = makeDisparityTriangulationMask(fMask, kfMask, qBV*f->getPose().linear(), tBV*kf->getPose().linear(), minDis, maxDis);
     } else {
-        // default - match everything with everyting
-        mask = makeMask(qD.rows, tD.rows, fMask, kfMask);
+        /// Do masking predictions on masked bearing vectors
+        if (m_pred==PRED_KF){
+            mask = makeDisparityMask(qD.rows, tD.rows, qBV, tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
+        } else if (m_pred==PRED_KF_IMU){
+            // use the kf-f imu difference to unrotate bearings
+            Eigen::Matrix3d relRot;
+            OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relRot); // BV_kf = R*BV_f = BV_f'*R'
+            qBV *= relRot.transpose();
+            mask = makeDisparityMask(qD.rows, tD.rows, qBV, tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
+        } else if (m_pred==PRED_POSE) {
+            ROS_ASSERT(!fClose.empty());
+            ROS_ASSERT(fClose->poseEstimated());
+            // Use Rotation from close frame as estimate
+            Eigen::Matrix3d relRot = kf->getPose().linear().transpose() * fClose->getPose().linear(); // Rotation difference between KF and Fclose
+            qBV *= relRot.transpose();
+            mask = makeDisparityMask(qD.rows, tD.rows, qBV,  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
+            ROS_ERROR("NOT TESTED");
+        } else if (m_pred==PRED_POSE_IMU) {
+            // use the kf->closeFrame transformation + closeFrame-f imu difference to unrotate bearings
+            ROS_ASSERT(!fClose.empty());
+            ROS_ASSERT(fClose->poseEstimated());
+            // Fclose -> F via imu
+            Eigen::Matrix3d relRot;
+            OVO::relativeRotation(fClose->getImuRotation(), f->getImuRotation(), relRot); // BV_kf = R*BV_f = BV_f'*R'
+            // KF -> FClose via known Transform
+            relRot = relRot*kf->getPose().linear().transpose()*fClose->getPose().linear(); //Apply rotation difference between KF and Fclose
+            qBV *= relRot.transpose();
+            mask = makeDisparityMask(qD.rows, tD.rows, qBV,  tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask, kfMask);
+            ROS_ERROR("NOT TESTED");
+        } else {
+            // default - match everything with everyting
+            mask = makeMask(qD.rows, tD.rows, fMask, kfMask);
+        }
     }
 
     /// Do the actual matching
@@ -714,7 +724,8 @@ void matchSymmetryTest(const DMatchesKNN& ms1,const DMatchesKNN& ms2, DMatches& 
 /// MASK MAKING FUNCTIONS
 
 // Returns a mask where all intersecionts of rows[queryOk] = 1 and cols[trainOk] = 1 are 1 else 0
-cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk, const Ints& trainOk){
+// if pseudo invert is on, returns m kas where all rows[queryOk]=1 and cols[trainOk]=1 are 0 else 1
+cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk, const Ints& trainOk, const bool pseudoInverse){
     cv::Mat maskQ = cv::Mat::zeros(qSize, tSize, CV_8U);
     cv::Mat maskT = cv::Mat::zeros(qSize, tSize, CV_8U);
     if (queryOk.empty()){
@@ -735,7 +746,11 @@ cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk, const In
             maskT.col(trainOk[ti]).setTo(1);
         }
     }
-    return maskT & maskQ;
+    if (pseudoInverse){
+        return 1-(maskT | maskQ);
+    } else {
+        return maskT & maskQ;
+    }
 }
 
 /*
@@ -938,9 +953,8 @@ cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryBearings, c
 }
 */
 
-
 // Makes a mask that prefilters potential matches by using a predicted bearing vector
-cv::Mat makeDisparityMask(int qSize, int tSize, const Eigen::MatrixXd& queryBearings, const Eigen::MatrixXd& trainBearings, const double maxBVError, const OVO::BEARING_ERROR method, const Ints& queryOk, const Ints& trainOk){
+cv::Mat makeDisparityMask(int qSize, int tSize, const Eigen::MatrixXd& queryBearings, const Eigen::MatrixXd& trainBearings, const double maxBVError, const OVO::BEARING_ERROR method, const Ints& queryOk, const Ints& trainOk, const bool pseudoInverse){
     // We do the opposite first and then invert
 
     // kd tree would be nice...worth the overhead?
@@ -1016,6 +1030,47 @@ cv::Mat makeDisparityMask(int qSize, int tSize, const Eigen::MatrixXd& queryBear
 
 
 
+
+
+// masks a mask that takes two frames poses into account (epi polar constraint, depth and angle considerations)
+cv::Mat makeDisparityTriangulationMask(const Ints& f1bad, const Ints& f2bad, const Eigen::MatrixXd& bv1, const Eigen::MatrixXd& bv2, const double minDis, const double maxDis){
+    ROS_INFO("MAT [U] > Making Triangulation Disparity mask. Threshold [%f -> %f]", minDis, maxDis);
+    ROS_INFO("MAT [U] = Masking [%ld/%d] vs [%ld/%d] potential triangulations (%d combinations)",bv1.rows(),bv1.rows()-f1bad.size(),bv2.rows(), bv2.rows()-f2bad.size(),(bv2.rows()-f2bad.size())*(bv1.rows()-f1bad.size()) );
+    ros::WallTime t0 = ros::WallTime::now();
+
+    uint counter=0;
+
+    // mask of possible matches, excluding indicies given by f1bad, f2bad
+    cv::Mat mask = makeMask(bv1.rows(), bv2.rows(),f1bad, f2bad, true);
+    uint total = cv::countNonZero(mask);
+    ROS_ASSERT(total==(bv1.rows()-f1bad.size())*(bv2.rows()-f2bad.size()));
+
+
+    int nRows = mask.rows;
+    int nCols = mask.cols;
+    int r,c;
+    uchar* p;
+    double disparity;
+    for( r = 0; r < nRows; ++r){
+        p = mask.ptr<uchar>(r);
+        for ( c = 0; c < nCols; ++c){
+            if(p[c]) {
+                // valid combination
+                disparity = (1.0-(bv1.row(r) * bv2.row(c).transpose()));
+                //disparity = (1.0-(bv1.row(r) * bv2.row(c).transpose()));
+                if (disparity > minDis && disparity < maxDis){
+                    ++counter;
+                } else {
+                    p[c]=0;
+                }
+            }
+        }
+    }
+
+    ROS_ASSERT(cv::countNonZero(mask)==static_cast<int>(counter));
+    ROS_INFO("MAT [U] < Marked [%u/%u] matches, reduced by [%.1f%%] in [%.1fms]", counter, total, 100.f*(1.f-(static_cast<float>(counter)/total)), (ros::WallTime::now()-t0).toSec()*1000.);
+    return mask;
+}
 
 
 

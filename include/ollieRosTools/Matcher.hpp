@@ -73,7 +73,7 @@ void kltRefine(const KeyPoints& qKps, const KeyPoints& tKps, DMatches& matches, 
 /// MASK MAKING FUNCTIONS
 
 // Returns a mask where all intersecionts of rows[queryOk] = 1 and cols[trainOk] = 1 are 1 else 0
-cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk=Ints(), const Ints& trainOk=Ints(), const bool pseudoInverse=false);
 
 // Makes a mask that prefilters potential matches by using a predicted position - image plane version
 //cv::Mat makeDisparityMask(int qSize, int tSize, const Points2f& queryPoints, const Points2f& trainPoints, const double maxDisparity, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
@@ -82,9 +82,11 @@ cv::Mat makeMask(const int qSize, const int tSize, const Ints& queryOk=Ints(), c
 //cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryBearings, const Bearings& trainBearings, const double maxBVError, const OVO::BEARING_ERROR methodR = OVO::BVERR_DEFAULT, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
 
 // Makes a mask that prefilters potential matches by using a predicted bearing vector - optimise eigen version that only works with BVERR_OneMinusAdotB
-cv::Mat makeDisparityMask(int qSize, int tSize, const MatrixXd& queryBearings, const MatrixXd& trainBearings, const double maxBVError, const OVO::BEARING_ERROR methodR = OVO::BVERR_DEFAULT, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
+cv::Mat makeDisparityMask(int qSize, int tSize, const MatrixXd& queryBearings, const MatrixXd& trainBearings, const double maxBVError, const OVO::BEARING_ERROR methodR = OVO::BVERR_DEFAULT, const Ints& queryOk=Ints(), const Ints& trainOk=Ints(), const bool pseudoInverse=false);
 //cv::Mat makeDisparityMask(int qSize, int tSize, const Bearings& queryBearings, const Bearings& trainBearings, const double maxBVError, const OVO::BEARING_ERROR methodR = OVO::BVERR_DEFAULT, const Ints& queryOk=Ints(), const Ints& trainOk=Ints());
 
+// Makes a mask where disparity must be in a range. Here the Ints refer to keypoints we should ignore
+cv::Mat makeDisparityTriangulationMask(const Ints& f1bad, const Ints& f2bad, const Eigen::MatrixXd& bv1, const Eigen::MatrixXd& bv2, const double minDis=OVO::angle2error(5), const double maxDis=OVO::angle2error(90));
 
 
 
@@ -156,7 +158,7 @@ class Matcher{
         double matchMap(const cv::Mat& mapD, LandMarkPtrs& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask=Ints());
 
         // Match f against kframe. Returns angular disparity error
-        double matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask=Ints(), const Ints& kfMask=Ints(), const FramePtr& fClose = FramePtr());
+        double matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask=Ints(), const Ints& kfMask=Ints(), const FramePtr& fClose = FramePtr(), bool triangulation=false);
 
 
 
