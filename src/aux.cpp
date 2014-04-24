@@ -84,7 +84,6 @@ std::string OVO::colorise(const std::string& str, const FG& fg, const BG& bg){
     return ss.str();
 }
 
-
 void OVO::drawTextCenter(cv::Mat img, const std::string& text, const CvScalar RGB, const float textScale, const int textThickness){
     cv::Size textSize = cv::getTextSize(text, cv::FONT_HERSHEY_SIMPLEX, textScale, textThickness, NULL);
     cv::Point textOrg((img.cols - textSize.width)/2,(img.rows + textSize.height)/2);

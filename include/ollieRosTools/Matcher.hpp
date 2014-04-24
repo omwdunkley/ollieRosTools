@@ -153,7 +153,7 @@ class Matcher{
         void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
         // Match f against map. Returns angular disparity error
-        double matchMap(const cv::Mat& mapD, std::vector<LandmarkPtr>& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask=Ints());
+        double matchMap(const cv::Mat& mapD, LandMarkPtrs& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask=Ints());
 
         // Match f against kframe. Returns angular disparity error
         double matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask=Ints(), const Ints& kfMask=Ints(), const FramePtr& fClose = FramePtr());

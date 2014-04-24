@@ -135,7 +135,7 @@ void Matcher::match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matc
 
 
 // Match f against map. F should have a decent post estimate. lms and mapD should be prefiltered based on frame-landmark observability
-double Matcher::matchMap(const cv::Mat& mapD, std::vector<LandmarkPtr>& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask){
+double Matcher::matchMap(const cv::Mat& mapD, LandMarkPtrs& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask){
     ROS_ASSERT(f->poseEstimated());
     ros::WallTime t0 = ros::WallTime::now();
 

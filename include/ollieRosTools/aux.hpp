@@ -127,8 +127,6 @@ namespace OVO {
     std::string colorise(const std::string& str, const FG& fg, const BG& bg=BG_DEFAULT);
 
 
-
-
     /// Drawing Functions
     // Returns a color based on an internal colour map Green->Red (via blue, missing yellow on purpose) TODO: put this in a look up table
     CvScalar getColor(const float range_min, const float range_max, const float depth, bool reverse = false);

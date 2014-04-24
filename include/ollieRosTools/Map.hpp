@@ -137,13 +137,12 @@ class OdoMap {
         }
 
         // Gets all the descriptors most likely to be observable from the given frame
-        uint getAllPossibleObservations(const FramePtr& f, cv::Mat& desc, std::vector<LandmarkPtr>& lms){
+        uint getAllPossibleObservations(const FramePtr& f, cv::Mat& desc, LandMarkPtrs& lms){
             ROS_INFO("MAP > Getting all possible observations of [%lu] landmarks from frame [%d|%d]", landmarks.size(), f->getId(), f->getKfId());
             ros::WallTime t0 = ros::WallTime::now();
             desc = cv::Mat();
 
             lms.clear();
-            lms.reserve(landmarks.size());
 
             // add points that are visible. Also sets within the LM from which frame it was visible
             for (uint i=0; i<landmarks.size(); ++i){
@@ -184,7 +183,7 @@ class OdoMap {
 
 
         // Matches against the map. Returns matches, corresponding points, and the identifiers
-        double match2Map(FramePtr& f, DMatches& matches, std::vector<LandmarkPtr>& lms, double& time/*, Points3d points, DMatches& ms*/){
+        double match2Map(FramePtr& f, DMatches& matches, LandMarkPtrs& lms, double& time/*, Points3d points, DMatches& ms*/){
             ROS_INFO("MAP > Matching Frame [%d|%d] against MAP with [%lu] landmarks", f->getId(), f->getKfId(), landmarks.size() );
             ROS_ASSERT(landmarks.size()>0);
             ROS_ASSERT(keyframes.size()>0);

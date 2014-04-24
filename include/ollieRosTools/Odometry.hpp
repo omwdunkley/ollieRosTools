@@ -236,7 +236,7 @@ private:
     bool addKf(FramePtr& f){
         /// Start timer, show messages, check quality
         ros::WallTime t0 = ros::WallTime::now();
-        ROS_INFO(OVO::colorise("ODO > ATTEMPTING TO MAKE FRAME [%d] KEYFRAME",OVO::FG_MAGNETA).c_str(), f->getId());
+        ROS_INFO(OVO::colorise("ODO > ATTEMPTING TO MAKE FRAME [%d] KEYFRAME",OVO::FG_WHITE, OVO::BG_GREEN).c_str(), f->getId());
         const float quality = f->getQuality();
         if (quality < keyFrameQualityThreshold && quality>=0){
             ROS_WARN("ODO < FAILED TO ADD KEYFRAME, quality too bad [%f]", quality);
@@ -248,7 +248,7 @@ private:
 
 
         /// match against map, getting possible observations
-        std::vector<LandmarkPtr> lms;
+        LandMarkPtrs lms;
 
         disparity = map.match2Map(f, matches, lms, t); timeMA += t;
 
@@ -272,34 +272,94 @@ private:
              return false;
         }
 
+
+
         /// RECOMPUTE POSE USING RANSAC; KEEP INLIERS
         /// THIS IS OPTIONAL!
-        bool reprojectMapMatches = false;
+        bool reprojectMapMatches = true;
         if (reprojectMapMatches){
             ROS_INFO("ODO > Filtering [%lu] Matches with Ransac", matches.size());
+            ros::WallTime t1 = ros::WallTime::now();
+            matchesVO.clear();
 
-            /// TODO: filter using RANSAC
-            ROS_INFO("ODO < Kept [%lu/%lu] = %f%% after ransac filtering", matchesVO.size(), matches.size(), static_cast<float>(matchesVO.size())/matches.size()*100.f);
+            /// Get bearing vectors from current frame aligned with 3d land marks from keyframe aligned with matches
+            // Indicies
+            Ints fInd, mapInd;
+            OVO::match2ind(matches, fInd, mapInd);
+            // Bearings
+            Bearings bvFMatched;
+            OVO::matReduceInd(f->getBearings(), bvFMatched, fInd);
+            // 3d points
+            Points3d worldPts;
+            OVO::landmarks2points(lms, worldPts, mapInd);
+
+
+            /// DO ransac stuff
+            // ransac output
+            opengv::absolute_pose::CentralAbsoluteAdapter adapter(bvFMatched, worldPts);
+            Ints inliers;
+            if (voAbsPoseMethod==0){
+                ROS_INFO("ODO = Using Estimated Pose as Prior");
+                adapter.setR(f->getPose().linear());
+            }
+            boost::shared_ptr<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem>absposeproblem_ptr(
+                        new opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem(adapter,
+                            static_cast<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem::Algorithm>(voAbsPoseMethod)) );
+            opengv::sac::Ransac<opengv::sac_problems::absolute_pose::AbsolutePoseSacProblem> ransac;
+            ransac.sac_model_ = absposeproblem_ptr;
+            ransac.threshold_ = voAbsRansacThresh*2; /// TODO: this should be a new dynamic reconfigure variable!
+            ransac.max_iterations_ = voAbsRansacIter;
+
+            ROS_INFO("ODO > Computing RANSAC absolute pose estimate vs MAP over [%lu matches] with [threshold = %f] ", matches.size(), ransac.threshold_);
+            ransac.computeModel(1);
+
+            // Set as output
+            Pose transWtoF;
+            transWtoF = ransac.model_coefficients_;
+            std::swap(inliers, ransac.inliers_);
+            OVO::vecReduceInd<DMatches>(matches, matchesVO, inliers);
+
+
+            if (inliers.size()<5){
+                ROS_WARN("ODO < RANSAC failed on Absolute Pose Estimation vs MAP with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(),  ransac.iterations_, (ros::WallTime::now()-t1).toSec()*1000.);
+                return false;
+            } else {
+                ROS_INFO("ODO < Absolute Ransac vs MAP done with %lu/%lu inliers [%d iterations] [%.1fms]", inliers.size(), matches.size(), ransac.iterations_,  (ros::WallTime::now()-t1).toSec()*1000.);
+            }
+
+            if (voAbsNLO){
+                ROS_INFO("ODO > Doing NLO on Absolute Pose");
+                adapter.sett(transWtoF.translation());
+                adapter.setR(transWtoF.linear());
+                ros::WallTime tNLO = ros::WallTime::now();
+                Pose before = transWtoF;
+                //Compute the pose of a viewpoint using nonlinear optimization. Using all available correspondences. Works for central and non-central case.
+                //in:  adapter holding bearing vector to world point correspondences, the multi-camera configuration, plus the initial values.
+                //out: Pose of viewpoint (position seen from world frame and orientation from viewpoint to world frame, transforms points from viewpoint to world frame).
+                transWtoF = opengv::absolute_pose::optimize_nonlinear(adapter, inliers) ;
+                ROS_INFO("ODO < NLO Finished in [%.1fms]", (ros::WallTime::now()-tNLO).toSec()*1000);
+                ROS_INFO_STREAM("ODO = NLO Difference:\n  " << (before.inverse()*transWtoF).matrix());
+            }
+
+            // Update Pose
+
+            Pose before = f->getPose();
+            f->setPose(transWtoF);
+            ROS_INFO_STREAM("ODO = Updated frame ["<<f->getId()<<"|"<<f->getKfId()<<"] pose. Difference:\n"<<(before.inverse()*transWtoF).matrix());
+            ROS_INFO("ODO < Kept [%lu/%lu] = %f%% after ransac filtering in [%.1fms]", matchesVO.size(), matches.size(), static_cast<float>(matchesVO.size())/matches.size()*100.f, (ros::WallTime::now()-t1).toSec()*1000.);
+
+            // Check we have enough matches left
+            if (matchesVO.size()<5){
+                 ROS_WARN("ODO < FAILED TO ADD KEYFRAME, Not enough matchesVO after filtering [%lu] after [%.1fms]", matchesVO.size(),(ros::WallTime::now()-t0).toSec()*1000.);
+                 return false;
+            }
+
          } else {// optional reprojectMapMatches
              matchesVO = matches;
          }
 
 
-        // Check we have enough matches left
-        if (matchesVO.size()<5){
-             ROS_WARN("ODO < FAILED TO ADD KEYFRAME, Not enough matchesVO after filtering [%lu] after [%.1fms]", matchesVO.size(),(ros::WallTime::now()-t0).toSec()*1000.);
-             return false;
-        }
 
-
-
-
-        /// TRIANAGULATE NEW POINTS
-        /// TODO
-
-
-
-        /// THIS SHOULD PROBABLY BE DONE INSIDE THE MAP CLASS!
         /// Add observations to landmarks
         ROS_INFO("MAP = Adding [%lu] landmark observations from Frame [%d|%d]", matchesVO.size(), f->getId(), f->getKfId());
         std::map<FramePtr,int> kfObsCounterVO; //TODO: use std::map<FramePtr,int> kfObsCounter; // with key ->getId()
@@ -309,16 +369,18 @@ private:
             lm->addObservation( f, matchesVO[i].queryIdx);
             ++kfObsCounterVO[lm->getObservationFrame()]; //histogram, count which kfs we f shared observations which
         }
-
         ROS_INFO(OVO::colorise("ODO = ACTUAL Shared Observations with with Frame [%d|%d]:", OVO::FG_BLUE).c_str(), f->getId(), f->getKfId());
         ROS_INFO("   KEYFRAME   | OBS NR");
         for(std::map<FramePtr,int>::const_iterator it=kfObsCounterVO.begin(); it!=kfObsCounterVO.end(); ++it) {
             ROS_INFO("   [%3d|%4d] | %3d/%3d (%3d)",it->first->getId(), it->first->getKfId(), it->second, kfObsCounter[it->first], it->first->getLandmarkRefNr());
         }
 
-
         /// Add KF to map
         map.pushKF(f);
+
+
+        /// TRIANAGULATE NEW POINTS
+        /// TODO
 
 
 
