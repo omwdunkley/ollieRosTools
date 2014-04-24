@@ -1035,7 +1035,7 @@ cv::Mat makeDisparityMask(int qSize, int tSize, const Eigen::MatrixXd& queryBear
 // masks a mask that takes two frames poses into account (epi polar constraint, depth and angle considerations)
 cv::Mat makeDisparityTriangulationMask(const Ints& f1bad, const Ints& f2bad, const Eigen::MatrixXd& bv1, const Eigen::MatrixXd& bv2, const double minDis, const double maxDis){
     ROS_INFO("MAT [U] > Making Triangulation Disparity mask. Threshold [%f -> %f]", minDis, maxDis);
-    ROS_INFO("MAT [U] = Masking [%ld/%d] vs [%ld/%d] potential triangulations (%d combinations)",bv1.rows(),bv1.rows()-f1bad.size(),bv2.rows(), bv2.rows()-f2bad.size(),(bv2.rows()-f2bad.size())*(bv1.rows()-f1bad.size()) );
+    ROS_INFO("MAT [U] = Masking [%ld/%ld] vs [%ld/%ld] potential triangulations (%ld combinations)",bv1.rows()-f1bad.size(),bv1.rows(), bv2.rows()-f2bad.size(),bv2.rows(),(bv2.rows()-f2bad.size())*(bv1.rows()-f1bad.size()) );
     ros::WallTime t0 = ros::WallTime::now();
 
     uint counter=0;

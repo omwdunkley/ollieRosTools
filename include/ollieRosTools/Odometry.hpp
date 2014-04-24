@@ -387,15 +387,17 @@ private:
         FramePtr& kf = map.getLatestKF();
         double disparityTri = map.matchTriangulate(f, kf,matchesTri, matchesTriTime);
 
+        ROS_INFO("ODO = [%lu] potential candidates matched with [%f] disparity, triangulating", matchesTri.size(), disparityTri);
         // triangulate
         Points3d points3d;
         Bearings bvF;
         Bearings bvKF;
         OVO::alignedBV(f->getBearings(), kf->getBearings(), matchesTri, bvF, bvKF);
         /// TODO: check baseline
-        triangulate(kf->getPose().inverse()*f->getPose(), bvF, bvKF, points3d);
+        triangulate(kf->getPose().inverse()*f->getPose(), bvKF, bvF, points3d);
 
         // Reproject
+        ROS_INFO("ODO = Triangulated [%lu] potential points, checing reprojection error. Thresh [%f]", points3d.size(),voAbsRansacThresh );
         Doubles error = OVO::reprojectErrPointsVsBV(points3d, bvKF, DMatches());
         DMatches matchesTriInlier;
         Ints inliers;
@@ -404,6 +406,7 @@ private:
                 inliers.push_back(i);
             }
         }
+        ROS_INFO("ODO = Successfully Projected [%lu/%lu] potential points", inliers.size(),points3d.size());
 
         // Extract inliers
         OVO::vecReduceInd(points3d, inliers);
