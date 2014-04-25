@@ -78,9 +78,9 @@ void OVO::testColorMap(){
 
 }
 
-std::string OVO::colorise(const std::string& str, const FG& fg, const BG& bg){
+std::string OVO::colorise(const std::string& str, const FG& fg, const BG& bg, const bool reset){
     std::stringstream ss;
-    ss<<"\033["<<fg<<"m"<<"\033["<<bg<<"m"<<str;
+    ss<<"\033["<<fg<<"m"<<"\033["<<bg<<"m"<<str<< (reset?"\033[0m":"");
     return ss.str();
 }
 

@@ -18,7 +18,7 @@ uint Landmark::failedFov   = 0;
 uint Landmark::totalObs    = 0;
 
 bool noRef(const LandmarkPtr& p){
-    return !(*(p.refcount)>1);
+    return p->getObservationsNr()==0;
 }
 
 

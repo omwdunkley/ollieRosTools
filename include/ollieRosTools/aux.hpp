@@ -124,7 +124,7 @@ namespace OVO {
     void tf2RPY(const Eigen::Matrix3d& T, double& R, double& P, double& Y);
     visualization_msgs::Marker getPointsMarker(const Points3d& worldPoints);
     void testColorMap();
-    std::string colorise(const std::string& str, const FG& fg, const BG& bg=BG_DEFAULT);
+    std::string colorise(const std::string& str, const FG& fg, const BG& bg=BG_DEFAULT, const bool reset=true);
 
 
     /// Drawing Functions

@@ -134,8 +134,10 @@ class Frame{
         Frame() : initialised(false){
             ROS_INFO("FRA = NEW UNINITIALISED FRAME");
         }
-        virtual ~Frame(){
+        virtual ~Frame(){            
             ROS_INFO(OVO::colorise("FRA = Destroying frame [%d|%d]",OVO::FG_DGRAY).c_str(),getId(), getKfId());
+            ROS_ASSERT(landmarkCounter==0); // must have deallocated all references!
+            landmarkRefs.clear();
         }
 
         Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask=cv::Mat());
@@ -147,6 +149,7 @@ class Frame{
 
         void addLandMarkRef(const int id, const LandmarkPtr& lm);
         void removeLandMarkRef(const int id);
+        void prepareRemoval();
 
         void computeSBI();
         float compareSBI(FramePtr& f);
@@ -340,13 +343,6 @@ class Frame{
             }
         }
 
-        // Prepares the keyframe for removal
-        void prepareRemoval(){
-            ROS_WARN("Frame [%d|%d] Preparing for removal", getId(), getKfId());
-            clearAllPoints();
-
-        }
-
         // gets the optical axis in the world frame
         const Eigen::Vector3d getOpticalAxisBearing() const {
             ROS_ASSERT(hasPoseEstimate);
@@ -496,7 +492,8 @@ class Frame{
             keypointsImg.clear();
             bearings = Eigen::MatrixXd();
             descriptors = cv::Mat();
-            landmarkRefs.clear();            
+            landmarkRefs.clear();
+            landmarkCounter=0;
             //descId = -1;
             //detId = -2; // unknown type
         }
@@ -841,8 +838,15 @@ class FrameSynthetic : public Frame {
 };
 
 
-// useful for using KF in a map
-bool operator <(FramePtr const& lhs, FramePtr const& rhs);
+// useful for std::map, find, etc
+inline bool operator==(const FramePtr& lhs, const int& fid){return lhs->getId() == fid;}
+inline bool operator==(const int& fid, const FramePtr& rhs){return rhs->getId() == fid;}
+inline bool operator==(const FramePtr& lhs, const FramePtr& rhs){return lhs->getId() == rhs->getId();}
+inline bool operator!=(const FramePtr& lhs, const FramePtr& rhs){return !operator==(lhs,rhs);}
+inline bool operator< (const FramePtr& lhs, const FramePtr& rhs){return lhs->getId() < rhs->getId();}
+inline bool operator> (const FramePtr& lhs, const FramePtr& rhs){return  operator< (rhs,lhs);}
+inline bool operator<=(const FramePtr& lhs, const FramePtr& rhs){return !operator> (lhs,rhs);}
+inline bool operator>=(const FramePtr& lhs, const FramePtr& rhs){return !operator< (lhs,rhs);}
 
 
 #endif // FRAME_HPP

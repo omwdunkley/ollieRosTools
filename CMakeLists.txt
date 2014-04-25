@@ -43,8 +43,8 @@ rosbuild_add_boost_directories()
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Ofast  -Wall -Wextra -msse2 -msse3 -msse4 -march=native -ffast-math")
 
 set(ROS_BUILD_TYPE RelWithDebInfo)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -msse2 -msse3 -msse4 -march=native -g") #-Wdouble-promotion
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Wall -Wextra -msse2 -msse3 -msse4 -march=native -g") #-Wdouble-promotion
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -march=native -g") #-Wdouble-promotion
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Wall -Wextra -march=native -g") #-Wdouble-promotion
 
 #set(ROS_BUILD_TYPE Debug)
 #set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -Wdouble-promotion -g")
@@ -52,8 +52,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Wall -Wextra -msse2
 
 find_package(OpenMP)
 if (OPENMP_FOUND)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -fpermissive")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -fpermissive")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} ")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} ")
 endif()
 
 
@@ -112,8 +112,10 @@ SET(CUSTOM_G2O_TYPES_SOURCES
               src/custom_types/edge_pose_pose.cpp
               src/custom_types/register_types.cpp)
 
-ROSBUILD_ADD_LIBRARY(g2o_custom_types ${CUSTOM_G2O_TYPES_SOURCES})
-target_link_libraries(g2o_custom_types ${G2O_LIBS} GL GLU glut)
+
+## TURN BACK ON!! Just off for now
+#ROSBUILD_ADD_LIBRARY(g2o_custom_types ${CUSTOM_G2O_TYPES_SOURCES})
+#target_link_libraries(g2o_custom_types ${G2O_LIBS} GL GLU glut)
 
 
 

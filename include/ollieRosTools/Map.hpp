@@ -174,7 +174,7 @@ class OdoMap {
             ROS_INFO("MAP > Removing non visible points");
             size_t s = landmarks.size();
             landmarks.erase( std::remove_if( landmarks.begin(), landmarks.end(), noRef), landmarks.end() );
-            ROS_INFO("MAP < Removed [%lu/%lu] points left", landmarks.size(), s);
+            ROS_INFO("MAP < Removed [%lu] Points. [%lu/%lu] points left", s-landmarks.size(), landmarks.size(), s);
         }
 
 
@@ -271,7 +271,8 @@ class OdoMap {
 
         // Removes oldest keyframe
         void popKF(){
-            ROS_INFO("MAP > POPPING OLDEST KF FIFO [%d|%d]", keyframes.front()->getId(), keyframes.front()->getKfId() );
+            ROS_INFO(OVO::colorise("MAP > POPPING OLDEST KF FIFO [%d|%d]",OVO::FG_CYAN).c_str(), keyframes.front()->getId(), keyframes.front()->getKfId() );
+            keyframes[0]->prepareRemoval();
             keyframes.pop_front();
             removeNonVisiblePoints();
             ROS_INFO("MAP < OLDEST KF POPPED");
@@ -323,21 +324,21 @@ class OdoMap {
             ROS_ASSERT(kf->poseEstimated());
             ROS_ASSERT(f->poseEstimated());
 
-            // Add frame
-            pushKF(f);
-
             // add points
             for (uint i=0; i<points.size(); ++i){
                 LandmarkPtr lm = new Landmark(points[i]);
                 // add frames to points
-                lm->addObservation( f, ms[i].queryIdx);
                 lm->addObservation(kf, ms[i].trainIdx);
+                lm->addObservation( f, ms[i].queryIdx);                
                 // add points to frames
-                f ->addLandMarkRef(ms[i].queryIdx, lm);
                 kf->addLandMarkRef(ms[i].trainIdx, lm);
+                f ->addLandMarkRef(ms[i].queryIdx, lm);                
                 // add point to map
                 landmarks.push_back(lm);
             }
+
+            // Add frame
+            pushKF(f);
         }
 
         // Initialise the map. Must have an initial keyframe already, and this should then
@@ -420,10 +421,15 @@ class OdoMap {
             ROS_INFO("g2o = Adding up to [%lu landmarks], adding observations", landmarks.size());
             for (uint i=0; i<landmarks.size(); ++i){
                 LandmarkPtr& lm = landmarks[i];
-                uint obsNr = lm->getObservationsNr();                               
+                uint obsNr = lm->getObservationsNr();
+                ROS_ASSERT(obsNr>0);
 
                 // Make sure we can still triangulate, need at least two observations
-                if (obsNr>1){
+                if (obsNr==1){
+                    /// TODO: Fix the position of the point relative to the landmark
+                    /// or remove the point all toegther...
+
+                } else {
                     VertexLandmarkXYZ * v_lm = new VertexLandmarkXYZ();
                     v_lm->setId(lm->getId()+MAX_KF); //set id using unique static id of landmark class + offset
                     v_lm->setMarginalized(true);

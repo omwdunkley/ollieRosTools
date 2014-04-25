@@ -59,6 +59,11 @@ public:
         currentObs = -1;
     }
 
+    virtual ~Landmark(){
+        ROS_INFO(OVO::colorise("LMK = Destroying Landmark [%d]:",OVO::FG_DGRAY).c_str(),getId());
+        //ROS_INFO_STREAM(*this);
+    }
+
     static void resetStats(){
         visible=0;
         failedDist=0;
@@ -71,6 +76,22 @@ public:
         ROS_INFO("LMK = LM Projection States: \n\t[%4d] Observations\n\t[%4d] Visible\n\t[%4d] Failed Dist\n\t[%4d] Failed Angle\n\t[%4d] Failed FOV", totalObs, visible, failedDist, failedAngle, failedFov);
         resetStats();
     }
+
+    // Remove an observation from frame f
+    void removeObservation(const Frame* f){
+        const int fid = f->getId();
+        const int kfid = f->getKfId();
+        ROS_INFO(("LMK = Removing Observation LMK[%3d] <- Frame[%3d|%3d]. Observations left: [" + OVO::colorise("%2d", (seenFrom.size()>2 ? OVO::FG_GREEN : (seenFrom.size()==2 ? OVO::FG_YELLOW:OVO::FG_RED))) +"]").c_str(), getId(), fid,  kfid, static_cast<int>(seenFrom.size())-1);
+        // reset current obs, incase it was pointing to the to be deleted frame
+        currentObs = -1;
+        FramePtrs::iterator it = std::find(seenFrom.begin(), seenFrom.end(), fid);
+        ROS_ASSERT(it != seenFrom.end());
+
+        // Remove the corresponding frameptr and pointId
+        seenFrom.erase(it);
+        pointIds.erase(pointIds.begin()+std::distance(seenFrom.begin(), it));
+    }
+
 
     // returns the unique landmark ID
     int getId() const {
@@ -220,22 +241,20 @@ public:
 
     // print id, xyz, nr of ovservations, and observations
     friend std::ostream& operator<< (std::ostream& stream, const Landmark& lm) {
-        stream << "LANDMARK [ID:" << std::setw(5) << std::setfill(' ') << lm.id << "]"
-               << "[XYZ:"
+        stream << "LMK [ID:" << std::setw(5) << std::setfill(' ') << lm.id << "]"
+               /*<< "[XYZ:"
                << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[0] << ","
                << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[1] << ","
-               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[1] << "]"
-               << "[Obs: " << std::setw(3) << std::setfill(' ') << lm.seenFrom.size() << " = ";
+               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[1] << "]"*/
+               << "[Obs: " << std::setw(3) << std::setfill(' ') << lm.seenFrom.size() << "] = ";
 
         for (uint i=0; i<lm.pointIds.size(); ++i){
-            if (i==static_cast<uint>(lm.getCurrentObs())){
-                stream << "(**" << std::setw(5) << std::setfill(' ') << lm.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << lm.seenFrom[i]->getKfId() << "**)";
+            if (lm.getCurrentObs()>=0 && i==static_cast<uint>(lm.getCurrentObs())){
+                stream << OVO::colorise("(",OVO::FG_GREEN,OVO::BG_DEFAULT, false) << std::setw(4) << std::setfill(' ') << lm.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << lm.seenFrom[i]->getKfId() << OVO::colorise(") ",OVO::FG_GREEN);
             } else {
-                stream << "(" << std::setw(5) << std::setfill(' ') << lm.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << lm.seenFrom[i]->getKfId() << ")";
+                stream << "(" << std::setw(4) << std::setfill(' ') << lm.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << lm.seenFrom[i]->getKfId() << ") ";
             }
         }
-
-        stream << " ]";
         return stream;
     }
 
@@ -249,7 +268,7 @@ public:
     bool check() const {
         ROS_ASSERT(seenFrom.size()>0);
         ROS_ASSERT(pointIds.size()==seenFrom.size());
-        ROS_ASSERT(static_cast<int>(seenFrom.size())>getCurrentObs());
+        ROS_ASSERT(static_cast<int>(seenFrom.size())>currentObs);
         return true;
 
     }
@@ -261,6 +280,12 @@ public:
 // useful for using KF in a map
 //bool operator <(LandmarkPtr const& lhs, LandmarkPtr const& rhs);
 
+inline bool operator==(const LandmarkPtr& lhs, const LandmarkPtr& rhs){return lhs->getId() == rhs->getId();}
+inline bool operator!=(const LandmarkPtr& lhs, const LandmarkPtr& rhs){return !operator==(lhs,rhs);}
+inline bool operator< (const LandmarkPtr& lhs, const LandmarkPtr& rhs){return lhs->getId() < rhs->getId();}
+inline bool operator> (const LandmarkPtr& lhs, const LandmarkPtr& rhs){return  operator< (rhs,lhs);}
+inline bool operator<=(const LandmarkPtr& lhs, const LandmarkPtr& rhs){return !operator> (lhs,rhs);}
+inline bool operator>=(const LandmarkPtr& lhs, const LandmarkPtr& rhs){return !operator< (lhs,rhs);}
 
 namespace OVO {
     void landmarks2points(const LandMarkPtrs& lms, Points3d& points, const Ints& ind=Ints());

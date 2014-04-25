@@ -75,7 +75,18 @@ void Frame::removeLandMarkRef(const int id){
     ROS_ASSERT_MSG(!landmarkRefs[id].empty(), "FRA = LandmarkRef [%d] Cannot be removed, no landmark there!", id);
     //p.release(); ?
     --landmarkCounter;
+    landmarkRefs[id]->removeObservation(this);
     landmarkRefs[id] = LandmarkPtr();
+}
+
+// Prepares the keyframe for removal. Remove all references to landmarks and landmarks references to it
+void Frame::prepareRemoval(){
+    ROS_WARN("Frame [%d|%d] Preparing for removal", getId(), getKfId());
+    // remove itself from observations
+    const Ints inds = getIndLM();
+    for (uint i=0; i<inds.size(); ++i){
+        removeLandMarkRef(inds[i]);
+    }
 }
 
 
@@ -149,10 +160,4 @@ float Frame::compareSBI(FramePtr& f) {
     cv::waitKey(10);
 
     return value;
-}
-
-
-// useful for using KF in a map
-bool operator <(FramePtr const& lhs, FramePtr const& rhs){
-    return lhs->getId() < rhs->getId();
 }
