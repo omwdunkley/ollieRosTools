@@ -9,16 +9,21 @@
 
 
 #include <ollieRosTools/aux.hpp>
-#include <ollieRosTools/Frame.hpp>
+//#include <ollieRosTools/Frame.hpp>
+class Frame;
+typedef cv::Ptr<Frame> FramePtr;
+typedef std::deque<cv::Ptr<Frame> > FramePtrs;
 
 
 
 
 
 
-bool noRef(const LandmarkPtr& p);
 
 class Landmark {
+
+
+
 private:
     /// Containers
     // XYZ position in world frame
@@ -52,6 +57,9 @@ private:
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
+    typedef cv::Ptr<Landmark> Ptr;
+    typedef std::deque<Landmark::Ptr> Ptrs;
+
     // create a new point
     Landmark(const Eigen::Vector3d& point){
         xyz = point;
@@ -78,20 +86,7 @@ public:
     }
 
     // Remove an observation from frame f
-    void removeObservation(const Frame* f){
-        const int fid = f->getId();
-        const int kfid = f->getKfId();
-        ROS_INFO(("LMK = Removing Observation LMK[%3d] <- Frame[%3d|%3d]. Observations left: [" + OVO::colorise("%2d", (seenFrom.size()>2 ? OVO::FG_GREEN : (seenFrom.size()==2 ? OVO::FG_YELLOW:OVO::FG_RED))) +"]").c_str(), getId(), fid,  kfid, static_cast<int>(seenFrom.size())-1);
-        // reset current obs, incase it was pointing to the to be deleted frame
-        currentObs = -1;
-        FramePtrs::iterator it = std::find(seenFrom.begin(), seenFrom.end(), fid);
-        ROS_ASSERT(it != seenFrom.end());
-
-        // Remove the corresponding frameptr and pointId
-        seenFrom.erase(it);
-        pointIds.erase(pointIds.begin()+std::distance(seenFrom.begin(), it));
-    }
-
+    void removeObservation(const int fid, const int kfid);
 
     // returns the unique landmark ID
     int getId() const {
@@ -107,27 +102,15 @@ public:
     }
 
     // Returns the number of observations, ie the nr of frames that view this point
-    uint getObservationsNr() const {
-        ROS_ASSERT(check());
+    uint getObservationsNr() const {        
         return seenFrom.size();
     }
 
     // get the frame at observation i
-    const FramePtr& getObservationFrame(int i=-1) const {
-        if (i<0){
-            i=currentObs;
-        }
-        ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
-        return seenFrom[i];
-    }
-
-    // get the bearing vector to this point from observation i
-    const Bearing getObservationBearing(int i=-1) const {
-        if (i<0){
-            i=currentObs;
-        }
-        ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
-        return seenFrom[i]->getBearing(pointIds[i]);
+    const FramePtr getObservationFrame(const int i=-1) const {
+        const int j = i<0 ? currentObs:i;
+        ROS_ASSERT(j>=0 && j < static_cast<int>(seenFrom.size()));
+        return seenFrom[j];
     }
 
     // Returns all frames that saw this point
@@ -135,23 +118,14 @@ public:
         return seenFrom;
     }
 
+    // get the bearing vector to this point from observation i
+    const Bearing getObservationBearing(const int i=-1) const;
+
     // return descriptor of observation i
-    const cv::Mat getObservationDesc(int i=-1) const {
-        if (i<0){
-            i=currentObs;
-        }
-        ROS_ASSERT(i>=0 && i < static_cast<int>(seenFrom.size()));
-        return seenFrom[i]->getDescriptor(pointIds[i]);
-    }
+    const cv::Mat getObservationDesc(const int i=-1) const;
 
     // return all descriptors
-    const cv::Mat getObservationDescs() const {
-        cv::Mat descs;
-        for (uint i=0; i<pointIds.size(); ++i){
-            descs.push_back(seenFrom[i]->getDescriptor(pointIds[i]));
-        }
-        return descs;
-    }
+    const cv::Mat getObservationDescs() const;
 
     // return the position this point is at
     const Point3d& getPosition() const {
@@ -159,7 +133,7 @@ public:
     }
 
     // add an observation. Seen by frame f with f.keypoint[i]
-    void addObservation(const FramePtr& f, const int id){
+    void addObservation(const FramePtr f, const int id){
         seenFrom.push_back(f);
         pointIds.push_back(id);
         //setCurrentObs(seenFrom.size()-1);
@@ -176,57 +150,8 @@ public:
     // returns an id>=0 if the given frame might provide a similar observation from observation i
     // Frame must have an estiamted position in its pose member
     // Also sets the current observation to the first candidate found (check in reverse chronological order)
-    bool visibleFrom(const FramePtr& f) {
-        // go in reverese, more likely that newer ones are more visible
+    bool visibleFrom(const FramePtr f) ;
 
-        const Eigen::Vector3d xyz_f  = f->getOpticalCenter(); //position we are observing from
-        const Eigen::Vector3d bvFOptAxis = f->getOpticalAxisBearing(); // camera axis we are observing along
-
-        for (int i=static_cast<int>(pointIds.size())-1; i>=0; --i){
-        //for (uint i=0; i<pointIds.size(); ++i){
-            // Check Distance
-            ++totalObs;
-            const Eigen::Vector3d xyz_kf = seenFrom[i]->getOpticalCenter();
-
-            Eigen::Vector3d bvKF2P = (xyz-xyz_kf);   // vector: seen from -> this point (normalised later)
-            Eigen::Vector3d bvF2P  = (xyz-xyz_f);    // vector: seeing from -> this point (normalised later)
-            const double distP2KF  = bvKF2P.norm();  // distance originally seen from
-            const double distP2F   = bvF2P.norm();   // distance we might see it from now
-            const double dist_diff = abs(distP2KF-distP2F); // difference in distance
-
-
-            // Check P similar distance to F as from where it was observered
-            if (dist_diff<distThreshRatio*distP2KF || dist_diff<distThresh){
-                // Check F in FOV of P from which it was seen
-                bvKF2P/=distP2KF; //.normalize();
-                bvF2P/=distP2F; //.normalize();
-                const double angleCone = 1.0 - bvF2P.dot(bvKF2P);
-                if (angleCone<angleConeThresh){
-                    // check P in FOV of F
-
-                    const double angleFOV = 1.0 - bvF2P.dot(bvFOptAxis);
-                    if (angleFOV<angleFOVThresh){
-                        ++visible;
-                        setCurrentObs(i);
-                        return true; //return the first one
-
-                        // Point is in FOV of camera,
-                        // being seen from a similar distance,
-                        // from a similar side
-                    } else {
-                        ++failedFov;
-                    }
-                } else {
-                    ++failedAngle;
-                }
-            } else {
-                ++failedDist;
-            }
-        }
-
-        // Looked at all possible observations, none are similar
-        return false;
-    }
 
 //    const cv::Mat getClosestDescriptor(){
 //        ROS_ASSERT_MSG(false, "LMK = NOT IMPLEMENTED");
@@ -240,23 +165,7 @@ public:
     }
 
     // print id, xyz, nr of ovservations, and observations
-    friend std::ostream& operator<< (std::ostream& stream, const Landmark& lm) {
-        stream << "LMK [ID:" << std::setw(5) << std::setfill(' ') << lm.id << "]"
-               /*<< "[XYZ:"
-               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[0] << ","
-               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[1] << ","
-               << std::setw(4) << std::setfill(' ') << std::setprecision(1) << lm.xyz[1] << "]"*/
-               << "[Obs: " << std::setw(3) << std::setfill(' ') << lm.seenFrom.size() << "] = ";
-
-        for (uint i=0; i<lm.pointIds.size(); ++i){
-            if (lm.getCurrentObs()>=0 && i==static_cast<uint>(lm.getCurrentObs())){
-                stream << OVO::colorise("(",OVO::FG_GREEN,OVO::BG_DEFAULT, false) << std::setw(4) << std::setfill(' ') << lm.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << lm.seenFrom[i]->getKfId() << OVO::colorise(") ",OVO::FG_GREEN);
-            } else {
-                stream << "(" << std::setw(4) << std::setfill(' ') << lm.seenFrom[i]->getId() << "|" << std::setw(3) << std::setfill(' ') << lm.seenFrom[i]->getKfId() << ") ";
-            }
-        }
-        return stream;
-    }
+    friend std::ostream& operator<< (std::ostream& stream, const Landmark& lm);
 
     geometry_msgs::Point getMarker() const {
         geometry_msgs::Point p;
@@ -277,19 +186,22 @@ public:
 
 };
 
-// useful for using KF in a map
-//bool operator <(LandmarkPtr const& lhs, LandmarkPtr const& rhs);
+bool noRef(const Landmark::Ptr& p);
 
-inline bool operator==(const LandmarkPtr& lhs, const LandmarkPtr& rhs){return lhs->getId() == rhs->getId();}
-inline bool operator!=(const LandmarkPtr& lhs, const LandmarkPtr& rhs){return !operator==(lhs,rhs);}
-inline bool operator< (const LandmarkPtr& lhs, const LandmarkPtr& rhs){return lhs->getId() < rhs->getId();}
-inline bool operator> (const LandmarkPtr& lhs, const LandmarkPtr& rhs){return  operator< (rhs,lhs);}
-inline bool operator<=(const LandmarkPtr& lhs, const LandmarkPtr& rhs){return !operator> (lhs,rhs);}
-inline bool operator>=(const LandmarkPtr& lhs, const LandmarkPtr& rhs){return !operator< (lhs,rhs);}
+
+inline bool operator==(const Landmark::Ptr& lhs, const Landmark::Ptr& rhs){return lhs->getId() == rhs->getId();}
+inline bool operator!=(const Landmark::Ptr& lhs, const Landmark::Ptr& rhs){return !operator==(lhs,rhs);}
+inline bool operator< (const Landmark::Ptr& lhs, const Landmark::Ptr& rhs){return lhs->getId() < rhs->getId();}
+inline bool operator> (const Landmark::Ptr& lhs, const Landmark::Ptr& rhs){return  operator< (rhs,lhs);}
+inline bool operator<=(const Landmark::Ptr& lhs, const Landmark::Ptr& rhs){return !operator> (lhs,rhs);}
+inline bool operator>=(const Landmark::Ptr& lhs, const Landmark::Ptr& rhs){return !operator< (lhs,rhs);}
+
+
 
 namespace OVO {
-    void landmarks2points(const LandMarkPtrs& lms, Points3d& points, const Ints& ind=Ints());
+    void landmarks2points(const Landmark::Ptrs& lms, Points3d& points, const Ints& ind=Ints());
 }
+
 
 
 

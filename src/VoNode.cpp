@@ -178,7 +178,7 @@ void VoNode::incomingSynthetic(const ollieRosTools::synthFrameConstPtr& msg){
     tf::transformMsgToTF(msg->imuPose, imu);    
     //cam = cam.inverse();
     //imu = imu.inverse();
-    FramePtr frame(new FrameSynthetic(cvPtr->image, imuRevStamped, msg->pts2d_noise, cam, imu, msg->camInfo));
+    Frame::Ptr frame(new FrameSynthetic(cvPtr->image, imuRevStamped, msg->pts2d_noise, cam, imu, msg->camInfo));
 
 
     /// Process Frame
@@ -267,7 +267,7 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
     /// Make Frame
     ROS_ERROR("MIGHT NEED TO INVERSE IMU");
-    FramePtr frame(new Frame(cvPtr->image, imuStamped));
+    Frame::Ptr frame(new Frame(cvPtr->image, imuStamped));
 
 
     /// Process Frame

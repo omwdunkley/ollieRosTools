@@ -7,9 +7,9 @@
 int main(int argc, char** argv){
     //Eigen::initParallel();
 
-    if(cv::gpu::getCudaEnabledDeviceCount()) {
-        ROS_INFO("GPU AVAILABLE");
-    }
+//    if(cv::gpu::getCudaEnabledDeviceCount()) {
+//        ROS_INFO("GPU AVAILABLE");
+//    }
 
 
     ros::init(argc, argv, "VoNode");

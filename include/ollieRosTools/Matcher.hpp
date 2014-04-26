@@ -110,7 +110,7 @@ class Matcher{
         void match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matches, double& time, const cv::Mat mask=cv::Mat());
 
         // Does KLT Refinement over matches. Provide all kps, matches chose subset. Returns matches that passed and updated kps
-        void kltRefine(FramePtr& fQuery, FramePtr& fTrain, DMatches& matches, double& time);
+        void kltRefine(FramePtr fQuery, FramePtr fTrain, DMatches& matches, double& time);
 
         // Updates the matcher according to the latest settings
         void updateMatcher(const int type, const int size, const bool update=false);
@@ -155,10 +155,10 @@ class Matcher{
         void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level);
 
         // Match f against map. Returns angular disparity error
-        double matchMap(const cv::Mat& mapD, LandMarkPtrs& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask=Ints());
+        double matchMap(const cv::Mat& mapD, Landmark::Ptrs& lms, FramePtr f, DMatches& matches, double& time, const Ints& fMask=Ints());
 
         // Match f against kframe. Returns angular disparity error
-        double matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask=Ints(), const Ints& kfMask=Ints(), const FramePtr& fClose = FramePtr(), bool triangulation=false);
+        double matchFrame(FramePtr f, FramePtr kf, DMatches& matches, double& time, const Ints& fMask=Ints(), const Ints& kfMask=Ints(), const FramePtr fClose = FramePtr(), bool triangulation=false);
 
 
 

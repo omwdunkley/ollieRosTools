@@ -15,6 +15,7 @@ Matcher::Matcher(){
     klt_flags = 0; // cv::OPTFLOW_LK_GET_MIN_EIGENVALS
     klt_eigenThresh=0.0001;
     klt_refine = false;
+    orb34=false;
 }
 
 // general matching.
@@ -134,8 +135,8 @@ void Matcher::match(const cv::Mat& dQuery, const cv::Mat& dTrain, DMatches& matc
 
 
 
-// Match f against map. F should have a decent post estimate. lms and mapD should be prefiltered based on frame-landmark observability
-double Matcher::matchMap(const cv::Mat& mapD, LandMarkPtrs& lms, FramePtr& f, DMatches& matches, double& time, const Ints& fMask){
+// Match f against map. F should have a decent post estimate. lms and mapD should be prefiltered based on frame-Landmark observability
+double Matcher::matchMap(const cv::Mat& mapD, Landmark::Ptrs& lms, FramePtr f, DMatches& matches, double& time, const Ints& fMask){
     ROS_ASSERT(f->poseEstimated());
     ros::WallTime t0 = ros::WallTime::now();
 
@@ -191,7 +192,7 @@ double Matcher::matchMap(const cv::Mat& mapD, LandMarkPtrs& lms, FramePtr& f, DM
 
 // MATCHING AGAINST KEYFRAME
 /// TODO - instead of using kf bearing points, use the maskKF for the descriptors and use corresponding world points for bearings! (dont forget to normalise)
-double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double& time, const Ints& fMask, const Ints& kfMask, const FramePtr& fClose, bool triangulation){
+double Matcher::matchFrame(FramePtr f, FramePtr kf, DMatches& matches, double& time, const Ints& fMask, const Ints& kfMask, const FramePtr fClose, bool triangulation){
     ROS_INFO("MAT [H] > matchFrame QueryFrame[%d|%d] vs TrainFrame[%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
 
     /// Get descriptors, possibly masking out some
@@ -204,7 +205,7 @@ double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double&
     ros::WallTime t0 = ros::WallTime::now();
 
     if (triangulation){
-        /// We are matching to triangulate. In this case we invert the mask to only get matches between points without landmarks associated
+        /// We are matching to triangulate. In this case we invert the mask to only get matches between points without Landmarks associated
         /// TODO: should be ros parameters!
         ROS_INFO("MAT [H] = Masking permissible 2d-2d matches for triangulation between frames with known poses");
         const double minDis = OVO::angle2error(5);
@@ -276,7 +277,7 @@ double Matcher::matchFrame(FramePtr& f, FramePtr& kf, DMatches& matches, double&
 
 
 // Does KLT Refinement over matches. Returns matches that passed. Also updates keypoints of fQuery
-void Matcher::kltRefine(FramePtr& fQuery, FramePtr& fTrain, DMatches& matches, double& time){
+void Matcher::kltRefine(FramePtr fQuery, FramePtr fTrain, DMatches& matches, double& time){
     ROS_ASSERT(matches.size()>0);
     ROS_INFO("MAT [M] > Doing KLT refinement over [%lu] matches. Window size [%d]", matches.size(), klt_window.x);
 
@@ -1110,7 +1111,7 @@ cv::Mat makeDisparityTriangulationMask(const Ints& f1bad, const Ints& f2bad, con
 
 
 /*
-float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms, bool median=true ){
+float rotatedDisparity(FramePtr f1, FramePtr f2, const DMatches& ms, bool median=true ){
     if (!median){
         /// AVERAGE
         ROS_INFO("MAT > Computing [average] rotated disparity of [%lu] matches between Frames [%d|%d] vs [%d|%d]", ms.size(), f1->getId(), f1->getKfId(), f2->getId(), f2->getKfId());
@@ -1159,7 +1160,7 @@ float rotatedDisparity(FramePtr& f1, FramePtr& f2, const DMatches& ms, bool medi
 // Preserves sorting
 // changes distance member of DMatch to disparity
 /*
-DMatches disparityFilter(const DMatches& in, FramePtr& fQuery, FramePtr& fTrain, const float maxDisparity, bool disparityFilterOn){
+DMatches disparityFilter(const DMatches& in, FramePtr fQuery, FramePtr fTrain, const float maxDisparity, bool disparityFilterOn){
     if (disparityFilterOn){
         ROS_INFO("MAT > Disparity filtering [%lu] matches, disparity threshold [%.1f]", in.size(), maxDisparity);
     } else {
@@ -1231,8 +1232,8 @@ DMatches disparityFilter(const DMatches& in, FramePtr& fQuery, FramePtr& fTrain,
 /*
 // Does the matching and match filtering.
 // Note that the distance member of each Dmatch will hold the disparity of the match in pixels
-void Matcher::match( FramePtr& fQuery,
-                     FramePtr& fTrain,
+void Matcher::match( FramePtr fQuery,
+                     FramePtr fTrain,
                      DMatches& matches,
                      double& time,
                      float maxDisparity, // bearing vector disparity error

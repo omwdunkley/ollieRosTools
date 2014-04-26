@@ -39,7 +39,7 @@
 static const uint MAX_KF = 1000;
 
 // worldPoint[i] corresponds to feature[idx[i]]
-cv::Mat getPointsProjectedImage(const FramePtr& f, const opengv::points_t& worldPts, const Ints& idx);
+cv::Mat getPointsProjectedImage(const Frame::Ptr f, const opengv::points_t& worldPts, const Ints& idx);
 
 
 
@@ -47,9 +47,9 @@ class OdoMap {
     private:
         /// Containers
         // list of keyframes. Latest KF at end, oldest first DEQUEs
-        FramePtrs keyframes;        
+        Frame::Ptrs keyframes;
         // List of map points observed by the key points
-        LandMarkPtrs landmarks;
+        Landmark::Ptrs landmarks;
         // Frame last exposed to the map. Might be a keyframe or not
         FramePtr currentFrame;
         // Matcher used to do map-frame and frame-frame matching
@@ -88,17 +88,17 @@ class OdoMap {
         /// GETTER / SETTER
 
         // Get
-        const FramePtrs& getKFs() const {
+        const Frame::Ptrs& getKFs() const {
             return keyframes;
         }
 
         // Get All Landmarks
-        const LandMarkPtrs& getLMs() const {
+        const Landmark::Ptrs& getLMs() const {
             return landmarks;
         }
 
         // Get last keyframe If recent = 1, gets last-1, etc
-        FramePtr& getLatestKF(uint last=0){
+        FramePtr getLatestKF(uint last=0){
             ROS_ASSERT(getKeyframeNr()>last);
             if (last==0){
                 return keyframes.back();
@@ -109,7 +109,7 @@ class OdoMap {
 
         // Get last keyframe CONST version. If recent = 1, gets last-1, etc
         /// TODO: should this return the latest or the most recently used??
-        const FramePtr& getLatestKF(uint last=0) const{
+        const FramePtr getLatestKF(uint last=0) const{
             ROS_ASSERT(getKeyframeNr()>last);
             if (last==0){
             return keyframes.back();
@@ -119,7 +119,7 @@ class OdoMap {
         }
 
         // Gets Latest frame matches vs map
-        FramePtr& getCurrentFrame(){
+        Frame::Ptr getCurrentFrame(){
             ROS_INFO("MAP > Getting current frame");
             ROS_ASSERT(!currentFrame.empty());
             ROS_ASSERT(currentFrame->isInitialised());
@@ -137,7 +137,7 @@ class OdoMap {
         }
 
         // Gets all the descriptors most likely to be observable from the given frame
-        uint getAllPossibleObservations(const FramePtr& f, cv::Mat& desc, LandMarkPtrs& lms){
+        uint getAllPossibleObservations(const Frame::Ptr f, cv::Mat& desc, Landmark::Ptrs& lms){
             ROS_INFO("MAP > Getting all possible observations of [%lu] landmarks from frame [%d|%d]", landmarks.size(), f->getId(), f->getKfId());
             ros::WallTime t0 = ros::WallTime::now();
             desc = cv::Mat();
@@ -146,7 +146,7 @@ class OdoMap {
 
             // add points that are visible. Also sets within the LM from which frame it was visible
             for (uint i=0; i<landmarks.size(); ++i){
-                LandmarkPtr& lm = landmarks[i];
+                Landmark::Ptr lm = landmarks[i];
                 if (lm->visibleFrom(f)){
                     lms.push_back(lm);
                     desc.push_back(lm->getObservationDesc());
@@ -185,7 +185,7 @@ class OdoMap {
 
 
         // Matches against the map. Returns matches, corresponding points, and the identifiers
-        double match2Map(FramePtr& f, DMatches& matches, LandMarkPtrs& lms, double& time/*, Points3d points, DMatches& ms*/){
+        double match2Map(Frame::Ptr f, DMatches& matches, Landmark::Ptrs& lms, double& time/*, Points3d points, DMatches& ms*/){
             ROS_INFO("MAP > Matching Frame [%d|%d] against MAP with [%lu] landmarks", f->getId(), f->getKfId(), landmarks.size() );
             ROS_ASSERT(landmarks.size()>0);
             ROS_ASSERT(keyframes.size()>0);
@@ -204,11 +204,11 @@ class OdoMap {
 
 
         // Matches against a keyframe. If voOnly = true, only match against points that have associsated land marks. Returns disparity
-        double match2KF(FramePtr& f, DMatches& matches, double& time, bool voOnly=false){
+        double match2KF(Frame::Ptr f, DMatches& matches, double& time, bool voOnly=false){
             /// TODO Match against last N keyframes
             /// TODO Match against closest N keyframes
             ROS_ASSERT(keyframes.size()>0);
-            FramePtr& kf = getLatestKF();
+            FramePtr kf = getLatestKF();
             currentFrame = f;
             ROS_INFO("MAP = Matching Frame [%d|%d] against KeyFrame [%d|%d]", f->getId(), f->getKfId(), kf->getId(), kf->getKfId() );
             if (voOnly){
@@ -223,7 +223,7 @@ class OdoMap {
 
         // Matches keyframe vs keyframe for triangulation. Does not match kps taht have already been matches. Returns disparity
         /// TODO: for now very naiive
-        double matchTriangulate(FramePtr& f1, FramePtr& f2, DMatches& matches, double& time){
+        double matchTriangulate(Frame::Ptr f1, Frame::Ptr f2, DMatches& matches, double& time){
             ROS_ASSERT(f1->poseEstimated());
             ROS_ASSERT(f2->poseEstimated());
             ROS_INFO("MAP = Matching Frame [%d|%d] against KeyFrame [%d|%d]", f1->getId(), f1->getKfId(), f2->getId(), f2->getKfId() );
@@ -237,7 +237,7 @@ class OdoMap {
         /// Keyframe Functions frame->closest frames, add kf, remove kf, etc
 
 
-        void pushKF(FramePtr& frame, const bool first=false){
+        void pushKF(Frame::Ptr frame, const bool first=false){
             ROS_INFO("MAP > ADDING%s KF TO MAP", first?" FIRST":"");
             frame->setAsKF(first);
             if (keyframes.size()==0 || first){
@@ -271,27 +271,32 @@ class OdoMap {
 
         // Removes oldest keyframe
         void popKF(){
-            ROS_INFO(OVO::colorise("MAP > POPPING OLDEST KF FIFO [%d|%d]",OVO::FG_CYAN).c_str(), keyframes.front()->getId(), keyframes.front()->getKfId() );
-            keyframes[0]->prepareRemoval();
-            keyframes.pop_front();
+            Frame::Ptr kf_front = keyframes.front();
+            ROS_INFO(OVO::colorise("MAP > POPPING OLDEST KF FIFO [%d|%d]",OVO::FG_CYAN).c_str(), kf_front->getId(), kf_front->getKfId() );
+
+            ROS_INFO("KF Ref Count befure: [%d]" ,*kf_front.refcount);
+
+            kf_front->prepareRemoval();
             removeNonVisiblePoints();
+
+            keyframes.pop_front();
             ROS_INFO("MAP < OLDEST KF POPPED");
         }
 
 
-        // Goes through all keyframes and gets the cloest N frames
-        FramePtrs getClosestKeyframes(const FramePtr& f){
-            ROS_ERROR("MAP = NOT IMPLEMENTED GET CLOSEST KEYFRAMES: %s}\n For now returning all", __SHORTFILE__);
-            // TODO
-            // image descriptor (rotation invarient)
-            // sbi ncc/ssd  ( rotated)
-            // estimated angle
-            ///x,y,z < 2m,
-            // gyro angle, yaw only +- 45 degrees
-            // optical axis vs optical axis < 45 degrees
+//        // Goes through all keyframes and gets the cloest N frames
+//        Frame::Ptrs getClosestKeyframes(const Frame::Ptr f){
+//            ROS_ERROR("MAP = NOT IMPLEMENTED GET CLOSEST KEYFRAMES: %s}\n For now returning all", __SHORTFILE__);
+//            // TODO
+//            // image descriptor (rotation invarient)
+//            // sbi ncc/ssd  ( rotated)
+//            // estimated angle
+//            ///x,y,z < 2m,
+//            // gyro angle, yaw only +- 45 degrees
+//            // optical axis vs optical axis < 45 degrees
 
-            return keyframes;
-        }
+//            return keyframes;
+//        }
 
 
 
@@ -315,9 +320,9 @@ class OdoMap {
 
 
         // Insert landmarks triangulaed between f and getLatestKf(). Points must be in the world frame
-        void pushKFWithLandmarks(FramePtr& f, const Points3d& points, const DMatches& ms){
+        void pushKFWithLandmarks(Frame::Ptr f, const Points3d& points, const DMatches& ms){
             // we just triangulated points between f and getLatestKf()
-            FramePtr& kf = getLatestKF();
+            FramePtr kf = getLatestKF();
             ROS_INFO("MAP = Insering [%lu] new landmarks triangulated between frame [%d|%d] and keyframe [%d|%d]", ms.size(), f->getId(), f->getKfId(), kf->getId(), kf->getKfId());
             ROS_ASSERT(points.size() == ms.size());
 
@@ -326,7 +331,7 @@ class OdoMap {
 
             // add points
             for (uint i=0; i<points.size(); ++i){
-                LandmarkPtr lm = new Landmark(points[i]);
+                Landmark::Ptr lm(new Landmark(points[i]));
                 // add frames to points
                 lm->addObservation(kf, ms[i].trainIdx);
                 lm->addObservation( f, ms[i].queryIdx);                
@@ -343,7 +348,7 @@ class OdoMap {
 
         // Initialise the map. Must have an initial keyframe already, and this should then
         // add the second one. vomatches associate them and must be aligned to points (in world frame)
-        void initialiseMap(FramePtr& f, const Points3d& points, const DMatches& voMatches){
+        void initialiseMap(Frame::Ptr f, const Points3d& points, const DMatches& voMatches){
             ROS_INFO("MAP > Initialiseing map with new Frame [%d]", f->getId());
 
             ROS_ASSERT(points.size() == voMatches.size());
@@ -386,7 +391,7 @@ class OdoMap {
             /// Setup add frames
             ROS_INFO("g2o = Adding [%lu] Keyframe poses", keyframes.size());
             for (uint i=0; i<keyframes.size();++i){
-                FramePtr& kf = keyframes[i];
+                const Frame::Ptr& kf = keyframes[i];
                 // create pose
                 VertexPose* v_pose = new VertexPose();
                 // set estimate
@@ -420,7 +425,7 @@ class OdoMap {
             /// Setup add land marks
             ROS_INFO("g2o = Adding up to [%lu landmarks], adding observations", landmarks.size());
             for (uint i=0; i<landmarks.size(); ++i){
-                LandmarkPtr& lm = landmarks[i];
+                const Landmark::Ptr& lm = landmarks[i];
                 uint obsNr = lm->getObservationsNr();
                 ROS_ASSERT(obsNr>0);
 
@@ -442,7 +447,7 @@ class OdoMap {
                     /// Setup add observations
                     for (uint fid=0; fid<obsNr; ++fid){
                         // Add each observation of this landmark. The landmark knows from which KFs it is visible and we use these kf IDS to associate the edge to the correct KF
-                        const FramePtr& kf = lm->getObservationFrame(fid); //reference to the frame that observes this land mark
+                        const Frame::Ptr& kf = lm->getObservationFrame(fid); //reference to the frame that observes this land mark
                         const Bearing&  bv = lm->getObservationBearing(fid); //reference to observation
                         EdgePoseLandmarkReprojectBV * ef = new EdgePoseLandmarkReprojectBV();
                         ef->setVertex(0, dynamic_cast<g2o::OptimizableGraph::Vertex*>(optimizer.vertex(kf->getKfId()))); //get association via KF id
@@ -489,20 +494,24 @@ class OdoMap {
 
 
             // Update map using BA results
-            /// Update frames
+            /// Update frames - FOR NOW ALL OF THEM, /// TODO sliding window
             ROS_INFO("g2o = Updating [%d] Keyframe poses", poseCount);
             for (uint i=0; i<keyframes.size();++i){
-                FramePtr& kf = keyframes[i];
+                Frame::Ptr& kf = keyframes[i];
                 Pose poseEstimate = dynamic_cast<VertexPose*>(optimizer.vertex(kf->getKfId()))->estimate();
                 kf->setPose(poseEstimate);
             }
 
-            /// Update Land Marks
+            /// Update Landmarks
             ROS_INFO("g2o = Updating [%d landmarks]", lmCount);
             for (uint i=0; i<landmarks.size(); ++i){
-                LandmarkPtr& lm = landmarks[i];
-                Point3d positionEstimate = dynamic_cast<VertexLandmarkXYZ*>(optimizer.vertex(MAX_KF+lm->getId()))->estimate();
-                lm->setPosition(positionEstimate);
+                Landmark::Ptr& lm = landmarks[i];
+                if (lm->getObservationsNr()>1){
+                    VertexLandmarkXYZ* v;
+                    v = dynamic_cast<VertexLandmarkXYZ*>(optimizer.vertex(MAX_KF+lm->getId()));
+                    Point3d positionEstimate = v->estimate();
+                    lm->setPosition(positionEstimate);
+                }
             }
 
             optimizer.clear();
@@ -576,7 +585,7 @@ class OdoMap {
             col.b = RGB.val[0]/255.;
             markers.color = col;
             for (uint i=0; i< landmarks.size(); ++i){
-                const LandmarkPtr& lm = landmarks[i];
+                const Landmark::Ptr lm = landmarks[i];
                 for (uint o=0; o< lm->getObservationsNr(); ++o){
                     geometry_msgs::Point p;
 

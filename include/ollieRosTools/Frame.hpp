@@ -20,11 +20,12 @@
 #include <ollieRosTools/PreProc.hpp>
 //#include <ollieRosTools/Map.hpp>
 #include <ollieRosTools/aux.hpp>
-//#include <ollieRosTools/Landmark.hpp> //circular dep
+#include <ollieRosTools/Landmark.hpp> //circular dep
 
 
 
 class Frame{
+
     protected:
         cv::Mat image;
         cv::Mat mask;
@@ -69,7 +70,7 @@ class Frame{
         static cv::Ptr<PreProc> preproc;
 
         /// If a keyframe, this contains references to map points
-        LandMarkPtrs landmarkRefs;
+        Landmark::Ptrs landmarkRefs;
         int landmarkCounter; // just for stats
 
         /// cached?
@@ -131,6 +132,10 @@ class Frame{
 
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+        typedef cv::Ptr<Frame> Ptr;
+        typedef std::deque<Frame::Ptr> Ptrs;
+
+
         Frame() : initialised(false){
             ROS_INFO("FRA = NEW UNINITIALISED FRAME");
         }
@@ -147,12 +152,12 @@ class Frame{
         void static setPreProc (cv::Ptr<PreProc>    pp){preproc=pp;    }
 
 
-        void addLandMarkRef(const int id, const LandmarkPtr& lm);
+        void addLandMarkRef(const int id, const Landmark::Ptr lm);
         void removeLandMarkRef(const int id);
         void prepareRemoval();
 
         void computeSBI();
-        float compareSBI(FramePtr& f);
+        float compareSBI(Frame::Ptr f);
         const cv::Mat& getSBI();
 
         bool poseEstimated() const{
@@ -540,7 +545,7 @@ class Frame{
             return vo;
         }
 
-        const LandMarkPtrs& getLandmarkRefs() const {
+        const Landmark::Ptrs& getLandmarkRefs() const {
             return landmarkRefs;
         }
 
@@ -697,9 +702,6 @@ class Frame{
         }
 };
 
-typedef cv::Ptr<Frame> FramePtr;
-
-
 class FrameSynthetic : public Frame {
     public:
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -839,14 +841,14 @@ class FrameSynthetic : public Frame {
 
 
 // useful for std::map, find, etc
-inline bool operator==(const FramePtr& lhs, const int& fid){return lhs->getId() == fid;}
-inline bool operator==(const int& fid, const FramePtr& rhs){return rhs->getId() == fid;}
-inline bool operator==(const FramePtr& lhs, const FramePtr& rhs){return lhs->getId() == rhs->getId();}
-inline bool operator!=(const FramePtr& lhs, const FramePtr& rhs){return !operator==(lhs,rhs);}
-inline bool operator< (const FramePtr& lhs, const FramePtr& rhs){return lhs->getId() < rhs->getId();}
-inline bool operator> (const FramePtr& lhs, const FramePtr& rhs){return  operator< (rhs,lhs);}
-inline bool operator<=(const FramePtr& lhs, const FramePtr& rhs){return !operator> (lhs,rhs);}
-inline bool operator>=(const FramePtr& lhs, const FramePtr& rhs){return !operator< (lhs,rhs);}
+inline bool operator==(const Frame::Ptr& lhs, const int& fid){return lhs->getId() == fid;}
+inline bool operator==(const int& fid, const Frame::Ptr& rhs){return rhs->getId() == fid;}
+inline bool operator==(const Frame::Ptr& lhs, const Frame::Ptr& rhs){return lhs->getId() == rhs->getId();}
+inline bool operator!=(const Frame::Ptr& lhs, const Frame::Ptr& rhs){return !operator==(lhs,rhs);}
+inline bool operator< (const Frame::Ptr& lhs, const Frame::Ptr& rhs){return lhs->getId() < rhs->getId();}
+inline bool operator> (const Frame::Ptr& lhs, const Frame::Ptr& rhs){return  operator< (rhs,lhs);}
+inline bool operator<=(const Frame::Ptr& lhs, const Frame::Ptr& rhs){return !operator> (lhs,rhs);}
+inline bool operator>=(const Frame::Ptr& lhs, const Frame::Ptr& rhs){return !operator< (lhs,rhs);}
 
 
 #endif // FRAME_HPP

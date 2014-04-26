@@ -28,8 +28,8 @@ extern Eigen::Affine3d IMU2CAM;
 
 //#include <ollieRosTools/Landmark.hpp>
 //#include <ollieRosTools/Frame.hpp>
-class Landmark;
-class Frame;
+//class Landmark;
+//class Frame;
 
 
 #define __SHORTFILE__ (strrchr(__FILE__, '/') ? strrchr(__FILE__, '/') + 1 : __FILE__)
@@ -65,13 +65,6 @@ typedef std::vector< double > Doubles;
 
 // Containers
 typedef std::vector< cv::Mat > Mats;
-typedef cv::Ptr<Landmark> LandmarkPtr;
-typedef std::deque<LandmarkPtr> LandMarkPtrs;
-
-typedef cv::Ptr<Frame> FramePtr;
-typedef std::deque<FramePtr> FramePtrs;
-
-
 
 
 const float toRad = M_PI/180;

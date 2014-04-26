@@ -233,7 +233,7 @@ private:
 
     /// adds a keyframe to the map
     // returns true on success
-    bool addKf(FramePtr& f){
+    bool addKf(FramePtr f){
         /// Start timer, show messages, check quality
         ros::WallTime t0 = ros::WallTime::now();
         ROS_INFO(OVO::colorise("ODO > ATTEMPTING TO MAKE FRAME [%d] KEYFRAME",OVO::FG_WHITE, OVO::BG_GREEN).c_str(), f->getId());
@@ -248,7 +248,7 @@ private:
 
 
         /// match against map, getting possible observations
-        LandMarkPtrs lms;
+        Landmark::Ptrs lms;
 
         disparity = map.match2Map(f, matches, lms, t); timeMA += t;
 
@@ -364,7 +364,7 @@ private:
         ROS_INFO("ODO = Adding [%lu] landmark observations from Frame [%d|%d]", matchesVO.size(), f->getId(), f->getKfId());
         std::map<FramePtr,int> kfObsCounterVO; //TODO: use std::map<FramePtr,int> kfObsCounter; // with key ->getId()
         for (uint i=0; i<matchesVO.size(); ++i){
-            LandmarkPtr& lm = lms[matchesVO[i].trainIdx];
+            Landmark::Ptr lm = lms[matchesVO[i].trainIdx];
             f ->addLandMarkRef(matchesVO[i].queryIdx, lm);
             lm->addObservation( f, matchesVO[i].queryIdx);
             ++kfObsCounterVO[lm->getObservationFrame()]; //histogram, count which kfs we f shared observations which
@@ -384,7 +384,7 @@ private:
         // match vs current kf
         DMatches matchesTri;
         double matchesTriTime;
-        FramePtr& kf = map.getLatestKF();
+        FramePtr kf = map.getLatestKF();
         double disparityTri = map.matchTriangulate(f, kf,matchesTri, matchesTriTime);
 
         ROS_INFO("ODO = [%lu] potential candidates matched with [%f] disparity, triangulating", matchesTri.size(), disparityTri);
@@ -428,9 +428,9 @@ private:
 
 
     /// Attempts to estiamte the pose with 2d-3d estiamtes
-    bool absolutePose(FramePtr& f){
+    bool absolutePose(FramePtr f){
 
-        FramePtr& kf = map.getLatestKF();
+        FramePtr kf = map.getLatestKF();
         ROS_INFO("ODO [L] > Doing VO Pose Estimate Frame [%d|%d] vs KeyFrame [%d|%d] with [%lu] matches", f->getId(), f->getKfId(), kf->getId(), kf->getKfId(), matches.size());
 
         matchesVO.clear();
@@ -460,7 +460,7 @@ private:
 
         // 3d points
         Points3d worldPts;
-        const LandMarkPtrs& landmarks = kf->getLandmarkRefs();
+        const Landmark::Ptrs& landmarks = kf->getLandmarkRefs();
         OVO::landmarks2points(landmarks, worldPts, kfInd);
 
         //ROS_INFO("ODO = AFTER Alignment [%lu Matches] [%lu bearings] [%lu world points]", matches.size(), bvFMatched.size(), worldPts.size());
@@ -597,7 +597,7 @@ private:
 
 
     /// Attempts to initialise VO between two frames, data associsation through matches, Sets the pose of frame f
-    bool relativePoseInitialisation(FramePtr& f, FramePtr& kf, const DMatches& matches){
+    bool relativePoseInitialisation(FramePtr f, FramePtr kf, const DMatches& matches){
         ROS_INFO("ODO > Doing VO Initialisation");
 
 
@@ -810,7 +810,7 @@ private:
 
 
     /// Adds the first KF
-    bool setInitialKFVO(FramePtr& frame){
+    bool setInitialKFVO(FramePtr frame){
         ROS_INFO("ODO [M] > SETTING INITIAL KEYFRAME");
         resetVO();
 
@@ -827,7 +827,7 @@ private:
 
 
     /// Computes 2d-2d matches vs latest KF
-    bool trackVO(FramePtr& frame){
+    bool trackVO(FramePtr frame){
         ROS_ASSERT(state==ST_WAIT_INIT || state == ST_TRACKING);
         // track against initial keyframe
         disparity = -1;
@@ -857,7 +857,7 @@ private:
 
 
     /// Initialises the whole VO pipeline using predetermined 2d-2d matches. Does relativePose. Does Triangulation. Adds KF. Inits Map.
-    bool initialiseVO(FramePtr& frame){
+    bool initialiseVO(FramePtr frame){
         ROS_ASSERT(state==ST_WAIT_INIT);
         ROS_INFO("ODO [M] > ATTEMPTING INITIALISATION");
         disparityMap = -1;
@@ -883,7 +883,7 @@ private:
 
 
     /// Estiamte pose vs latest KF using predetermined 2d-3d matches
-    bool estimatePoseVO(FramePtr& frame){
+    bool estimatePoseVO(FramePtr frame){
         ROS_INFO("ODO [M] > DOING POSE ESTIMATION");
         ROS_ASSERT(state==ST_TRACKING);
 
@@ -906,7 +906,7 @@ private:
 
 
     /// Try to relocate against the map. Computes 2d-3d matches. Does absolutePose. Adds Kf. Updates Map
-    bool relocateVO(FramePtr& frame){
+    bool relocateVO(FramePtr frame){
         ROS_INFO("ODO [M] > DOING RELOCALISATION");
         ROS_ASSERT(state==ST_LOST);
         ros::WallTime t0 = ros::WallTime::now();
@@ -940,7 +940,7 @@ private:
     // Transition States
     //    FirstFrame <- if we dont add the frame as a KF (due to quality reasons for example)
     //    WaitInit   <- if we successfully add our first KF
-    void voFirstFrame(FramePtr& frame){
+    void voFirstFrame(FramePtr frame){
         ROS_INFO("ODO [H] > First Frame received");
         ROS_ASSERT(state==ST_WAIT_FIRST_FRAME);
 
@@ -972,7 +972,7 @@ private:
     // Transition States
     //    Tracking   <- If disparity was big enough and we successfully initialised (and added our second keyframe)    
     //    FirstFrame <- If control==RESET
-    void voFirstFrameTrack(FramePtr& frame){
+    void voFirstFrameTrack(FramePtr frame){
         ROS_INFO("ODO [H] > Tracking against first KF");
         ROS_ASSERT(state==ST_WAIT_INIT);
 
@@ -1022,7 +1022,7 @@ private:
     //    Tracking   <- If we compute a valid current pose or successfully add a new keyframe
     //    Lost       <- If we fail to localise or fail to add a keyframe
     //    FirstFrame <- If control==RESET
-    void voTrack(FramePtr& frame){
+    void voTrack(FramePtr frame){
         ROS_WARN("ODO [H] > Tracking");
         ROS_ASSERT(state==ST_TRACKING);
 
@@ -1093,7 +1093,7 @@ private:
     //    Tracking   <- If we relocalise (adds a new KF)
     //    Lost       <- If we fail to relocalise
     //    FirstFrame <- If control==RESET
-    void voRelocate(FramePtr& frame){
+    void voRelocate(FramePtr frame){
         ROS_ASSERT(state==ST_LOST);
         ROS_WARN("ODO > We are LOST, trying to recover");
 
@@ -1179,7 +1179,7 @@ public:
 
 
     // a step in the VO pipeline. Main entry point for odometry
-    void update(FramePtr& frame){
+    void update(FramePtr frame){
         ROS_INFO("ODO > PROCESSING FRAME [%d] - Current in state [%s]", frame->getId(), getStateName().c_str());
 
         /// Skip frame immediatly if quality is too bad (should ust be used for extremely bad frames)
@@ -1231,8 +1231,8 @@ public:
             return image;
         }
 
-        const FramePtr& f = map.getCurrentFrame();
-        const FramePtr& kf = map.getLatestKF();
+        const FramePtr f = map.getCurrentFrame();
+        const FramePtr kf = map.getLatestKF();
         cv::drawMatches(f->getVisualImage(), KeyPoints(0),kf->getVisualImage(), KeyPoints(0), DMatches(0), image);
 
 
@@ -1260,7 +1260,7 @@ public:
             // THis is the case when we have just updated the map, so the current keyframe is actually also the latest kf
 
             if (map.getKeyframeNr()>1){
-                const FramePtr& prekf = map.getLatestKF(1);
+                const FramePtr prekf = map.getLatestKF(1);
                 if (matches.size()>0){
                     OVO::drawFlow(image, f->getPoints(), prekf->getPoints(), matches, CV_RGB(0,200,0), 1.1);
                     OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,200,0),  true,"MA:");
