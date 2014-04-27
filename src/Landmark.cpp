@@ -1,5 +1,6 @@
 #include <ollieRosTools/Landmark.hpp>
 #include <ollieRosTools/Frame.hpp>
+#include <boost/unordered_map.hpp>
 
 int Landmark::pIdCounter = 0;
 /// TODO: should be in dynamic reconfigure
@@ -21,6 +22,21 @@ bool noRef(const Landmark::Ptr& p){
 
 
 // Converts landmarks to vector of eigen points
+void OVO::landmarks2points(const Landmark::IntMap& lms, Points3d& points, const Ints& ind){
+    points.clear();
+    if (ind.size()>0){
+        points.reserve(ind.size());
+        for (uint i=0; i<ind.size();++i){
+            points.push_back(lms.at(ind[i])->getPosition());
+        }
+    } else {
+        points.reserve(lms.size());
+        for (uint i=0; i<ind.size();++i){
+            points.push_back(lms.at(i)->getPosition());
+        }
+    }
+}
+// Converts landmarks to vector of eigen points
 void OVO::landmarks2points(const Landmark::Ptrs& lms, Points3d& points, const Ints& ind){
     points.clear();
     if (ind.size()>0){
@@ -36,9 +52,10 @@ void OVO::landmarks2points(const Landmark::Ptrs& lms, Points3d& points, const In
     }
 }
 
+
 // Remove an observation from frame f
 void Landmark::removeObservation(const int fid, const int kfid){
-    ROS_INFO(("LMK = Removing Observation LMK[%3d] <- Frame[%3d|%3d]. Observations left: [" + OVO::colorise("%2d", (seenFrom.size()>2 ? OVO::FG_GREEN : (seenFrom.size()==2 ? OVO::FG_YELLOW:OVO::FG_RED))) +"]").c_str(), getId(), fid,  kfid, static_cast<int>(seenFrom.size())-1);
+    //ROS_INFO(("LMK = Removing Observation LMK[%3d] <- Frame[%3d|%3d]. Observations left: [" + OVO::colorise("%2d", (seenFrom.size()>2 ? OVO::FG_GREEN : (seenFrom.size()==2 ? OVO::FG_YELLOW:OVO::FG_RED))) +"]").c_str(), getId(), fid,  kfid, static_cast<int>(seenFrom.size())-1);
     // reset current obs, incase it was pointing to the to be deleted frame
     currentObs = -1;
     FramePtrs::iterator it = std::find(seenFrom.begin(), seenFrom.end(), fid);

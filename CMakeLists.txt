@@ -123,7 +123,6 @@ target_link_libraries(g2o_custom_types ${G2O_LIBS} GL GLU glut)
 set(LIBRARIES
     agast
     akaze
-    boost_system
     rbrief
     #opengsurf
     #opengv #included via ros    
@@ -132,6 +131,7 @@ set(LIBRARIES
     lapack
 ) # GL glut cvd GVars3_headless blas lapack
 
+find_package(Boost REQUIRED COMPONENTS signals system thread)
 
 
 SET(PREPROC_FILES     
@@ -161,8 +161,9 @@ SET(VO_FILES
 #rosbuild_add_executable(preproc ${PREPROC_FILES} )
 #target_link_libraries(preproc ${LIBRARIES} ${OpenCV_LIBS})
 
+
 rosbuild_add_executable(vo ${VO_FILES} )
-target_link_libraries(vo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS} g2o_custom_types)
+target_link_libraries(vo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS} ${Boost_INCLUDE_DIRS} g2o_custom_types)
 
 SET(BA_FILES
     src/ba_demo.cpp

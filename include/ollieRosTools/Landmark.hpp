@@ -6,6 +6,7 @@
 #include <Eigen/StdVector>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <boost/unordered_map.hpp>
 
 
 #include <ollieRosTools/aux.hpp>
@@ -59,6 +60,7 @@ public:
 
     typedef cv::Ptr<Landmark> Ptr;
     typedef std::deque<Landmark::Ptr> Ptrs;
+    typedef boost::unordered_map<int,Landmark::Ptr> IntMap;
 
     // create a new point
     Landmark(const Eigen::Vector3d& point){
@@ -67,8 +69,19 @@ public:
         currentObs = -1;
     }
 
+    Landmark(){
+        // Not instanciated!
+        id = -1;
+    }
+
+    inline bool instanciated(){
+        return id>=0;
+    }
+
     virtual ~Landmark(){
-        ROS_INFO(OVO::colorise("LMK = Destroying Landmark [%d]:",OVO::FG_DGRAY).c_str(),getId());
+        if (id>=0){
+            //ROS_INFO(OVO::colorise("LMK = Destroying Landmark [%d]:",OVO::FG_DGRAY).c_str(),getId());
+        }
         //ROS_INFO_STREAM(*this);
     }
 
@@ -199,6 +212,7 @@ inline bool operator>=(const Landmark::Ptr& lhs, const Landmark::Ptr& rhs){retur
 
 
 namespace OVO {
+    void landmarks2points(const Landmark::IntMap& lms, Points3d& points, const Ints& ind=Ints());
     void landmarks2points(const Landmark::Ptrs& lms, Points3d& points, const Ints& ind=Ints());
 }
 

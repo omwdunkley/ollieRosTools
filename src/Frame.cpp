@@ -56,7 +56,6 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
     estimateImageQuality();
 
     hasPoseEstimate = false;
-    landmarkCounter = 0;
 
     ROS_INFO("FRA < NEW FRAME CREATED [ID: %d]", id);
 }
@@ -64,15 +63,15 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
 
 
 
-void Frame::addLandMarkRef(int idx, const Landmark::Ptr lm){
+void Frame::addLandMarkRef(int idx, const Landmark::Ptr& lm){
     ROS_ASSERT(static_cast<uint>(idx)<keypointsImg.size() && idx>=0);
     ROS_ASSERT(!lm.empty());
-    if (landmarkRefs[idx].empty()){
-        ++landmarkCounter;
+    //ROS_INFO("FRA = Insering LM[%3d] into position [%d] . KP:[%.1f;%.1f] ", lm->getId(), idx, keypointsImg[idx].pt.x,keypointsImg[idx].pt.y);
+    if (landmarkRefs.size()==0 || landmarkRefs.find(idx  ) == landmarkRefs.end()){
         landmarkRefs[idx] = lm;
     } else {
         /// Descriptor already matches to a landmark
-        ROS_ERROR("FRA = Landmark [%d] insertion failed, Landmark [%d] already in position [%d]!", lm->getId(), landmarkRefs[idx]->getId(), idx);
+        ROS_ERROR("FRA = Landmark [%3d] insertion failed for frame [%d|%d], Landmark [%3d] already in position [%3d]!", lm->getId(), getId(), getKfId(), landmarkRefs[idx]->getId(), idx);
         landmarkRefs[idx]->removeObservation(getId(), getKfId());
         landmarkRefs[idx] = lm;
     }
@@ -81,8 +80,7 @@ void Frame::addLandMarkRef(int idx, const Landmark::Ptr lm){
 void Frame::removeLandMarkRef(const int id){
     ROS_ASSERT_MSG(!landmarkRefs[id].empty(), "FRA = LandmarkRef [%d] Cannot be removed, no landmark there!", id);
     //p.release(); ?
-    --landmarkCounter;
-    landmarkRefs[id]->removeObservation(getId(), getKfId());
+    landmarkRefs.at(id)->removeObservation(getId(), getKfId());
     //landmarkRefs[id] = Landmark::Ptr();
 }
 

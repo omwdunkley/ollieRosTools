@@ -6,6 +6,7 @@
 #include <iomanip>      // std::setprecision
 #include <vector>
 #include <deque>
+#include <tr1/unordered_map>
 
 #include <opencv2/opencv.hpp>
 #include <Eigen/Eigen>
@@ -70,8 +71,7 @@ class Frame{
         static cv::Ptr<PreProc> preproc;
 
         /// If a keyframe, this contains references to map points
-        Landmark::Ptrs landmarkRefs;
-        int landmarkCounter; // just for stats
+        Landmark::IntMap landmarkRefs;
 
         /// cached?
 //        KeyPoints             mapKeyPoints;
@@ -102,7 +102,6 @@ class Frame{
             clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
             detector->detect(image, keypointsImg, detectorId, mask);
-            landmarkRefs.resize(keypointsImg.size());
             timeDetect = (ros::WallTime::now()-t0).toSec();
             ROS_INFO("FRA < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
         }
@@ -141,7 +140,7 @@ class Frame{
         }
         virtual ~Frame(){            
             ROS_INFO(OVO::colorise("FRA = Destroying frame [%d|%d]",OVO::FG_DGRAY).c_str(),getId(), getKfId());
-            ROS_ASSERT(landmarkCounter==0); // must have deallocated all references!
+            ROS_ASSERT(landmarkRefs.size()==0); // must have deallocated all references!
             landmarkRefs.clear();
         }
 
@@ -152,7 +151,7 @@ class Frame{
         void static setPreProc (cv::Ptr<PreProc>    pp){preproc=pp;    }
 
 
-        void addLandMarkRef(const int id, const Landmark::Ptr lm);
+        void addLandMarkRef(const int id, const Landmark::Ptr& lm);
         void removeLandMarkRef(const int id);
         void prepareRemoval();
 
@@ -175,7 +174,6 @@ class Frame{
             } else {
                 // replace points
                 clearAllPoints();
-                landmarkRefs.resize(kps.size());
                 std::swap(keypointsImg, kps);                
                 ROS_INFO("FRA = Replaced [%lu] old Keypoints with new [%lu] ones for frame [%d]", kps.size(), keypointsImg.size(), getId());
             }
@@ -412,7 +410,7 @@ class Frame{
             // if a kf, draw id
             if (kfId>=0){
                 OVO::putInt(img, kfId, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,110,255), true,  "KID:");                
-                OVO::putInt(img, landmarkCounter, cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,110,255), true,  "LMs:");
+                OVO::putInt(img, landmarkRefs.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,110,255), true,  "LMs:");
             }
 
 
@@ -498,7 +496,6 @@ class Frame{
             bearings = Eigen::MatrixXd();
             descriptors = cv::Mat();
             landmarkRefs.clear();
-            landmarkCounter=0;
             //descId = -1;
             //detId = -2; // unknown type
         }
@@ -534,23 +531,21 @@ class Frame{
             return keypointsRotated;
         }
 
-        Ints getIndLM() const {
+        Ints getIndLM() const{
             Ints vo;
-            vo.reserve(landmarkCounter);
-            for (uint i=0; i<landmarkRefs.size(); ++i){
-                if (!landmarkRefs[i].empty()){
-                    vo.push_back(i);
-                }                
+            vo.reserve(landmarkRefs.size());
+            for(Landmark::IntMap::const_iterator it = landmarkRefs.begin(); it != landmarkRefs.end(); ++it) {
+                vo.push_back(it->first);
             }
             return vo;
         }
 
-        const Landmark::Ptrs& getLandmarkRefs() const {
+        const Landmark::IntMap& getLandmarkRefs() const {
             return landmarkRefs;
         }
 
         uint getLandmarkRefNr() const {
-            return landmarkCounter; //landmarkRefs.size();
+            return landmarkRefs.size();
         }
 
 
@@ -693,7 +688,7 @@ class Frame{
                    << "[ D:"  << std::setw(4) << std::setfill(' ') << frame.descriptors.rows << "]"
                    << "[BV:"  << std::setw(4) << std::setfill(' ') << frame.bearings.rows() << "]"
                    << "[RE:"  << std::setw(4) << std::setfill(' ') << frame.pointsRect.rows() << "]"
-                   << "[LM:"  << std::setw(4) << std::setfill(' ') << frame.landmarkCounter << "]"
+                   << "[LM:"  << std::setw(4) << std::setfill(' ') << frame.landmarkRefs.size() << "]"
                    << "[TP:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timePreprocess << "]"
                    << "[TD:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeDetect << "]"
                    << "[TE:"  << std::setw(4) << std::setfill(' ') << std::setprecision(1) << frame.timeExtract << "]";
@@ -742,7 +737,6 @@ class FrameSynthetic : public Frame {
             descriptorId = -1;
 
             this->mask = mask;
-            landmarkCounter = 0;
 
             ros::WallTime t0 = ros::WallTime::now();
             cv::Mat imgProc = preproc->process(img);
@@ -811,7 +805,6 @@ class FrameSynthetic : public Frame {
             clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
             detector->detect(synKPDesc, image, keypointsImg, detectorId, mask);
-            landmarkRefs.resize(keypointsImg.size());
             timeDetect = (ros::WallTime::now()-t0).toSec();
             ROS_INFO("FRA [SYN] < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
         }

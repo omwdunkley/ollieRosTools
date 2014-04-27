@@ -330,8 +330,9 @@ class OdoMap {
             ROS_ASSERT(f->poseEstimated());
 
             // add points
-            for (uint i=0; i<points.size(); ++i){
+            for (uint i=0; i<ms.size(); ++i){
                 Landmark::Ptr lm(new Landmark(points[i]));
+                //ROS_INFO(OVO::colorise("%3d -> LM[%3d]: [%3d] - [%3d]", OVO::FG_CYAN).c_str(), i, lm->getId(), ms[i].queryIdx, ms[i].trainIdx );
                 // add frames to points
                 lm->addObservation(kf, ms[i].trainIdx);
                 lm->addObservation( f, ms[i].queryIdx);                

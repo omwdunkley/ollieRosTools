@@ -460,7 +460,7 @@ private:
 
         // 3d points
         Points3d worldPts;
-        const Landmark::Ptrs& landmarks = kf->getLandmarkRefs();
+        const Landmark::IntMap& landmarks = kf->getLandmarkRefs();
         OVO::landmarks2points(landmarks, worldPts, kfInd);
 
         //ROS_INFO("ODO = AFTER Alignment [%lu Matches] [%lu bearings] [%lu world points]", matches.size(), bvFMatched.size(), worldPts.size());
