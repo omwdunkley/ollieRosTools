@@ -1,7 +1,7 @@
 
 #include <ros/ros.h>
 #include <ollieRosTools/VoNode.hpp>
-#include <opencv2/gpu/gpu.hpp>
+//#include <opencv2/gpu/gpu.hpp>
 
 //Initialize ROS node.
 int main(int argc, char** argv){

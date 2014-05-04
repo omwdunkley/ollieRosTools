@@ -142,6 +142,11 @@ SET(PREPROC_FILES
     src/CameraATAN.cpp
 )
 
+SET(CAMLAT_FILES
+    src/CamLatencySub.cpp
+)
+
+
 SET(VO_FILES
     src/Landmark.cpp
     src/aux.cpp
@@ -164,6 +169,11 @@ SET(VO_FILES
 
 rosbuild_add_executable(vo ${VO_FILES} )
 target_link_libraries(vo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS} ${Boost_INCLUDE_DIRS} g2o_custom_types)
+
+
+rosbuild_add_executable(camLatencySub ${CAMLAT_FILES} )
+target_link_libraries(camLatencySub ${LIBRARIES} ${OpenCV_LIBS} ${Boost_INCLUDE_DIRS})
+
 
 SET(BA_FILES
     src/ba_demo.cpp
