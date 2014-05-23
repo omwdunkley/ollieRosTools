@@ -34,16 +34,18 @@ class CamLatencySub{
         image_transport::Subscriber subImage;
         ros::Subscriber subSequence;
         image_transport::ImageTransport imTransport;
+
+        // Mean of previous image - comapred with current to detect switch
         int preMean;
 
-        ros::Time tSent, tReceived;
-        int tSentSeq, preSeq;
+        ros::Time imageSentTime, tReceived;
+        int imageSentSeq, preSeq;
 
-        double sCount;
-        double sSum;
+        std::vector<double> delays;
 
         /// Parameters
         std::string inputTopic;
+        double monitorLag;
 
         void reset();
 

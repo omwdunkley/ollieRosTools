@@ -6,7 +6,13 @@
 #include <cmath>
 #include <opencv2/core/core.hpp>
 #include <boost/lexical_cast.hpp> //boost::lexical_cast<std::string>(i);
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics/stats.hpp>
+#include <boost/accumulators/statistics/mean.hpp>
+#include <boost/accumulators/statistics/variance.hpp>
 #include <cv_bridge/cv_bridge.h>
+
+using namespace boost::accumulators;
 
 
 /// Initialise ROS Node
@@ -16,13 +22,14 @@ CamLatencySub::CamLatencySub(ros::NodeHandle& _n):
     preMean(0)
     {   
 
-    ROS_INFO("Starting CamLatencySub node\nAvailable params:\n_image:=/image_raw");
+    ROS_INFO("Starting CamLatencySub node\nAvailable params:\n_image:=/image_raw\n_lag=8.8");
 
     subSequence = n.subscribe<std_msgs::Header>("/camLatency", 1, &CamLatencySub::incomingSequence, this);
     /// Publish to Topics
     pubImage   = imTransport.advertise("/camLatency/image_raw", 1);
     n.param("image", inputTopic, std::string("/image_raw"));
-    ROS_INFO("Starting <%s> node with <%s> as image source", /*ros::this_node::getNamespace().c_str(),*/ ros::this_node::getName().c_str(), inputTopic.c_str());
+    n.param("lag", monitorLag, 8.8); // monitor input lag in ms
+    ROS_INFO("Starting <%s> node with <%s> as image source and <%.2f> input lag", /*ros::this_node::getNamespace().c_str(),*/ ros::this_node::getName().c_str(), inputTopic.c_str(), monitorLag);
 
 
 
@@ -38,24 +45,22 @@ CamLatencySub::~CamLatencySub() {
 
 
 void CamLatencySub::incomingSequence(const std_msgs::HeaderConstPtr& msg){
-    if (msg->seq<=tSentSeq){
+    if (static_cast<int>(msg->seq)<=imageSentSeq){
         reset();
     }
-    tSent = msg->stamp;
-    tSentSeq = msg->seq;
+    imageSentTime = msg->stamp;
+    imageSentSeq = msg->seq;
 }
 
 void CamLatencySub::reset(){
     ROS_INFO("RESET");
-    tSentSeq = 0;
-    tSent = ros::Time::now();
-    tReceived = tSent;
-    sCount = 0;
-    sSum   = 0;
-    preSeq = -1;
+    imageSentSeq = 0;
+    imageSentTime = ros::Time::now();
+    tReceived = imageSentTime;
+    delays.clear();
 }
 
-/// PINHOLE
+
 void CamLatencySub::incomingImage(const sensor_msgs::ImageConstPtr& msg){
     /// Get Image
     cv_bridge::CvImageConstPtr cvPtr;
@@ -84,14 +89,14 @@ void CamLatencySub::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         cvi.encoding = "mono8";
         cvi.image = img;
         pubImage.publish(cvi.toImageMsg());
-        double ms = (tReceived-tSent).toSec()*1000;
-        ++sCount;
-        sSum +=(ms-8.8);
-        ROS_INFO("[%d] Avg: %.2fms | Delay: %.2fms | Raw: %.2ms | Value [%3d]", tSentSeq, sSum/sCount, ms-8.8, ms, m);
-    }
+        delays.push_back((tReceived-imageSentTime).toSec()*1000 - monitorLag);
 
+        accumulator_set<double, stats<tag::variance> > acc;
+        std::for_each(delays.begin(), delays.end(), boost::bind<void>(boost::ref(acc), _1));
+
+        ROS_INFO("[%d] Mean: %.2f   Std: %.2f   Raw: %.2f   Samples: %3lu)", imageSentSeq, mean(acc), sqrt(variance(acc)), delays.back(), delays.size() );
+    }
     preMean = m;
-    preSeq = tSentSeq;
 
 }
 
