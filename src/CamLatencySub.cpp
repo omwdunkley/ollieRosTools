@@ -14,6 +14,11 @@
 
 using namespace boost::accumulators;
 
+double median(std::vector<double> &v){
+    size_t n = v.size() / 2;
+    std::nth_element(v.begin(), v.begin()+n, v.end());
+    return v[n];
+}
 
 /// Initialise ROS Node
 CamLatencySub::CamLatencySub(ros::NodeHandle& _n):
@@ -55,8 +60,17 @@ void CamLatencySub::incomingSequence(const std_msgs::HeaderConstPtr& msg){
 void CamLatencySub::reset(){
     ROS_INFO("RESET");
     imageSentSeq = 0;
+    preSeq = 0;
     imageSentTime = ros::Time::now();
     tReceived = imageSentTime;
+
+
+    if (delays.size()>0){
+        accumulator_set<double, stats<tag::variance> > acc;
+        std::for_each(delays.begin(), delays.end(), boost::bind<void>(boost::ref(acc), _1));
+        ROS_INFO("SUMMARY Mean: %.2f \tStd: %.2f \tMedian: %2f \tSamples: %3lu", mean(acc), sqrt(variance(acc)), median(delays), delays.size());
+    }
+
     delays.clear();
 }
 
@@ -75,28 +89,76 @@ void CamLatencySub::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
     cv::Mat img = cvPtr->image;
 
-    int m = static_cast<int>(0.5+cv::mean(img.col(0.5+img.cols/2))[0]);
-    /// publish debug image
-    if (abs(preMean-m)>100){
-        std::string s = boost::lexical_cast<std::string>(m);
-        cv::putText(img, s, cv::Point(20,25), cv::FONT_HERSHEY_PLAIN, 2, CV_RGB(0,0,0));
-        cv::putText(img, s, cv::Point(21,26), cv::FONT_HERSHEY_PLAIN, 2, CV_RGB(255,255,255));
+    cv::Mat deinter = img.reshape(0,img.rows/2);
+    bool even = false;
+    if (even){
+        deinter = deinter.colRange(0,deinter.cols/2);
+    } else {
+        deinter = deinter.colRange(deinter.cols/2,deinter.cols);
+    }
+    resize(deinter, img, cv::Size(), 1, 2, cv::INTER_NEAREST);
+
+    cv::Rect r(img.cols*0.33, img.rows*0.33, img.cols*0.33, img.rows*0.33);
 
 
+    // ignore, just show image
+    if (imageSentSeq==0){
+        cv::rectangle(img,r,255);
         tReceived = msg->header.stamp;
         cv_bridge::CvImage cvi;
         cvi.header = msg->header;
         cvi.encoding = "mono8";
         cvi.image = img;
         pubImage.publish(cvi.toImageMsg());
-        delays.push_back((tReceived-imageSentTime).toSec()*1000 - monitorLag);
+    } else {
 
-        accumulator_set<double, stats<tag::variance> > acc;
-        std::for_each(delays.begin(), delays.end(), boost::bind<void>(boost::ref(acc), _1));
+        cv::Mat area = img(r);
+        cv::threshold(area, area, 128, 255, 0);
 
-        ROS_INFO("[%d] Mean: %.2f   Std: %.2f   Raw: %.2f   Samples: %3lu)", imageSentSeq, mean(acc), sqrt(variance(acc)), delays.back(), delays.size() );
+        // compute mean
+        int m = static_cast<int>(0.5+cv::mean(area)[0]);
+
+        if ((imageSentSeq==1) && (preSeq==0)){
+
+            ROS_INFO("[%d] First Received", imageSentSeq );
+            preMean = m;
+            preSeq = imageSentSeq;
+        } else {
+            /// publish debug image
+            int d = preMean-m;
+            if (abs(d)>50){
+                std::string s = boost::lexical_cast<std::string>(m);
+                cv::putText(img, s, cv::Point(20,25), cv::FONT_HERSHEY_PLAIN, 2, CV_RGB(0,0,0));
+                cv::putText(img, s, cv::Point(21,26), cv::FONT_HERSHEY_PLAIN, 2, CV_RGB(255,255,255));
+                //cv::rectangle(img,r,255);
+
+
+                tReceived = msg->header.stamp;
+                cv_bridge::CvImage cvi;
+                cvi.header = msg->header;
+                cvi.encoding = "mono8";
+                cvi.image = img;
+                pubImage.publish(cvi.toImageMsg());
+
+
+                if (imageSentSeq== preSeq+1){
+                    delays.push_back((tReceived-imageSentTime).toSec()*1000 - monitorLag);
+                    accumulator_set<double, stats<tag::variance> > acc;
+                    std::for_each(delays.begin(), delays.end(), boost::bind<void>(boost::ref(acc), _1));
+                    ROS_INFO("[%d] Mean: %.2f \tStd: %.2f \tMedian: %.2f \tRaw: %.2f \tSamples: %3lu \tImageDiff: %d", imageSentSeq, mean(acc), sqrt(variance(acc)), median(delays), delays.back(), delays.size(), d);
+                } else {
+                    ROS_WARN("[%d] Ignored, previous: [%d]", imageSentSeq, preSeq);
+                }
+                preSeq = imageSentSeq;
+                preMean = m;
+            } else {
+                ROS_INFO("[%d] Skipped, image difference: %d", imageSentSeq, d);
+            }
+
+        }
     }
-    preMean = m;
+
+
 
 }
 

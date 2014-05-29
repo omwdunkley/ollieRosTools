@@ -162,6 +162,9 @@ SET(VO_FILES
     src/Map.cpp
 )
 
+rosbuild_add_executable(camLatencySub ${CAMLAT_FILES} )
+target_link_libraries(camLatencySub ${LIBRARIES} ${OpenCV_LIBS} ${Boost_INCLUDE_DIRS})
+
 
 #rosbuild_add_executable(preproc ${PREPROC_FILES} )
 #target_link_libraries(preproc ${LIBRARIES} ${OpenCV_LIBS})
@@ -170,9 +173,6 @@ SET(VO_FILES
 rosbuild_add_executable(vo ${VO_FILES} )
 target_link_libraries(vo ${G2O_LIBS} ${LIBRARIES} ${OpenCV_LIBS} ${Boost_INCLUDE_DIRS} g2o_custom_types)
 
-
-rosbuild_add_executable(camLatencySub ${CAMLAT_FILES} )
-target_link_libraries(camLatencySub ${LIBRARIES} ${OpenCV_LIBS} ${Boost_INCLUDE_DIRS})
 
 
 SET(BA_FILES
