@@ -19,6 +19,7 @@ msg/.*Feedback\.msg$
 msg/.*Goal\.msg$
 msg/.*Result\.msg$
 msg/_.*\.py$
+*.cfgc
 
 \.pcd$
 .pyc$
