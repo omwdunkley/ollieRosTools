@@ -487,7 +487,7 @@ class OdoMap {
                 }
                 structure_only_ba.calc(points, g2oIter);
             }
-            optimizer.save((ros::package::getPath("ollieRosTools")+"/data/map_ba.g2o").c_str());
+            //optimizer.save((ros::package::getPath("ollieRosTools")+"/data/map_ba.g2o").c_str());
             ROS_INFO("g2o > Performing full BA:");
             optimizer.optimize(g2oIter);
             ros::WallTime tOpt = ros::WallTime::now();

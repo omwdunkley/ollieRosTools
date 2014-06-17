@@ -134,6 +134,7 @@ class Matcher{
         bool  orb34; // remember if we are using orb WTK 3 or 4
         Prediction m_pred;
         double m_bvDisparityThresh;
+        double m_bvDisparityThreshMap;
 
         /// KLT Settings
         cv::Point klt_window;

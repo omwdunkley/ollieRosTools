@@ -38,13 +38,13 @@ include_directories(${Eigen_INCLUDE_DIRS})
 rosbuild_add_boost_directories()
 
 #### BUILD TYPE
-#set(ROS_BUILD_TYPE Release)
-#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Ofast   -Wall -Wextra -march=native -ffast-math")
-#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Ofast  -Wall -Wextra -march=native -ffast-math")
+set(ROS_BUILD_TYPE Release)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Ofast   -Wall -Wextra -march=native -ffast-math")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Ofast  -Wall -Wextra -march=native -ffast-math")
 
-set(ROS_BUILD_TYPE RelWithDebInfo)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -march=native -g") #-Wdouble-promotion
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Wall -Wextra -march=native -g") #-Wdouble-promotion
+#set(ROS_BUILD_TYPE RelWithDebInfo)
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Ofast -Wextra -march=native -g") #-Wdouble-promotion
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS} -Wall -Ofast -Wextra -march=native -g") #-Wdouble-promotion
 
 #set(ROS_BUILD_TYPE Debug)
 #set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS} -Wall -Wextra -g")
@@ -166,8 +166,8 @@ rosbuild_add_executable(camLatencySub ${CAMLAT_FILES} )
 target_link_libraries(camLatencySub ${LIBRARIES} ${OpenCV_LIBS} ${Boost_INCLUDE_DIRS})
 
 
-#rosbuild_add_executable(preproc ${PREPROC_FILES} )
-#target_link_libraries(preproc ${LIBRARIES} ${OpenCV_LIBS})
+rosbuild_add_executable(preproc ${PREPROC_FILES} )
+target_link_libraries(preproc ${LIBRARIES} ${OpenCV_LIBS})
 
 
 rosbuild_add_executable(vo ${VO_FILES} )

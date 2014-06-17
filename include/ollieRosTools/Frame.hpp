@@ -28,8 +28,9 @@
 class Frame{
 
     protected:
+        cv::Mat image_orig;
         cv::Mat image;
-        cv::Mat mask;
+        static cv::Mat mask, maskRect;
         cv::Mat sbi;
         Mats pyramid;
         cv::Size pyramidWindowSize;
@@ -101,7 +102,7 @@ class Frame{
             ROS_INFO("FRA > Computing Keypoints frame [id: %d]", getId());
             clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
-            detector->detect(image, keypointsImg, detectorId, mask);
+            detector->detect(image, keypointsImg, detectorId, getMask());
             timeDetect = (ros::WallTime::now()-t0).toSec();
             ROS_INFO("FRA < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
         }
@@ -121,8 +122,72 @@ class Frame{
             if (quality>0){
                 averageQuality = averageQuality*alpha + quality*(1.f-alpha);
             }
-            ROS_WARN("FRA = NOT IMPLEMENTED IMAGE QUALITY");
-            ROS_INFO("FRA < Computed Image Quality %f/%f", quality, averageQuality);
+
+
+
+            bool fail = false;
+            {
+                cv::Rect r(0,0,8,image_orig.rows);
+                cv::Mat m = image_orig(r);
+                //cv::rectangle(image_orig, r, 255,3);
+
+
+                double minVal;
+                double maxVal;
+                cv::Point minLoc;
+                cv::Point maxLoc;
+                minMaxLoc( m, &minVal, &maxVal, &minLoc, &maxLoc );
+                //OVO::putInt(image_orig, maxVal, cv::Point(20, 20+30*0), CV_RGB(255,0,0), true, "MAX");
+                //OVO::putInt(image_orig, minVal, cv::Point(20, 20+30*2), CV_RGB(255,0,0), true, "MIN");
+                //OVO::putInt(image_orig, cv::mean(m)[0], cv::Point(20, 20+30*3), CV_RGB(255,0,0), false, "MED");
+
+                if (maxVal>40){
+                    fail = true;
+                }
+
+                //image_orig(r) = 255-image_orig(r);
+            }
+            if (!fail) {
+                cv::Rect r(image_orig.cols-9,0,9,image_orig.rows);
+                cv::Mat m = image_orig(r);
+                //cv::rectangle(image_orig, r, 255,3);
+                double minVal;
+                double maxVal;
+                cv::Point minLoc;
+                cv::Point maxLoc;
+                minMaxLoc( m, &minVal, &maxVal, &minLoc, &maxLoc );
+                //OVO::putInt(image_orig, maxVal, cv::Point(400, 20+30*0), CV_RGB(255,0,0), true, "MAX");
+                //OVO::putInt(image_orig, minVal, cv::Point(400, 20+30*1), CV_RGB(255,0,0), true, "MIN");
+                //OVO::putInt(image_orig, cv::mean(m)[0], cv::Point(400, 20+30*2), CV_RGB(255,0,0), false, "MED");
+                if (maxVal>40){
+                    fail = true;
+                }
+                //image_orig(r) = 255-image_orig(r);
+
+            }
+
+            if (fail){
+                quality =0.01;
+                //cv::imshow("fail", image_orig);
+                //cv::waitKey(10);
+                ROS_WARN("FRA < Computed Image Quality FAIL: %f", quality);
+            } else {
+                quality = 1.0;
+                ROS_INFO("FRA < Computed Image Quality OKAY: %f", quality);
+
+                /*
+                std::vector<int> compression_params;
+                compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
+                compression_params.push_back(9);
+                cv::Mat jakob = cv::Mat::zeros(image.size(), image.type());
+                image.copyTo(jakob, getMask());
+                cv::imwrite("./jakob/"+boost::lexical_cast<std::string>(ros::Time::now().toSec())+".png", jakob,compression_params);
+                */
+            }
+
+
+            //ROS_WARN("FRA = NOT IMPLEMENTED IMAGE QUALITY");
+            //ROS_INFO("FRA < Computed Image Quality %f/%f", quality, averageQuality);
 
         }
 
@@ -144,11 +209,27 @@ class Frame{
             landmarkRefs.clear();
         }
 
-        Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask=cv::Mat());
+
+        cv::Mat getMask(){
+            if (maskRect.empty()){
+                ROS_INFO("FRA = Rectifying Mask");
+                maskRect = cameraModel->rectify(mask);
+                ROS_INFO("Mask Size: %dx%d, mask type %d", maskRect.cols, maskRect.rows, maskRect.type());
+            }
+            return maskRect;
+        }
+
+
+
+        Frame(const cv::Mat& img, const tf::StampedTransform& imu);
 
         void static setCamera  (cv::Ptr<CameraATAN> cm){cameraModel=cm;}
         void static setDetector(cv::Ptr<Detector>    d){detector=d;    }
         void static setPreProc (cv::Ptr<PreProc>    pp){preproc=pp;    }
+
+        void static setMask (const cv::Mat maskIn){
+            cv::threshold(maskIn, mask, 100, 255, cv::THRESH_BINARY_INV);
+        }
 
 
         void addLandMarkRef(const int id, const Landmark::Ptr& lm);
@@ -366,12 +447,28 @@ class Frame{
 
         // sets the pose from the imu rotation. This is usually used on the very first keyframe
         virtual void setPoseRotationFromImu(/*bool inverse = false*/){
-            ROS_INFO("FRA = Setting pose from IMU rotation");
-            pose.setIdentity();
-            pose.linear() = imuAttitude*IMU2CAM.linear();
-            /*if (inverse){
+
+            if (GROUNDTRUTH_FRAME.length()>0){
+
+                ROS_INFO("FRA = Setting First pose from Ground Truth ");
+
+                try{
+                    tf::StampedTransform world2gt;
+                    SUBTF->lookupTransform(GROUNDTRUTH_FRAME, WORLD_FRAME, ros::Time(0), world2gt); // get the latest
+                    tf::transformTFToEigen(world2gt.inverse(), pose);
+                    pose = pose*IMU2CAM;
+                } catch(tf::TransformException& ex){
+                    ROS_ERROR("TF exception. Could not get WORLD2GROUND_TRUTH transform: %s", ex.what());
+                }
+
+            } else {
+                ROS_INFO("FRA = Setting pose from IMU rotation");
+                pose.setIdentity();
+                pose.linear() = imuAttitude*IMU2CAM.linear();
+                /*if (inverse){
                 pose.linear().transposeInPlace();
             }*/
+            }
             hasPoseEstimate = true;
         }
 
@@ -396,12 +493,19 @@ class Frame{
         }
 
         // Creates a new image with visual information displayed on it
-        cv::Mat getVisualImage() const{
+        cv::Mat getVisualImage(){ // not const as more as lazy mask getter
             ROS_INFO("FRA > GETTING VISUAL IMAGE OF FRAME [%d|%d]", getId(), getKfId());
             cv::Mat img;
 
             // Draw keypoints if they exist, also makes img colour
-            cv::drawKeypoints(image, keypointsImg, img, CV_RGB(0,90,20), cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+            cv::drawKeypoints(image, keypointsImg, img, CV_RGB(0,90,20), cv::DrawMatchesFlags::DEFAULT);//cv::DrawMatchesFlags::DRAW_RICH_KEYPOINTS);
+
+            /// TODO draw mask
+            if (!mask.empty()){
+
+                cv::add(img,cv::Scalar(0,0,30), img, 255-getMask());
+            }
+
             OVO::putInt(img, keypointsImg.size(), cv::Point(10,1*25), CV_RGB(0,96,0),  true,"KP:");
 
             // Draw Frame ID
@@ -412,7 +516,6 @@ class Frame{
                 OVO::putInt(img, kfId, cv::Point2f(img.cols-95,img.rows-5*25), CV_RGB(0,110,255), true,  "KID:");                
                 OVO::putInt(img, landmarkRefs.size(), cv::Point2f(img.cols-95,img.rows-6*25), CV_RGB(0,110,255), true,  "LMs:");
             }
-
 
 
             /// draw depth points
@@ -466,6 +569,13 @@ class Frame{
             }
             if (descriptors.rows>0){
                 OVO::putInt(img, timeExtract*1000., cv::Point(10,img.rows-4*25), CV_RGB(200,0,180), false, "E:");
+            }
+
+
+            ROS_INFO_STREAM(OVO::colorise("Quality:", OVO::FG_CYAN) <<  getQuality());
+            if (getQuality()<=0.9 && getQuality()>=0.0){
+                img+=CV_RGB(50,0,0);
+                ROS_INFO_STREAM(OVO::colorise("DRAWING BAD FRAME", OVO::FG_CYAN));
             }
 
             // Draw artificial horizon using CameraModel (eg it might be a curve too)
@@ -673,8 +783,7 @@ class Frame{
 
         static void setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t level){
             ROS_INFO("FRA > SETTING PARAMS");
-
-
+            maskRect = cv::Mat();
             ROS_INFO("FRA < PARAMS SET");
 
         }
@@ -804,7 +913,8 @@ class FrameSynthetic : public Frame {
             ROS_INFO("FRA [SYN] > Computing Synthetic Keypoints frame [id: %d]", getId());
             clearAllPoints();
             ros::WallTime t0 = ros::WallTime::now();
-            detector->detect(synKPDesc, image, keypointsImg, detectorId, mask);
+
+            detector->detect(synKPDesc, image, keypointsImg, detectorId, getMask());
             timeDetect = (ros::WallTime::now()-t0).toSec();
             ROS_INFO("FRA [SYN] < Computed [%lu] Keypoints of [Type: %d] for frame [id: %d] in  [%.1fms] ", keypointsImg.size(), getDetId(), getId(),timeDetect*1000.);
         }

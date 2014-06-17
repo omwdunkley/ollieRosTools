@@ -9,9 +9,10 @@ cv::Ptr<PreProc>    Frame::preproc     =  cv::Ptr<PreProc>();
 int Frame::idCounter   = -1;
 int Frame::kfIdCounter   = -1;
 float Frame::averageQuality = 0.8;
+cv::Mat Frame::mask;
+cv::Mat Frame::maskRect;
 
-
-Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat& mask) : initialised(true) {
+Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu) : initialised(true) {
     id = ++idCounter;
     kfId = -1;
 
@@ -30,11 +31,10 @@ Frame::Frame(const cv::Mat& img, const tf::StampedTransform& imu, const cv::Mat&
     detectorId = -1; //-1 = none, -2 = KLT
     descriptorId = -1;
 
-    this->mask = mask;
-
     ros::WallTime t0 = ros::WallTime::now();
     cv::Mat imgProc = preproc->process(img);
 
+    image_orig = img.clone();
 
     image = cameraModel->rectify(imgProc);
 

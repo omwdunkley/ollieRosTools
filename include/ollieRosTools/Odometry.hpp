@@ -740,8 +740,26 @@ private:
                 ROS_INFO("ODO < Baseline updated to [%f] with mean depth [%f]", transKFtoF.translation().norm(), voBaseline);
                 break;
             case BL_AUTO_BASELINE:
-                ROS_ERROR("ODO = NOT IMPLEMENTED: Baseline being scaled using Markers");
-                transKFtoF.translation()*= 1.0/baselineInitial;
+                ROS_INFO("ODO = Scaling baseline from ground truth");
+
+                Eigen::Affine3d p;
+
+                if (GROUNDTRUTH_FRAME.length()>0){
+                    ROS_INFO("FRA = Setting First pose from Ground Truth ");
+                    try{
+                        tf::StampedTransform first2second;
+                        SUBTF->waitForTransform(GROUNDTRUTH_FRAME, "KF0", ros::Time::now(),ros::Duration(0.1),ros::Duration(0.001));
+                        SUBTF->lookupTransform(GROUNDTRUTH_FRAME, "KF0", ros::Time(0), first2second); // get the latest
+                        tf::transformTFToEigen(first2second.inverse(), p);
+                    } catch(tf::TransformException& ex){
+                        ROS_ERROR("TF exception. Could not get WORLD2GROUND_TRUTH transform: %s", ex.what());
+                    }
+                } else {
+                    ROS_ERROR("Ground Truth not available - gt frame set?");
+                }
+
+
+                transKFtoF.translation()*= p.translation().norm()/baselineInitial;
                 triangulate(transKFtoF, bvKFinlier, bvFinlier, points3d);
                 break;
 
@@ -1155,7 +1173,7 @@ public:
         voAbsRansacThresh = 4;
         frameQualityThreshold = 0.2;
         keyFrameQualityThreshold = 0.6;
-        lostThresh = 10; // lost if 10 frames fail
+        lostThresh = 25*25; //~25 seconds //10; // lost if 10 frames fail
 
         /// Set up output markers
         trackLines.ns = "TrackLines";
@@ -1183,6 +1201,8 @@ public:
         ROS_INFO("ODO > PROCESSING FRAME [%d] - Current in state [%s]", frame->getId(), getStateName().c_str());
 
         /// Skip frame immediatly if quality is too bad (should ust be used for extremely bad frames)
+        /// Currently handled else where
+        /*
         const float quality = frame->getQuality();
         if (quality < frameQualityThreshold && quality>=0){
             ROS_WARN("ODO < SKIPPING FRAME [%d], Quality too poor [%f < %f]", frame->getId(), quality, frameQualityThreshold);
@@ -1190,6 +1210,7 @@ public:
             cv::waitKey(20);
             return;
         }
+        */
 
         // STATE MACHINE
 
@@ -1221,7 +1242,7 @@ public:
 
 
     // Gets a visual image of the current state
-    cv::Mat getVisualImage(){
+    cv::Mat getVisualImage(FramePtr badframe = FramePtr()){
         ROS_INFO("ODO > GETTING VISUAL IMAGE [State: %s]", getStateName().c_str());
         // Get matching image
         cv::Mat image;
@@ -1231,8 +1252,13 @@ public:
             return image;
         }
 
-        const FramePtr f = map.getCurrentFrame();
-        const FramePtr kf = map.getLatestKF();
+        FramePtr f;
+        if (badframe.empty()){
+            f = map.getCurrentFrame();
+        } else {
+            f = badframe;
+        }
+        FramePtr kf = map.getLatestKF();
         cv::drawMatches(f->getVisualImage(), KeyPoints(0),kf->getVisualImage(), KeyPoints(0), DMatches(0), image);
 
 
@@ -1254,63 +1280,63 @@ public:
             OVO::putInt(image, static_cast<float>(lostCounter)/lostThresh*100.f, cv::Point2f(image.cols/2-95,8*25), OVO::getColor(-lostCounter*2,lostThresh, lostCounter), true,  "LOST:","%");
         }
 
+        // only if we are not drawing a bad quality frame
+        if (badframe.empty()){
+            /// TODO: THESE ONLY WORK WHEN THE CURRENT MATCHES WERE VS THE CURRENT KEYFRAME!
+            if (kf->getId()==f->getId()){
+                // THis is the case when we have just updated the map, so the current keyframe is actually also the latest kf
 
-        /// THESE ONLY WORK WHEN THE CURRENT MATCHES WERE VS THE CURRENT KEYFRAME!
-        if (kf->getId()==f->getId()){
-            // THis is the case when we have just updated the map, so the current keyframe is actually also the latest kf
+                if (map.getKeyframeNr()>1){
+                    const FramePtr prekf = map.getLatestKF(1);
+                    if (matches.size()>0){
+                        OVO::drawFlow(image, f->getPoints(), prekf->getPoints(), matches, CV_RGB(0,200,0), 1.1);
+                        OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,200,0),  true,"MA:");
+                    }
+                    if (matchesVO.size()>0){
+                        OVO::drawFlow(image, f->getPoints(), prekf->getPoints(), matchesVO, CV_RGB(200,0,200),1.1);
+                        OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
+                    }
+                }
 
-            if (map.getKeyframeNr()>1){
-                const FramePtr prekf = map.getLatestKF(1);
+            } else {
                 if (matches.size()>0){
-                    OVO::drawFlow(image, f->getPoints(), prekf->getPoints(), matches, CV_RGB(0,200,0), 1.1);
+                    OVO::drawFlow(image, f->getPoints(), kf->getPoints(), matches, CV_RGB(0,200,0), 1.1);
                     OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,200,0),  true,"MA:");
                 }
                 if (matchesVO.size()>0){
-                    OVO::drawFlow(image, f->getPoints(), prekf->getPoints(), matchesVO, CV_RGB(200,0,200),1.1);
+                    OVO::drawFlow(image, f->getPoints(), kf->getPoints(), matchesVO, CV_RGB(200,0,200),1.1);
                     OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
                 }
             }
 
+            // Project in world points
+            //        if (){
+            //        }
+
+            // Project in estiamted point positions
+            //        if (){
+            //        }
 
 
-        } else {
-            if (matches.size()>0){
-                OVO::drawFlow(image, f->getPoints(), kf->getPoints(), matches, CV_RGB(0,200,0), 1.1);
-                OVO::putInt(image, matches.size(), cv::Point(10,2*25), CV_RGB(0,200,0),  true,"MA:");
+            // show timings
+            if (timeMA>0){
+                OVO::putInt(image, timeMA*1000., cv::Point(10,image.rows-3*25), CV_RGB(200,0,200), false, "M:");
             }
-            if (matchesVO.size()>0){
-                OVO::drawFlow(image, f->getPoints(), kf->getPoints(), matchesVO, CV_RGB(200,0,200),1.1);
-                OVO::putInt(image, matchesVO.size(), cv::Point(10,3*25), CV_RGB(200,0,200),  true,"VO:");
+            if (timeVO>0){
+                OVO::putInt(image, timeVO*1000., cv::Point(10,image.rows-2*25), CV_RGB(200,0,200), false, "O:");
             }
-        }
 
-        // Project in world points
-//        if (){
-//        }
-
-        // Project in estiamted point positions
-//        if (){
-//        }
-
-
-        // show timings
-        if (timeMA>0){
-            OVO::putInt(image, timeMA*1000., cv::Point(10,image.rows-3*25), CV_RGB(200,0,200), false, "M:");
-        }
-        if (timeVO>0){
-            OVO::putInt(image, timeVO*1000., cv::Point(10,image.rows-2*25), CV_RGB(200,0,200), false, "O:");
-        }
-
-        if (disparity>0){
-            if (state==ST_WAIT_INIT){
-                OVO::putInt(image,disparity/voInitDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voInitDisparity,disparity),  true,"DF:","%");
-            } else {
-                OVO::putInt(image,disparity/voKfDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voKfDisparity,disparity),  true,"DF:","%");
+            if (disparity>0){
+                if (state==ST_WAIT_INIT){
+                    OVO::putInt(image,disparity/voInitDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voInitDisparity,disparity),  true,"DF:","%");
+                } else {
+                    OVO::putInt(image,disparity/voKfDisparity*100, cv::Point(10,4*25), OVO::getColor(0,voKfDisparity,disparity),  true,"DF:","%");
+                }
             }
-        }
-        if (disparityMap>0){
-            OVO::putInt(image,disparityMap/voAbsRansacThresh*100, cv::Point(10,5*25), OVO::getColor(0,voAbsRansacThresh,disparityMap),  true,"DM:","%");
+            if (disparityMap>0){
+                OVO::putInt(image,disparityMap/voAbsRansacThresh*100, cv::Point(10,5*25), OVO::getColor(0,voAbsRansacThresh,disparityMap),  true,"DM:","%");
 
+            }
         }
 
 

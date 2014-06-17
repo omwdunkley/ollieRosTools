@@ -334,6 +334,7 @@ class CameraATAN {
             }
 
             /// DRAW
+            /*
             cv::Point2f center = center = cv::Point2f(infoMsgPtr->width/2., infoMsgPtr->height/2.);
             cv::Mat img = cv::Mat::zeros(infoMsgPtr->height, infoMsgPtr->width, CV_8UC3);
 
@@ -363,6 +364,7 @@ class CameraATAN {
 
             cv::imshow("rect", img);
             cv::waitKey(10);
+            */
 
             return kps;
         }
@@ -836,7 +838,7 @@ class CameraATAN {
                 ROS_INFO("CAM = Input [%dpx*%dpx (%.3f)] Output: [%dpx*%dpx (%.3f)]",
                          inWidth, inHeight, static_cast<double>(inWidth)/inHeight,
                          outWidth, outHeight, static_cast<double>(outWidth)/outHeight);
-                ROS_INFO("CAM < INITIALISED NEW MODEL:  Focal: [%.1f, %.1f] Center: [%.1f, %.1f]", ofx, ofy, ocx, ocy);
+                ROS_INFO("CAM < INITIALISED NEW MODEL:  Focal: [%.4f, %.4f] Center: [%.4f, %.14f]", ofx, ofy, ocx, ocy);
 
             }
 

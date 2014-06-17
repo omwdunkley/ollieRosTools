@@ -4,4 +4,4 @@ function subplottight(n,m,i)
     h = (1/n);
     l = (c-1)/m;
     b = 1-(r)/n;
-    subplot('Position', [l+w*0.05 b+h*0.05 w*0.9 h*0.9])
+    subplot('Position', [l+w*0.05 b+h*0.1 w*0.9 h*0.8])

@@ -7,12 +7,6 @@
 #include <Eigen/Geometry>
 
 
-extern bool USE_IMU;
-extern bool USE_SYNTHETIC;
-extern std::string IMU_FRAME;
-extern std::string WORLD_FRAME;
-extern std::string CAM_FRAME;
-extern Eigen::Affine3d IMU2CAM;
 
 #include <boost/assign.hpp>
 #include <boost/preprocessor.hpp>
@@ -21,10 +15,22 @@ extern Eigen::Affine3d IMU2CAM;
 #include <opencv2/opencv.hpp>
 
 #include <tf/tf.h>
+#include <tf/transform_listener.h>
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.h>
 #include <visualization_msgs/MarkerArray.h>
 #include <eigen_conversions/eigen_msg.h>
+
+
+extern bool USE_IMU;
+extern bool USE_SYNTHETIC;
+extern std::string IMU_FRAME;
+extern std::string WORLD_FRAME;
+extern std::string CAM_FRAME;
+extern std::string GROUNDTRUTH_FRAME;
+extern Eigen::Affine3d IMU2CAM;
+
+extern tf::TransformListener* SUBTF; //TODO: ugly hack, shouldnt use this..opnly for quick prototyping
 
 //#include <ollieRosTools/Landmark.hpp>
 //#include <ollieRosTools/Frame.hpp>

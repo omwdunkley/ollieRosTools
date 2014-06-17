@@ -8,7 +8,9 @@ bool USE_SYNTHETIC = false;
 std::string IMU_FRAME = "/cf_attitude";
 std::string WORLD_FRAME = "/world";
 std::string CAM_FRAME = "/cam";
+std::string GROUNDTRUTH_FRAME = "";
 Eigen::Affine3d IMU2CAM = Eigen::Affine3d::Identity();
+tf::TransformListener* SUBTF = NULL;
 
 
 CvScalar OVO::getColor(const float range_min, const float range_max, float depth, bool reverse){

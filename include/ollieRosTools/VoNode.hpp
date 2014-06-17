@@ -61,6 +61,7 @@ class VoNode{
         tf::TransformBroadcaster pubTF;
         tf::TransformListener subTF;
 
+
         /// Dynamic Reconfigure
         ollieRosTools::VoNode_paramsConfig configLast;
         dynamic_reconfigure::Server<ollieRosTools::VoNode_paramsConfig> srv;        
@@ -78,52 +79,40 @@ class VoNode{
         ros::Duration imgDelay;
 
         /// Display stuff
-        void publishStuff(){
+        void publishStuff(bool all = true){
 
 
+            if (pubMarker.getNumSubscribers()>0){
             // Publish Landmarks
-            pubMarker.publish(odometry.getMapMarkers());
-            pubMarker.publish(odometry.getMapObservations());
+                pubMarker.publish(odometry.getMapMarkers());
+                pubMarker.publish(odometry.getMapObservations());
 
-            // Publish Track (ie all path and poses estimated)
-            pubMarker.publish(odometry.getTrackLineMarker());
-            pubTrack.publish(odometry.getTrackPoseMarker());
+                // Publish Track (ie all path and poses estimated)
+                pubMarker.publish(odometry.getTrackLineMarker());
+            }
+
+            if (pubTrack.getNumSubscribers()>0){
+                pubTrack.publish(odometry.getTrackPoseMarker());
+            }
 
 
 
-            // Publish TF for each KF
-            ROS_INFO("NOD = Publishing TF for each KF");
-            const Frame::Ptrs& kfs = odometry.getKeyFrames();
-            //const Frame::Ptr kf = kfs[0];
-            for(uint i=0; i<kfs.size(); ++i){
-                pubTF.sendTransform(kfs[i]->getStampedTransform());
+            if (all){
+                // Publish TF for each KF
+                ROS_INFO("NOD = Publishing TF for each KF");
+                const Frame::Ptrs& kfs = odometry.getKeyFrames();
+                //const Frame::Ptr kf = kfs[0];
+                for(uint i=0; i<kfs.size(); ++i){
+                    pubTF.sendTransform(kfs[i]->getStampedTransform());
+                }
             }
 
             // Publish TF for current frame
             const Frame::Ptr f = odometry.getLastFrame();
             if (f->poseEstimated()){
                 pubTF.sendTransform(f->getStampedTransform());
+                pubTF.sendTransform(f->getStampedTransform(true));
             }
-
-
-
-
-
-
-            // bearing vectors from current frame
-
-            //pubMarker.publish(f->getBearingsMarker(0,"F", "/synCamGT",6.0, 1.0, CV_RGB(0,200,0)));
-
-
-//            // bearing vectors from KF
-//            pubMarker.publish(kf->getBearingsMarker(1,"KF", "/KF_0", 4.0, 2.0 , CV_RGB(0,0,200)));
-
-
-//            // unrotated bearings from F in KF
-//            Eigen::Matrix3d relRot;
-//            OVO::relativeRotation(kf->getImuRotation(), f->getImuRotation(), relRot);
-//            pubMarker.publish(f->getBearingsMarker(2,"FinKF","/KF_0", 2.0, 4.0, CV_RGB(200,0,0), relRot));
-
 
         }
 

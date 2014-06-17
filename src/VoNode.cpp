@@ -30,7 +30,7 @@ VoNode::VoNode(ros::NodeHandle& _n):
     Frame::setDetector(detector);
     Frame::setPreProc(preproc);
 
-    ROS_INFO("Starting VO node\nAvailable params:\n\t_synth:=true\n\t_image:=/image_raw\n\t_useIMU:=true\n\t_imuFrame:=/cf_attitude\n\t_camFrame:=/cam");
+    ROS_INFO("Starting VO node\nAvailable params:\n\t_synth:=true\n\t_image:=/image_raw\n\t_useIMU:=true\n\t_imuFrame:=/cf_attitude\n\t_camFrame:=/cam\n\t_gt:=/cf_gt (empty string = dont use for init)");
 
 
 
@@ -44,13 +44,9 @@ VoNode::VoNode(ros::NodeHandle& _n):
 
     /// Set default values
     n.param("synth", USE_SYNTHETIC, false);
-
     n.param("useIMU", USE_IMU, true);
-    if (USE_IMU){
-        ROS_INFO("Using <%s> as imu frame", IMU_FRAME.c_str());
-    } else {
-        ROS_INFO("Not Using imu!");
-    }
+    n.param("gt", GROUNDTRUTH_FRAME, std::string(""));
+
 
     /// Dynamic Reconfigure
     nodeOn = true;
@@ -89,10 +85,26 @@ VoNode::VoNode(ros::NodeHandle& _n):
 
     }
 
+    if (USE_IMU){
+        ROS_INFO("Using <%s> as imu frame", IMU_FRAME.c_str());
+    } else {
+        ROS_INFO("Not Using imu!");
+    }
+
+    std::string maskPath;
+    n.param("mask", maskPath, std::string(""));
+    if (maskPath.length()>0){
+        ROS_INFO("Using <%s> as mask", maskPath.c_str());
+        cv::Mat mask = cv::imread(maskPath, CV_LOAD_IMAGE_GRAYSCALE);
+        Frame::setMask(mask);
+        ROS_ASSERT_MSG(!mask.empty(), "Failed to load mask <%s>, incorrect path?", maskPath.c_str());
+
+    } else {
+        ROS_INFO("No mask Set");
+    }
 
 
-
-
+    SUBTF = &subTF;
 
 
 }
@@ -111,7 +123,6 @@ void VoNode::initImu2Cam(){
         while(1){
             try{
                 // sent out by the crazyflie driver driver.py
-
                 subTF.lookupTransform(CAM_FRAME, IMU_FRAME, ros::Time(0), imu2cam); // get the latest
                 tf::transformTFToEigen(imu2cam.inverse(), IMU2CAM);
                 ROS_INFO("...IMU transform [%s] -> [%s] INVERSED and set:", IMU_FRAME.c_str(), CAM_FRAME.c_str());
@@ -227,7 +238,6 @@ void VoNode::incomingSynthetic(const ollieRosTools::synthFrameConstPtr& msg){
 
 /// PINHOLE
 void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
-    ROS_INFO("\n");
 
     /// Measure HZ, Processing time, Image acquisation time
     ros::WallTime t0 = ros::WallTime::now();
@@ -265,14 +275,19 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         imuStamped.setRotation(tf::Quaternion(1.0, 0.0, 0.0, 0.0));
     }
 
+    ROS_INFO(OVO::colorise("\n==============================================================================",OVO::FG_WHITE, OVO::BG_BLUE).c_str());
+
     /// Make Frame
     ROS_ERROR("MIGHT NEED TO INVERSE IMU");
     Frame::Ptr frame(new Frame(cvPtr->image, imuStamped));
 
-
-    /// Process Frame
-    ROS_INFO("NOD > PROCESSING FRAME [%d]", frame->getId());
-    odometry.update(frame);
+    if (frame->getQuality()>0.9 || frame->getQuality()<0){
+        /// Process Frame
+        ROS_INFO("NOD > PROCESSING FRAME [%d]", frame->getId());
+        odometry.update(frame);
+    } else {
+        ROS_WARN("NOD = SKIPPING FRAME, BAD QUALITY");
+    }
 
     /// Compute running average of processing time
     double time = (ros::WallTime::now()-t0).toSec();
@@ -280,12 +295,22 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
 
     /// Clean up and output
     ROS_INFO("NOD < FRAME [%d|%d] PROCESSED [%.1fms, Avg: %.1fms]", frame->getId(), frame->getKfId(), time*1000., timeAvg*1000.);
-    publishStuff();
+
+
+    if (frame->getQuality()>0.9 || frame->getQuality()<0){
+        publishStuff();
+    }
 
     /// publish debug image
     if (pubCamera.getNumSubscribers()>0 || pubImage.getNumSubscribers()>0){
         sensor_msgs::CameraInfoPtr camInfoPtr = frame->getCamInfo();
-        cv::Mat drawImg = odometry.getVisualImage();
+        cv::Mat drawImg;
+        if (frame->getQuality()>0.9 || frame->getQuality()<0){
+            drawImg = odometry.getVisualImage();
+        } else {
+            drawImg = odometry.getVisualImage(frame);
+        }
+
         OVO::putInt(drawImg, time*1000., cv::Point(10,drawImg.rows-1*25), CV_RGB(200,0,200), false, "S:");
 
 //        if (imageRect.channels() != image.channels()){
@@ -296,13 +321,18 @@ void VoNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         cv_bridge::CvImage cvi;
         cvi.header.stamp = msg->header.stamp;
         cvi.header.seq = msg->header.seq;
-        cvi.header.frame_id = CAM_FRAME;
+        cvi.header.frame_id = "cam_gt";//CAM_FRAME;
         cvi.encoding = sensor_msgs::image_encodings::BGR8;// OVO::COLORS[colorId];
         //cvi.image = imageRect;
         cvi.image = drawImg;
         camInfoPtr->header = cvi.header;
-        //pubCamera.publish(cvi.toImageMsg(), camInfoPtr);
         pubImage.publish(cvi.toImageMsg());
+
+        cvi.image=cvi.image.colRange(0, cvi.image.cols/2 -1);
+        pubCamera.publish(cvi.toImageMsg(), camInfoPtr);
+
+    } else {
+        ROS_WARN_THROTTLE(1, "NOT DRAWING OUTPUT");
     }
 }
 
@@ -341,7 +371,6 @@ ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_p
 
 
 
-    Frame::setParameter(config, level);
     preproc->setParam(config.doPreprocess,
                      config.doDeinterlace,
                      config.doEqualise,
@@ -363,6 +392,8 @@ ollieRosTools::VoNode_paramsConfig& VoNode::setParameter(ollieRosTools::VoNode_p
                            config.s);
 
     detector->setParameter(config, level);
+
+    Frame::setParameter(config, level);
 
     odometry.setParameter(config, level);
 

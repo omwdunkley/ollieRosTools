@@ -216,6 +216,7 @@ void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const 
     kps_out.clear();
     detId = detectorNr;
 
+
     // detector is off
     if (detectorNr<0){
         return;
@@ -236,10 +237,15 @@ void Detector::detect(const cv::Mat& img, KeyPoints& kps_out, int& detId, const 
             kp_filter.runByImageBorder(kps_out, img.size(), kp_border);
         }
     } else {
-        cv_detector->detect(img, kps_out);
+        cv_detector->detect(img, kps_out, mask);
+
+
+
+
         if (!mask.empty() ){
             kp_filter.runByPixelsMask(kps_out, mask);
         }
+
         if (kp_border){            
             border = cv::Rect(cv::Point(kp_border, kp_border), cv::Point(img.cols, img.rows)-cv::Point(kp_border, kp_border));
             kp_filter.runByImageBorder(kps_out, img.size(), kp_border);

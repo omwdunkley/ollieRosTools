@@ -159,7 +159,7 @@ double Matcher::matchMap(const cv::Mat& mapD, Landmark::Ptrs& lms, FramePtr f, D
     tBV.rowwise().normalize();
 
 
-    cv::Mat mask = makeDisparityMask(qD.rows, mapD.rows, qBV, tBV, m_bvDisparityThresh, OVO::BVERR_DEFAULT, fMask); /// TODO: should be a different disparity thresh, a much smaller one
+    cv::Mat mask = makeDisparityMask(qD.rows, mapD.rows, qBV, tBV, m_bvDisparityThreshMap, OVO::BVERR_DEFAULT, fMask); /// TODO: should be a different disparity thresh, a much smaller one
 
     /// Do the actual matching
     match(qD, mapD, matches, time, mask);
@@ -361,8 +361,10 @@ void Matcher::setParameter(ollieRosTools::VoNode_paramsConfig &config, uint32_t 
     m_thresh            = config.match_thresh;
     m_max               = config.match_max;
     m_bvDisparityThresh = OVO::px2error(config.match_bvDisparityThresh);
+    m_bvDisparityThreshMap = OVO::px2error(config.match_bvDisparityThreshMap);
     m_pred              = static_cast<Prediction>(config.match_prediction);
     ROS_INFO("MAT [H] = Disparity theshold: %f Pixels = %f Degrees = %f error", config.match_bvDisparityThresh, OVO::px2degrees(config.match_bvDisparityThresh), m_bvDisparityThresh );
+    ROS_INFO("MAT [H] = Disparity theshold Map: %f Pixels = %f Degrees = %f error", config.match_bvDisparityThreshMap, OVO::px2degrees(config.match_bvDisparityThreshMap), m_bvDisparityThreshMap );
 
     if(!USE_IMU){
         if ( m_pred == PRED_KF_IMU || m_pred == PRED_POSE_IMU)

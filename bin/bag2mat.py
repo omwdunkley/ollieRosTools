@@ -94,9 +94,7 @@ def main ():
     # Fill in time in first column
     data[:,0] = np.arange(0,duration,1./hz)
     
-    data_new = {topic:np.zeros((rows,1),dtype=np.bool) for topic in topics}  
-    
-    
+    data_new = {topic:np.zeros((rows,1),dtype=np.bool) for topic in topics}    
     
     
     # Create and init itemgetter for messages 
@@ -160,7 +158,7 @@ def main ():
     
     
     print "Saved:", outmat.keys()                
-    sio.savemat(bagfile[:-4]+'.mat', {"CFD_"+bagfile[:-4].replace('-','_'):outmat},oned_as='column')
+    sio.savemat(bagfile[:-4]+'_EQ.mat', {'EQ_'+bagfile[:-4].replace('-','_'):outmat},oned_as='column')
            
 if __name__ == "__main__":
     main()

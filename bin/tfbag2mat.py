@@ -34,6 +34,9 @@ def printInfo(bag, topics=None):
         lines = [l[0:8] for l in lines if len(l)>7]
     else:
         lines = [l[0:8] for l in lines if l[0] in topics]
+
+    if lines == []:
+        return None, None
     topicNameLen = max(4, max([len(l[0]) for l in lines]))
     topicTypeLen = max(8, max([len(l[7]) for l in lines]))
 
@@ -51,19 +54,16 @@ def printInfo(bag, topics=None):
     t0 = info[3]
     t1 = info[4]
 
-    t0 = float(t0[t0.find('(')+1:t0.rfind(')')])
-    t1 = float(t1[t1.find('(')+1:t1.rfind(')')])
-    return t1-t0 #return duration
+    t0 = rospy.Time(float(t0[t0.find('(')+1:t0.rfind(')')]))
+    t1 = rospy.Time(float(t1[t1.find('(')+1:t1.rfind(')')]))
+    return t0, t1 #return duration
 
 
 
-
-   
-def main():    
-    bagfile = sys.argv[1]
+def process(bagfile):
 
     # Load bag
-    print "Opening bag file"
+    print "\nOpening bag file [%s]" % bagfile
     bag = rosbag.Bag(bagfile)
 
 
@@ -74,9 +74,14 @@ def main():
     # topics = list(set([c.topic for c in bag._get_connections() if c.topic.startswith("/cf") or c.topic.]))
     topics = list(set([c.topic for c in bag._get_connections() if c.topic != "/diagnostics" and c.topic.rfind("rosout")+c.topic.rfind("parameter_") == -2]))
 
+    if topics == []:
+        rospy.logwarn('[%s] has no topics, skipping')
+        return
+    start, finish = printInfo(bag, topics=topics)
 
-    duration = printInfo(bag, topics=topics)
-    rostf = Transformer(True, rospy.Duration(duration+1)) #buffer
+    dur = finish-start 
+    rostf = Transformer(True, dur) #buffer
+    duration = dur.to_sec()
 
 
 
@@ -95,12 +100,19 @@ def main():
     #         tfdict[tFrom][tTo].append(t)
 
 
-    start = min(bag.read_messages([t for t in topics if t != "/tf"]).next()[1].header.stamp, bag.read_messages("/tf").next()[1].transforms[0].header.stamp)
 
+
+    
     for tfs in bag.read_messages("/tf"):
         for t in tfs[1].transforms:
             t.header.stamp -= start
+
+            if (t.header.stamp < rospy.Duration(0)):
+                rospy.logwarn('%s - %s [%f]' % (t.header.frame_id, t.child_frame_id, t.header.stamp.to_sec()))
+                continue
+
             rostf.setTransform(t) #cache all tf info into messages to a transformer object
+
             # tFrom = t.header.frame_id
             # tTo   = t.child_frame_id
             # if not tfdict.has_key(tTo):
@@ -160,11 +172,12 @@ def main():
     # plt.show()
 
     # Collect all data
-    data = {t: {} for t in topics if t != '/tf'}
+    data = {t: {} for t in topics if t != '/tf' and not t.endswith('image_raw') and not t.endswith('camera_info')}
 
     # Prepare all the dictionaries
     for t in data.keys():
-        name, msg, t = bag.read_messages(topics=t).next()
+        print t
+        name, msg, t = bag.read_messages(topics=t).next()        
         data[name] = {slot: [] for slot in msg.__slots__ if slot != "header"}
         data[name]["time"] = []
 
@@ -198,6 +211,24 @@ def main():
 
     # Save as MAT
     sio.savemat(bagfile[:-4]+'.mat', {'bag'+bagfile[:-4].replace('-','_'):mdata}, oned_as='column')
+
+    return
+
+
+   
+def main():    
+    bagfile = sys.argv[1]
+
+    if bagfile=='-a':
+        import glob
+        import os
+        os.chdir("./")
+        for f in glob.glob("*.bag"):
+            process(f)
+    else:
+        process(bagfile)
+
+        
 
     return
 

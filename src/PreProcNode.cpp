@@ -27,6 +27,8 @@ PreProcNode::PreProcNode(ros::NodeHandle& _n):
     timeAlpha(0.95),
     timeAvg(0){
 
+    USE_SYNTHETIC = false;
+
 
     /// Subscribe to Topics
     inputTopic = n.resolveName("image");
@@ -80,17 +82,20 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         /// PreProcess Frame
         cv::Mat image = preproc.process(cvPtr->image);
 
+    
         /// PTAM Rectification
         cv::Mat imageRect;
-        sensor_msgs::CameraInfoPtr camInfoPtr;
-        camModel.rectify(image, imageRect, camInfoPtr);
+        imageRect = camModel.rectify(image);
 
+/*
 
 
         /// ////// Test Bearing Vectors
         std::vector<cv::Point2f> kps;
         bool found = cv::findChessboardCorners(imageRect, cv::Size(8,6), kps);
-        cv::drawChessboardCorners(imageRect, cv::Size(8,6), kps, found);
+        //cv::drawChessboardCorners(imageRect, cv::Size(8,6), kps, found);
+
+
 
         //std::vector<cv::KeyPoint> kps;
         //cv::FAST(imageRect, kps, 100.5, true);
@@ -127,7 +132,9 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
             ROS_ERROR_THROTTLE(1,"TF exception. Could not get flie IMU transform: %s", ex.what());
         }
 
+*/
 
+        sensor_msgs::CameraInfoPtr infoMsgPtr = camModel.getCamInfo();
 
         /// Send out
         cv_bridge::CvImage cvi;
@@ -137,8 +144,8 @@ void PreProcNode::incomingImage(const sensor_msgs::ImageConstPtr& msg){
         //cvi.encoding = enc::MONO8;
         cvi.encoding = colors[colorId];
         cvi.image = imageRect;
-        camInfoPtr->header = cvi.header;
-        pubCamera.publish(cvi.toImageMsg(), camInfoPtr);
+        infoMsgPtr->header = cvi.header;
+        pubCamera.publish(cvi.toImageMsg(), infoMsgPtr);
 
         // Compute running average of processing time
         timeAvg = timeAvg*timeAlpha + (1.0 - timeAlpha)*(ros::WallTime::now()-time_s0).toSec();
